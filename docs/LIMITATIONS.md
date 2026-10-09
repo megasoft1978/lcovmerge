@@ -23,7 +23,7 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 - The Windows implementation uses synchronous ReadFile/WriteFile calls and blocking worker-thread joins, with no cancellation path for them. A blocked operation may delay interruption and cleanup; the interruption and cleanup guarantee above applies to POSIX only.
 - Parallel parsing is across input files. -j gives no parser scaling when the workload contains only one input file. The merge stage itself is single-threaded.
 - The CLI does not expand glob patterns itself. The caller's shell should expand them; use @listfile for explicit lists. Listfile paths are interpreted relative to the process working directory.
-- A directory path containing unsupported native Windows path length forms may fail in the Win32 temp helper, which uses GetTempFileNameW and its MAX_PATH buffer.
+- On Windows, long drive and UNC paths use the extended-length (`\\?\`) prefix and temporary run files are created with collision-checked `CREATE_NEW`. This path is exercised only by the Windows CI smoke test, not by local runs.
 
 ## Performance and packaging limits
 
