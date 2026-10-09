@@ -3,6 +3,8 @@
   document.documentElement.classList.remove("no-js");
   document.documentElement.classList.add("js");
 
+  addCopyButtons();
+
   const tabs = Array.from(document.querySelectorAll('[role="tablist"] [role="tab"]'));
   if (tabs.length) {
     function activateTab(tab, moveFocus) {
@@ -54,9 +56,54 @@
     })
     .catch(() => {
       document.querySelectorAll("[data-chart-status]").forEach((el) => {
-        el.textContent = "Benchmark data could not be loaded.";
+        const hasStaticChart = Array.from(document.querySelectorAll('[data-chart]')).some((target) => target.querySelector("svg"));
+        el.textContent = hasStaticChart
+          ? "Showing the benchmark figures included in this page; live refresh could not load."
+          : "Benchmark data could not be loaded.";
       });
     });
+
+  function addCopyButtons() {
+    document.querySelectorAll("pre > code").forEach((code) => {
+      const pre = code.parentElement;
+      if (pre.querySelector(".copy-button")) return;
+      pre.classList.add("copyable");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-button";
+      button.textContent = "Copy";
+      button.setAttribute("aria-label", "Copy code block");
+      button.setAttribute("aria-live", "polite");
+      button.addEventListener("click", async () => {
+        const copied = await copyText(code.textContent || "");
+        button.textContent = copied ? "Copied" : "Select text to copy";
+        window.setTimeout(() => { button.textContent = "Copy"; }, 1800);
+      });
+      pre.append(button);
+    });
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch (_) {
+        // Fall through to the local selection-based copy path.
+      }
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-10000px";
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+    field.remove();
+    return copied;
+  }
 
   function byPath(object, path) {
     return path.split(".").reduce((value, key) => value && value[key], object);
@@ -157,12 +204,6 @@
     }
   }
 
-  const colors = {
-    lcovmerge: "#68a833",
-    lcov: "#4c79b8",
-    "lcov-result-merger": "#a66ac3",
-    grcov: "#c1822b"
-  };
   const ns = "http://www.w3.org/2000/svg";
 
   function svgNode(name, attributes, text) {
@@ -172,11 +213,11 @@
     return node;
   }
 
-  function toolColor(tool) {
-    if (tool.startsWith("lcovmerge")) return colors.lcovmerge;
-    if (tool.startsWith("lcov-result-merger")) return colors["lcov-result-merger"];
-    if (tool.startsWith("lcov ")) return colors.lcov;
-    return colors[tool] || "#75867d";
+  function toolClass(tool) {
+    if (tool.startsWith("lcovmerge")) return "lcovmerge";
+    if (tool.startsWith("lcov-result-merger")) return "lcov-result-merger";
+    if (tool.startsWith("lcov ")) return "lcov";
+    return "other";
   }
 
   function drawChart(target, data) {
@@ -193,13 +234,22 @@
     const rowHeight = 37;
     const height = top + dataset.results.length * rowHeight + 12;
     const barWidth = width - left - right;
-    const svg = svgNode("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `${dataset.name}: ${isTime ? "elapsed time" : "peak resident memory"} by tool` });
+    const titleId = `${dataset.id}-${metric}-chart-title`;
+    const descId = `${dataset.id}-${metric}-chart-desc`;
+    const metricLabel = isTime ? "elapsed time" : "peak resident memory";
+    const descriptions = dataset.results.map((result) => {
+      const value = isTime ? result.seconds_display : result.rss_display;
+      return `${result.tool}: ${value || result.status || "Not reported"}.`;
+    }).join(" ");
+    const svg = svgNode("svg", { class: "benchmark-chart", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": `${titleId} ${descId}` });
+    svg.appendChild(svgNode("title", { id: titleId }, `${dataset.name} ${metricLabel} by tool`));
+    svg.appendChild(svgNode("desc", { id: descId }, `${dataset.name} is ${dataset.description} ${descriptions}`));
     const gridCount = 4;
     for (let index = 0; index <= gridCount; index += 1) {
       const x = left + (barWidth * index / gridCount);
       svg.appendChild(svgNode("line", { x1: x, y1: top, x2: x, y2: height - 9, class: "chart-gridline" }));
       const axisValue = max * index / gridCount;
-      const axisLabel = isTime ? `${axisValue.toFixed(axisValue < 10 ? 1 : 0)}s` : `${axisValue.toFixed(axisValue < 10 ? 1 : 0)}`;
+      const axisLabel = isTime ? `${axisValue.toFixed(axisValue < 10 ? 1 : 0)} s` : `${axisValue.toFixed(axisValue < 10 ? 1 : 0)} MiB`;
       svg.appendChild(svgNode("text", { x, y: height - 1, "text-anchor": "middle", class: "chart-muted" }, axisLabel));
     }
     dataset.results.forEach((result, index) => {
@@ -209,9 +259,14 @@
       const value = isTime ? result.seconds : result.peak_rss_mib;
       const display = isTime ? result.seconds_display : result.rss_display;
       if (typeof value === "number") {
-        const widthValue = Math.max(2, value / max * barWidth);
-        svg.appendChild(svgNode("rect", { x: left, y, width: widthValue, height: 21, rx: 4, fill: toolColor(result.tool) }));
-        svg.appendChild(svgNode("text", { x: Math.min(left + widthValue + 8, width - 5), y: y + 15, "text-anchor": left + widthValue + 70 > width ? "end" : "start" }, display));
+        const widthValue = value / max * barWidth;
+        const colorClass = toolClass(result.tool);
+        svg.appendChild(svgNode("rect", { x: left, y, width: widthValue, height: 21, rx: 4, class: `bar ${colorClass}` }));
+        svg.appendChild(svgNode("circle", { cx: left + widthValue, cy: y + 10.5, r: 3, class: `bar-marker ${colorClass}` }));
+        const labelWidth = display.length * 6.4;
+        const nearRight = left + widthValue + labelWidth + 8 > width;
+        const labelX = nearRight ? width - 5 : left + widthValue + 8;
+        svg.appendChild(svgNode("text", { x: labelX, y: y + 15, "text-anchor": nearRight ? "end" : "start" }, display));
       } else {
         svg.appendChild(svgNode("text", { x: left + 8, y: y + 14, class: "chart-muted" }, display || result.status || "Not reported"));
       }

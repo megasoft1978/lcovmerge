@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f9f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#09130f" media="(prefers-color-scheme: dark)">
-  <meta name="description" content="Merge sharded LCOV tracefiles with bounded record memory, deterministic output, and a fast C11 CLI built for CI.">
+  <meta name="description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
   <meta name="robots" content="index,follow">
   <title>lcovmerge — merge LCOV shards with bounded memory</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/">
@@ -16,16 +16,17 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
   <meta property="og:title" content="lcovmerge — merge LCOV shards with bounded memory">
-  <meta property="og:description" content="A deterministic C11 LCOV merger for large coverage pipelines. Keep the existing report and upload steps.">
+  <meta property="og:description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta property="og:image:alt" content="lcovmerge: merge every LCOV shard and keep memory in check">
+  <meta property="og:image:alt" content="lcovmerge: merge generated LCOV shards with measured time and peak memory results">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="lcovmerge — merge LCOV shards with bounded memory">
-  <meta name="twitter:description" content="A deterministic C11 LCOV merger for large coverage pipelines. Keep the existing report and upload steps.">
+  <meta name="twitter:description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
   <meta name="twitter:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
+  <meta name="twitter:image:alt" content="lcovmerge merges 32 generated LCOV shards with elapsed time and memory measurements">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -34,6 +35,7 @@
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS, Windows",
     "softwareVersion": "1.0.0",
+    "description": "C11 command-line tool for deterministic, memory-bounded merging of existing LCOV tracefiles.",
     "license": "https://opensource.org/license/mit",
     "url": "https://megasoft1978.github.io/lcovmerge/",
     "codeRepository": "https://github.com/megasoft1978/lcovmerge",
@@ -59,31 +61,37 @@
   <main id="main">
     <div class="shell hero">
       <div>
-        <p class="eyebrow">LCOV tracefile merger · C11 · MIT</p>
-        <h1>Merge every shard. <span>Keep memory in check.</span></h1>
-        <p class="hero-copy">The final coverage job for monorepos and sharded CI. Combine existing <code>.info</code> files, then keep using your report and upload tools.</p>
+        <!-- HERO-PROOF:START -->
+<p class="eyebrow">Dataset M · generated LCOV · 32 shards</p>
+        <h1>32 shards.<span>3.488279 s</span></h1>
+        <p class="hero-copy">lcovmerge processed 1,118,686,233 input bytes. On the same generated input, lcov 2.6 took 50.542 s.</p>
         <div class="actions">
           <a class="button" href="#install">Install lcovmerge</a>
           <a class="button secondary" href="docs.html#github-actions">Use it in CI</a>
         </div>
-        <p class="hero-note">Works after LCOV collection. It does not replace your collector or report generator.</p>
+        <p class="hero-note">M is a synthetic workload on one macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox) host. The measurements and caveats are listed below.</p>
+<!-- HERO-PROOF:END -->
       </div>
       <aside class="hero-card" aria-labelledby="hero-results-title">
-        <p class="eyebrow">Measured on generated LCOV</p>
-        <h2 id="hero-results-title">A large sharded input, measured.</h2>
-        <p id="hero-benchmark-context">Read the full benchmark data and methodology.</p>
+        <!-- HERO-CARD:START -->
+<p class="eyebrow">Measured on generated LCOV</p>
+        <h2 id="hero-results-title">Same 1,118,686,233-byte input</h2>
+        <p id="hero-benchmark-context">macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09</p>
         <div class="metric-grid">
           <div class="metric">
-            <strong data-benchmark-value="datasets.0.results.0.throughput_display">See benchmark data</strong>
-            <span>lcovmerge throughput · <span id="sharded-input-label">sharded input</span></span>
+            <strong data-benchmark-value="datasets.0.results.0.seconds_display">3.488279 s</strong>
+            <span>lcovmerge · median of 5 runs</span>
+            <span class="metric-detail">5,373,952 B peak RSS</span>
           </div>
           <div class="metric">
-            <strong data-benchmark-value="datasets.0.results.0.rss_display">See benchmark data</strong>
-            <span>lcovmerge peak RSS · same input</span>
+            <strong data-benchmark-value="datasets.0.results.1.seconds_display">50.542 s</strong>
+            <span>lcov 2.6 · one run</span>
+            <span class="metric-detail">639,844,352 B peak RSS</span>
           </div>
         </div>
-        <p class="bench-note">Generated input; one host; cache state uncontrolled. The full table includes errors and timeouts.</p>
-        <a class="text-link" href="benchmarks.html">See all results and caveats ↗</a>
+        <p class="bench-note">lcov 2.6 ran once; its RSS is from a prior canonical measurement. no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.</p>
+        <a class="text-link" href="benchmarks.html">See the full results and caveats ↗</a>
+<!-- HERO-CARD:END -->
       </aside>
     </div>
 
@@ -181,16 +189,16 @@ tar -xzf "$asset"
             </section>
             <section class="install-panel" id="panel-homebrew" role="tabpanel" aria-labelledby="tab-homebrew" tabindex="0" hidden>
               <h3>Homebrew</h3>
-              <p>The release workflow can open a formula update pull request when its tap token is configured. Check that the matching formula is published in the <a href="https://github.com/megasoft1978/homebrew-tap">tap ↗</a> before installing.</p>
-              <pre><code>brew install megasoft1978/homebrew-tap/lcovmerge</code></pre>
-              <p class="small-note">If the formula is not present yet, use the verified macOS archive.</p>
+              <p>Install from the Homebrew tap. The formula pins the release archive’s SHA-256 checksum.</p>
+              <pre><code>brew install megasoft1978/tap/lcovmerge</code></pre>
+              <p class="small-note">Tested on macOS arm64. For a manual install, verify the release archive with <code>SHA256SUMS</code>.</p>
             </section>
             <section class="install-panel" id="panel-scoop" role="tabpanel" aria-labelledby="tab-scoop" tabindex="0" hidden>
               <h3>Scoop</h3>
-              <p>The release workflow can open a Scoop manifest update pull request when its tap token is configured. Check the <a href="https://github.com/megasoft1978/homebrew-tap">tap ↗</a> for the matching release.</p>
+              <p>Add the bucket and install the Windows x86_64 manifest. Its manifest pins the release archive’s SHA-256 checksum.</p>
               <pre><code>scoop bucket add lcovmerge https://github.com/megasoft1978/homebrew-tap
 scoop install lcovmerge</code></pre>
-              <p class="small-note">If the manifest is not present yet, use the verified Windows archive.</p>
+              <p class="small-note">Not yet tested on Windows. For a manual install, verify the release archive with <code>SHA256SUMS</code>.</p>
             </section>
             <section class="install-panel" id="panel-docker" role="tabpanel" aria-labelledby="tab-docker" tabindex="0" hidden>
               <h3>Docker · GitHub Container Registry</h3>
@@ -230,20 +238,33 @@ cd lcovmerge</code></pre>
           <h2 id="command-title">Change the merge command. Keep the report step.</h2>
           <p>For a file-only merge stage, replace the merger command and leave your <code>.info</code> consumer in place.</p>
         </div>
-        <div class="grid-2">
+        <div class="grid-2 demo-grid">
           <article class="card command-card">
             <h3>Before · lcov</h3>
-            <pre class="code-block"><code>lcov -a shard-a.info \
+            <div class="terminal">
+              <div class="terminal-bar" aria-hidden="true"><i></i><i></i><i></i><span>coverage job · before</span></div>
+              <pre><code>lcov -a shard-a.info \
   -a shard-b.info \
   -o coverage/merged.info</code></pre>
+            </div>
           </article>
           <article class="card command-card">
             <h3>After · lcovmerge</h3>
-            <pre class="code-block"><code>lcovmerge coverage/shard-*.info \
+            <div class="terminal">
+              <div class="terminal-bar" aria-hidden="true"><i></i><i></i><i></i><span>coverage job · after</span></div>
+              <pre><code>lcovmerge coverage/shard-*.info \
   -o coverage/merged.info</code></pre>
+            </div>
           </article>
         </div>
-        <p class="small-note">Then run <code>genhtml</code> or your uploader as before. This does not promise byte-for-byte or semantic equivalence with every <code>lcov -a</code> workflow; read the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/FAQ.md#is-the-output-identical-to-lcov--a">compatibility answer</a> first.</p>
+        <p class="small-note">For the same file inputs and output path, this maps the command shape only. Then run <code>genhtml</code> or your uploader as before; output order, summaries, checksums, testcase handling, and MC/DC behavior are not interchangeable. Read <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">the documented differences</a>.</p>
+        <div class="table-wrap migration-wrap">
+          <table class="migration-table">
+            <caption>One verified command-shape mapping from lcov 2.6 and <code>lcovmerge --help</code>.</caption>
+            <thead><tr><th scope="col">lcov</th><th scope="col">lcovmerge</th><th scope="col">Mapping</th></tr></thead>
+            <tbody><tr><td><code>lcov -a shard-a.info -a shard-b.info -o merged.info</code></td><td><code>lcovmerge shard-a.info shard-b.info -o merged.info</code></td><td>Add the same input tracefiles and write the merged file to the same path.</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -281,25 +302,64 @@ cd lcovmerge</code></pre>
 
     <section class="section" aria-labelledby="bench-overview-title">
       <div class="shell">
-        <noscript><p class="bench-note">Enable JavaScript to load the benchmark figures from the measurement data file.</p></noscript>
         <div class="section-heading">
           <p class="eyebrow">The measured result</p>
           <h2 id="bench-overview-title">Compare a generated sharded workload.</h2>
-          <p>Values, input size, host, and run counts load from the current benchmark data file. The page keeps failed and timed-out runs visible.</p>
+          <p>Dataset M compares three tools on the same generated 32-shard input. Values are rendered from the canonical benchmark data; the full table keeps failed and timed-out runs visible.</p>
         </div>
-        <p data-chart-status>SVG charts and measurements load from <code>data/benchmarks.json</code>.</p>
+        <p data-chart-status role="status">Charts generated from <code>data/benchmarks.json</code>; JavaScript may refresh the figures.</p>
         <div class="dataset-charts">
-          <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="medium"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
-          <div class="chart-card"><h3>Peak resident memory</h3><p>Lower is less memory · MiB</p><div data-chart="rss" data-dataset="medium"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
+          <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="medium"><!-- CHART-M:TIME:START -->
+<svg class="benchmark-chart" viewBox="0 0 760 154" role="img" aria-labelledby="chart-m-time-title chart-m-time-desc"><title id="chart-m-time-title">M dataset elapsed time</title><desc id="chart-m-time-desc">M is a generated input with 32 shards. lcovmerge 1.0.0: 3.488279 s. lcov 2.6: 50.542 s. lcov-result-merger 6.0.0: 145.171 s.</desc><line class="chart-gridline" x1="188.00" y1="18" x2="188.00" y2="137" /><text class="chart-muted" x="188.00" y="153" text-anchor="middle">0.0 s</text><line class="chart-gridline" x1="287.00" y1="18" x2="287.00" y2="137" /><text class="chart-muted" x="287.00" y="153" text-anchor="middle">36 s</text><line class="chart-gridline" x1="386.00" y1="18" x2="386.00" y2="137" /><text class="chart-muted" x="386.00" y="153" text-anchor="middle">73 s</text><line class="chart-gridline" x1="485.00" y1="18" x2="485.00" y2="137" /><text class="chart-muted" x="485.00" y="153" text-anchor="middle">109 s</text><line class="chart-gridline" x1="584.00" y1="18" x2="584.00" y2="137" /><text class="chart-muted" x="584.00" y="153" text-anchor="middle">145 s</text><text x="178" y="38" text-anchor="end">lcovmerge 1.0.0</text><rect class="bar lcovmerge" x="188" y="25" width="9.515" height="21" rx="3" /><circle class="bar-marker lcovmerge" cx="197.515" cy="35.5" r="3" /><text x="754" y="40" text-anchor="end">3.488279 s</text><text x="178" y="76" text-anchor="end">lcov 2.6</text><rect class="bar lcov" x="188" y="63" width="137.869" height="21" rx="3" /><circle class="bar-marker lcov" cx="325.869" cy="73.5" r="3" /><text x="754" y="78" text-anchor="end">50.542 s</text><text x="178" y="114" text-anchor="end">lcov-result-merger 6.0.0</text><rect class="bar lcov-result-merger" x="188" y="101" width="396.000" height="21" rx="3" /><circle class="bar-marker lcov-result-merger" cx="584.000" cy="111.5" r="3" /><text x="754" y="116" text-anchor="end">145.171 s</text></svg>
+<!-- CHART-M:TIME:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:TIME-ALT:START -->
+M elapsed time: lcovmerge 1.0.0 3.488279 s; lcov 2.6 50.542 s; lcov-result-merger 6.0.0 145.171 s.
+<!-- CHART-M:TIME-ALT:END --></p></div>
+          <div class="chart-card"><h3>Peak resident memory</h3><p>Lower is less memory · axis in MiB, exact values in bytes</p><div data-chart="rss" data-dataset="medium"><!-- CHART-M:RSS:START -->
+<svg class="benchmark-chart" viewBox="0 0 760 154" role="img" aria-labelledby="chart-m-rss-title chart-m-rss-desc"><title id="chart-m-rss-title">M dataset peak resident memory</title><desc id="chart-m-rss-desc">M is a generated input with 32 shards. lcovmerge 1.0.0: 5,373,952 B. lcov 2.6: 639,844,352 B. lcov-result-merger 6.0.0: 2,497,675,264 B.</desc><line class="chart-gridline" x1="188.00" y1="18" x2="188.00" y2="137" /><text class="chart-muted" x="188.00" y="153" text-anchor="middle">0</text><line class="chart-gridline" x1="287.00" y1="18" x2="287.00" y2="137" /><text class="chart-muted" x="287.00" y="153" text-anchor="middle">595</text><line class="chart-gridline" x1="386.00" y1="18" x2="386.00" y2="137" /><text class="chart-muted" x="386.00" y="153" text-anchor="middle">1,191</text><line class="chart-gridline" x1="485.00" y1="18" x2="485.00" y2="137" /><text class="chart-muted" x="485.00" y="153" text-anchor="middle">1,786</text><line class="chart-gridline" x1="584.00" y1="18" x2="584.00" y2="137" /><text class="chart-muted" x="584.00" y="153" text-anchor="middle">2,382</text><text x="178" y="38" text-anchor="end">lcovmerge 1.0.0</text><rect class="bar lcovmerge" x="188" y="25" width="0.852" height="21" rx="3" /><circle class="bar-marker lcovmerge" cx="188.852" cy="35.5" r="3" /><text x="754" y="40" text-anchor="end">5,373,952 B</text><text x="178" y="76" text-anchor="end">lcov 2.6</text><rect class="bar lcov" x="188" y="63" width="101.446" height="21" rx="3" /><circle class="bar-marker lcov" cx="289.446" cy="73.5" r="3" /><text x="754" y="78" text-anchor="end">639,844,352 B</text><text x="178" y="114" text-anchor="end">lcov-result-merger 6.0.0</text><rect class="bar lcov-result-merger" x="188" y="101" width="396.000" height="21" rx="3" /><circle class="bar-marker lcov-result-merger" cx="584.000" cy="111.5" r="3" /><text x="754" y="116" text-anchor="end">2,497,675,264 B</text></svg>
+<!-- CHART-M:RSS:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:RSS-ALT:START -->
+M peak RSS: lcovmerge 1.0.0 5,373,952 B; lcov 2.6 639,844,352 B; lcov-result-merger 6.0.0 2,497,675,264 B.
+<!-- CHART-M:RSS-ALT:END --></p></div>
         </div>
         <div class="table-wrap">
           <table class="benchmark-table">
-            <caption id="medium-caption">Generated sharded-input results; RSS is peak resident memory.</caption>
+            <caption id="medium-caption"><!-- MEDIUM-CAPTION:START -->
+M: 1,118,686,233 generated input bytes across 32 shards; RSS is peak resident memory.
+<!-- MEDIUM-CAPTION:END --></caption>
             <thead><tr><th scope="col">Tool</th><th scope="col">Elapsed time</th><th scope="col">Peak RSS</th><th scope="col">Throughput</th><th scope="col">Status</th></tr></thead>
-            <tbody id="medium-results-body" data-results-dataset="medium"></tbody>
+            <tbody id="medium-results-body" data-results-dataset="medium"><!-- MEDIUM-RESULTS:START -->
+<tr><th scope="row" class="tool-primary">lcovmerge 1.0.0</th><td class="table-numeric">3.488279 s</td><td class="table-numeric">5,373,952 B</td><td class="table-numeric">320.7 MB/s</td><td>OK</td></tr>
+<tr><th scope="row">lcov 2.6</th><td class="table-numeric">50.542 s</td><td class="table-numeric">639,844,352 B</td><td class="table-numeric">22.1 MB/s</td><td>OK</td></tr>
+<tr><th scope="row">lcov-result-merger 6.0.0</th><td class="table-numeric">145.171 s</td><td class="table-numeric">2,497,675,264 B</td><td class="table-numeric">7.7 MB/s</td><td>OK</td></tr>
+<!-- MEDIUM-RESULTS:END --></tbody>
           </table>
         </div>
-        <p class="bench-note" id="medium-note">Measured values load from the benchmark data file. <a href="benchmarks.html">Read methodology, full tables and caveats.</a></p>
+        <p class="bench-note" id="medium-note">Dataset M values are generated at build time; see the full report for all datasets and caveats. <a href="benchmarks.html">Read methodology and full results.</a></p>
+      </div>
+    </section>
+
+    <section class="section alt" aria-labelledby="real-projects-title">
+      <div class="shell">
+        <!-- REAL-PROJECTS:START -->
+<div class="section-heading">
+          <p class="eyebrow">Project-derived captures · small inputs</p>
+          <h2 id="real-projects-title">Tested on real projects.</h2>
+          <p>6 small project-derived captures, with 2 independently captured shards per project, were compared with LCOV 2.6. Each input was 0.050–0.578 MB; the composite was 1.500 MB across 12 shards. These are useful compatibility checks, not large production workloads.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="benchmark-table real-project-table">
+            <caption>Aggregated measurements on macOS 27.0 arm64; elapsed time / peak RSS.</caption>
+            <thead><tr><th scope="col">Project</th><th scope="col">Input</th><th scope="col">lcovmerge</th><th scope="col">LCOV 2.6</th><th scope="col">Semantic comparison / genhtml</th></tr></thead>
+            <tbody><tr><th scope="row">zlib</th><td class="table-numeric">0.180 MB · 2 shards</td><td class="table-numeric">0.008 s / 4.08 MiB</td><td class="table-numeric">0.136 s / 42.70 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">lua</th><td class="table-numeric">0.578 MB · 2 shards</td><td class="table-numeric">0.010 s / 6.77 MiB</td><td class="table-numeric">0.206 s / 47.11 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">cjson</th><td class="table-numeric">0.202 MB · 2 shards</td><td class="table-numeric">0.007 s / 4.41 MiB</td><td class="table-numeric">0.178 s / 43.05 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">json-c</th><td class="table-numeric">0.209 MB · 2 shards</td><td class="table-numeric">0.007 s / 4.41 MiB</td><td class="table-numeric">0.169 s / 43.05 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">libyaml</th><td class="table-numeric">0.050 MB · 2 shards</td><td class="table-numeric">0.030 s / 3.11 MiB</td><td class="table-numeric">0.139 s / 40.91 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">tinyxml2</th><td class="table-numeric">0.281 MB · 2 shards</td><td class="table-numeric">0.006 s / 4.47 MiB</td><td class="table-numeric">0.157 s / 43.91 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">REAL composite</th><td class="table-numeric">1.500 MB · 12 shards</td><td class="table-numeric">0.021 s / 10.08 MiB</td><td class="table-numeric">0.398 s / 56.42 MiB</td><td>PASS / PASS</td></tr></tbody>
+          </table>
+        </div>
+        <p class="small-note">All individual project checks passed normalized record comparisons and genhtml. The separate 34-input external-sort, reverse-order and job-determinism checks passed. Lua used portable test mode; capture warnings and method details are documented in <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">the real-project validation record ↗</a>. Measurements cover one macOS 27.0 arm64 host.</p>
+<!-- REAL-PROJECTS:END -->
       </div>
     </section>
 

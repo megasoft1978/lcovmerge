@@ -1,11 +1,19 @@
 # lcovmerge
 
-**Merge every LCOV shard. Keep the CI runner's memory under control.**
+[![CI](https://github.com/megasoft1978/lcovmerge/actions/workflows/ci.yml/badge.svg)](https://github.com/megasoft1978/lcovmerge/actions/workflows/ci.yml)
+[![Release v1.0.0](docs/site/badges/release.svg)](https://github.com/megasoft1978/lcovmerge/releases/latest)
+[![MIT License](docs/site/badges/license.svg)](LICENSE)
 
-`lcovmerge` is a focused C11 command-line merger for teams that already produce LCOV tracefiles and need to
-combine them after tests finish. It fits monorepos and sharded CI, including Bazel, CMake, and Gradle C++
-builds when each job emits `.info` files. It handles the merge step; your collector and report or upload tools
-keep their jobs.
+<!-- HERO-PROOF:START -->
+> **Dataset M · generated, 32 shards · 1,118,686,233 input bytes**<br>
+> lcovmerge: **3.488279 s**, **5,373,952 B peak RSS** (median of 5 runs).<br>
+> lcov 2.6: **50.542 s**, **639,844,352 B peak RSS** (one run; prior canonical RSS measurement).<br>
+> One macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox) host; no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.
+<!-- HERO-PROOF:END -->
+
+`lcovmerge` combines existing LCOV `.info` shards at the end of a coverage pipeline. This focused C11 CLI
+produces deterministic output with a configurable record-memory budget; your collector, report generator, and
+uploader keep their jobs.
 
 [Get the release](https://github.com/megasoft1978/lcovmerge/releases/latest) ·
 [Read the usage guide](docs/USAGE.md) ·
@@ -131,9 +139,30 @@ per dataset. Per-command timeout: 30 minutes.
 | PATH-HEAVY (130,000,000) | 2.122 s / 20.23 MiB / 61.3 MB/s / OK | 98.805 s / RSS unavailable for current failed run / n/a / ERROR_1 | 1,800.002 s / 842 MiB sampled in final 308 s; full-run peak unavailable / n/a / TIMEOUT |
 <!-- BENCHMARKS:END -->
 
-These measurements are not a promise for every project or machine. The current set uses generated inputs; no
-project-derived REAL capture was measured. See the [full benchmark report](docs/BENCHMARKS.md) for tool
-versions, run counts, methodology, and caveats.
+These generated-input measurements are not a promise for every project or machine. The synthetic benchmark set
+has no project-derived REAL run; separate small real-project compatibility measurements follow. See the [full
+benchmark report](docs/BENCHMARKS.md) for tool versions, run counts, methodology, and caveats.
+
+## Tested on real projects (small inputs)
+
+<!-- REAL-PROJECTS:START -->
+6 small project-derived LCOV captures were checked on one macOS 27.0 arm64 host. Each project used 2 shards,
+with inputs from 0.050 MB to 0.578 MB; the composite was 1.500 MB across 12 shards. These are
+small compatibility checks, not large production workloads. Normalized record comparisons and genhtml
+passed for each project. The separate 34-input external-sort and order/job determinism checks passed.
+Lua used portable test mode. See [the validation record](docs/validation/real-projects.md) for toolchain,
+capture warnings, and method details.
+
+| Project | Input | lcovmerge time / peak RSS | LCOV 2.6 time / peak RSS | Comparison / genhtml |
+| --- | ---: | ---: | ---: | --- |
+| zlib | 0.180 MB · 2 shards | 0.008 s · 4.08 MiB | 0.136 s · 42.70 MiB | PASS / PASS |
+| lua | 0.578 MB · 2 shards | 0.010 s · 6.77 MiB | 0.206 s · 47.11 MiB | PASS / PASS |
+| cjson | 0.202 MB · 2 shards | 0.007 s · 4.41 MiB | 0.178 s · 43.05 MiB | PASS / PASS |
+| json-c | 0.209 MB · 2 shards | 0.007 s · 4.41 MiB | 0.169 s · 43.05 MiB | PASS / PASS |
+| libyaml | 0.050 MB · 2 shards | 0.030 s · 3.11 MiB | 0.139 s · 40.91 MiB | PASS / PASS |
+| tinyxml2 | 0.281 MB · 2 shards | 0.006 s · 4.47 MiB | 0.157 s · 43.91 MiB | PASS / PASS |
+| REAL composite | 1.500 MB · 12 shards | 0.021 s · 10.08 MiB | 0.398 s · 56.42 MiB | PASS / PASS |
+<!-- REAL-PROJECTS:END -->
 
 <!-- BAZEL-EVIDENCE:START -->
 Large tracefiles can make a merge job the most memory hungry part of a coverage pipeline. The Bazel
