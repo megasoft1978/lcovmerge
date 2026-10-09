@@ -358,8 +358,8 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     return 5
 
 
-def path_table_capacity_test(binary: Path, temporary: Path) -> int:
-    base = temporary / "path-table-capacity"
+def many_paths_test(binary: Path, temporary: Path) -> int:
+    base = temporary / "many-paths"
     base.mkdir()
     source = base / "many-paths.info"
     with source.open("w", encoding="utf-8", newline="\n") as stream:
@@ -373,11 +373,11 @@ def path_table_capacity_test(binary: Path, temporary: Path) -> int:
     trace = output.read_text(encoding="utf-8")
     paths = re.findall(r"(?m)^SF:(.*)$", trace)
     if len(paths) != 4105 or paths != sorted(paths) or len(set(paths)) != len(paths):
-        raise AssertionError("path table overflow produced missing, duplicate, or unsorted SF paths")
+        raise AssertionError("many-path input produced missing, duplicate, or unsorted SF paths")
     sections = trace.split("end_of_record\n")
     first = next((section for section in sections if section.startswith("SF:/table/00000.c\n")), "")
     if "DA:1,3\n" not in first:
-        raise AssertionError("path table overflow failed to merge a previously interned path")
+        raise AssertionError("many-path input failed to merge a repeated SF path")
     return 1
 
 
@@ -457,10 +457,10 @@ def main() -> int:
         differential = differential_tests(binary, temporary)
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
-        path_table_cases = path_table_capacity_test(binary, temporary)
+        many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
-          f"determinism_runs={deterministic} io_cases={io_cases} path_table_cases={path_table_cases} "
+          f"determinism_runs={deterministic} io_cases={io_cases} many_paths_cases={many_paths_cases} "
           f"lcov_cases={lcov_cases}")
     return 0
 
