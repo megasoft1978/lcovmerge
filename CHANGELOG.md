@@ -4,6 +4,13 @@ All notable changes to lcovmerge are documented here. This project follows [Keep
 Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Remove temporary sort runs when the process receives a terminal hangup (SIGHUP) on platforms
+  that support it.
+
 ## [1.0.0] - 2026-10-09
 
 ### Added

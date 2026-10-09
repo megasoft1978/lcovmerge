@@ -6,6 +6,7 @@
 /bench/data/
 /bench/generated/
 /node_modules/
+/.cache/
 /packaging/docker/amd64/
 /packaging/docker/arm64/
 __pycache__/

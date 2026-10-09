@@ -17,7 +17,7 @@ Rows are limited by the 1 MiB input-line cap. Inputs with many unique records us
 
 include/platform.h defines file handles, reads/writes, temp creation, rename/removal, CPU count, and worker-thread calls. src/platform_posix.c uses POSIX file descriptors and pthreads. src/platform_win32.c uses UTF-8-to-wide conversion and Win32 CreateFileW, ReadFile, WriteFile, MoveFileExW, DeleteFileW, and CreateThread; it does not use mmap. Windows arguments enter through wmain and are converted to UTF-8 before core parsing.
 
-Sorted runs must be reopened across merge passes, so run paths remain named until their pass finishes. POSIX mkstemp creates mode-0600 files. The implementation removes every run explicitly on success and handled failure; unlink-on-open is not used because later merge passes reopen those files by path.
+Sorted runs must be reopened across merge passes, so run paths remain named until their pass finishes. POSIX mkstemp creates mode-0600 files. The implementation removes every run explicitly on success, handled failure, and catchable interruption (SIGINT, SIGTERM, and SIGHUP); unlink-on-open is not used because later merge passes reopen those files by path. SIGKILL and machine failure cannot run cleanup.
 
 ## Determinism
 

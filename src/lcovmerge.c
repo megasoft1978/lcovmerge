@@ -2697,6 +2697,9 @@ static int run_merge(const Options *options) {
 int lcovmerge_main(int argc, char **argv) {
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
+#ifdef SIGHUP
+    signal(SIGHUP, on_signal);
+#endif
     Options options;
     int option_status = parse_options(argc, argv, &options);
     if (option_status == 0) { options_destroy(&options); return 0; }

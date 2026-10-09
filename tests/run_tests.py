@@ -7,9 +7,11 @@ import argparse
 import os
 import random
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -358,6 +360,70 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     return 5
 
 
+def signal_cleanup_tests(binary: Path) -> int:
+    if os.name == "nt":
+        return 0
+
+    signals = [(name, getattr(signal, name)) for name in ("SIGHUP", "SIGTERM", "SIGINT")
+               if hasattr(signal, name)]
+    cache_root = ROOT / ".cache" / "luna-1009-1853"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="signal-cleanup-", dir=cache_root) as work_dir:
+        work = Path(work_dir)
+        source = work / "out-of-order.info"
+        with source.open("w", encoding="utf-8", newline="\n") as stream:
+            stream.write("SF:/signal-cleanup.c\n")
+            for line_number in range(1_000_000, 0, -1):
+                stream.write(f"DA:{line_number},1\n")
+            stream.write("end_of_record\n")
+
+        for name, signal_number in signals:
+            run_dir = work / name.lower()
+            run_dir.mkdir()
+            output = work / f"{name.lower()}-out.info"
+            process = subprocess.Popen(
+                [str(binary), "--mem-limit", "8M", "--jobs", "1", "--tmpdir", str(run_dir),
+                 str(source), "-o", str(output)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            try:
+                deadline = time.monotonic() + 20
+                run_files = []
+                while time.monotonic() < deadline:
+                    run_files = list(run_dir.iterdir())
+                    if run_files:
+                        break
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        raise AssertionError(
+                            f"{name} cleanup test exited before creating an external-sort run: "
+                            f"status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                        )
+                    time.sleep(0.005)
+                if not run_files or process.poll() is not None:
+                    stdout, stderr = process.communicate(timeout=5)
+                    raise AssertionError(
+                        f"{name} cleanup test did not catch a live external-sort run: "
+                        f"status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                    )
+                process.send_signal(signal_number)
+                stdout, stderr = process.communicate(timeout=30)
+            except BaseException:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()
+                raise
+
+            remaining = list(run_dir.iterdir())
+            if process.returncode != 3 or b"interrupted" not in stderr or remaining:
+                raise AssertionError(
+                    f"{name} did not clean external-sort runs after interruption: "
+                    f"status={process.returncode}, runs_before_signal={run_files!r}, "
+                    f"remaining={remaining!r}, stdout={stdout!r}, stderr={stderr!r}"
+                )
+    return len(signals)
+
+
 def many_paths_test(binary: Path, temporary: Path) -> int:
     base = temporary / "many-paths"
     base.mkdir()
@@ -457,10 +523,12 @@ def main() -> int:
         differential = differential_tests(binary, temporary)
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
+        signal_cases = signal_cleanup_tests(binary)
         many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
-          f"determinism_runs={deterministic} io_cases={io_cases} many_paths_cases={many_paths_cases} "
+          f"determinism_runs={deterministic} io_cases={io_cases} signal_cleanup_cases={signal_cases} "
+          f"many_paths_cases={many_paths_cases} "
           f"lcov_cases={lcov_cases}")
     return 0
 
