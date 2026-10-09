@@ -5,7 +5,7 @@ AR ?= ar
 PYTHON ?= python3
 GIT_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
 CFLAGS ?= -O2
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror
 CFLAGS += -fstack-protector-strong -D_FORTIFY_SOURCE=2
 CPPFLAGS += -Iinclude -DLCOVMERGE_GIT_COMMIT=\"$(GIT_COMMIT)\"
 LDFLAGS ?=
@@ -39,15 +39,17 @@ test-docker:
 	sh scripts/test-docker.sh
 
 asan: | bin
-	$(CC) $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes \
+	$(CC) $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
 		-fsanitize=address,undefined -fno-omit-frame-pointer $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-asan
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		$(PYTHON) tests/run_tests.py --binary bin/lcovmerge-asan --no-lcov
 
 fuzz: | bin
-	clang $(CPPFLAGS) -O1 -g -std=c11 -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c -pthread -o bin/lcovmerge-fuzz
-	bin/lcovmerge-fuzz tests/fuzz-corpus -max_len=4096 -runs=$${FUZZ_RUNS:-2000000}
+	clang $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
+	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+		bin/lcovmerge-fuzz tests/fuzz-corpus $${FUZZ_RUNS:-2000000}
 
 bench: bin/lcovmerge
 	sh bench/run.sh

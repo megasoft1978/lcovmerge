@@ -1,0 +1,7 @@
+TN:fuzz
+SF:/fuzz.c
+FN:1,main
+FNDA:1,main
+DA:1,1,abc
+BRDA:1,0,0,-
+end_of_record

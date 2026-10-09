@@ -1,0 +1,5 @@
+SF:/mcdc.c
+MCDC:7,2,t,1,0,condition
+MCF:1
+MCH:1
+end_of_record
