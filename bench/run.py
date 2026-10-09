@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import platform
 import signal
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -24,11 +26,23 @@ WORKLOADS = {
 WORKLOAD_NAMES = ("S", "M", "L", "XL-single", "XL-pair", "PATH-HEAVY", "REAL")
 
 
-def timed(command: list[str], log: pathlib.Path, timeout: int) -> tuple[int, float, str]:
+def time_wrapper_available() -> bool:
+    if platform.system() != "Darwin":
+        return pathlib.Path("/usr/bin/time").is_file()
+    probe = subprocess.run(
+        ["/usr/bin/time", "-l", "true"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    return probe.returncode == 0 and b"maximum resident set size" in probe.stdout
+
+
+def timed(command: list[str], log: pathlib.Path, timeout: int, use_time_wrapper: bool) -> tuple[int, float, str]:
     start = time.perf_counter()
-    if platform.system() == "Darwin":
+    if platform.system() == "Darwin" and use_time_wrapper:
         wrapped = ["/usr/bin/time", "-l", *command]
-    elif pathlib.Path("/usr/bin/time").is_file():
+    elif platform.system() != "Darwin" and use_time_wrapper:
         wrapped = ["/usr/bin/time", "-v", *command]
     else:
         wrapped = command
@@ -57,6 +71,72 @@ def timed(command: list[str], log: pathlib.Path, timeout: int) -> tuple[int, flo
         payload += "\nTIMEOUT\n"
     log.write_text(payload, encoding="utf-8")
     return (124 if timed_out else process.returncode), elapsed, payload
+
+
+def hyperfine_timed(command: list[str], log: pathlib.Path, timeout: int,
+                    runs: int) -> tuple[int, float, str]:
+    hyperfine = shutil.which("hyperfine")
+    if not hyperfine:
+        raise RuntimeError("--hyperfine-runs requires hyperfine")
+    json_path = log.with_suffix(".json")
+    wrapped = [
+        hyperfine,
+        "--shell=none",
+        "--style=none",
+        "--warmup", "1",
+        "--runs", str(runs),
+        "--metrics", "time_wall_clock,memory_peak_resident",
+        "--ignore-failure=all-non-zero",
+        "--command-name", log.stem,
+        "--export-json", str(json_path),
+        shlex.join(command),
+    ]
+    start = time.perf_counter()
+    process = subprocess.Popen(
+        wrapped,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=platform.system() != "Windows",
+    )
+    timeout_seconds = timeout * (runs + 1)
+    try:
+        output, _ = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        output, _ = process.communicate()
+        elapsed = time.perf_counter() - start
+        payload = output.decode("utf-8", errors="replace") + "\nTIMEOUT\n"
+        log.write_text(payload, encoding="utf-8")
+        return 124, elapsed, payload
+    elapsed = time.perf_counter() - start
+    payload = output.decode("utf-8", errors="replace")
+    try:
+        report = json.loads(json_path.read_text(encoding="utf-8"))
+        result = report["results"][0]
+        measurements = result["measurements"]
+        summary = result["summary"]
+        wall_seconds = float(summary["time_wall_clock"]["median"])
+        resident_values = [
+            float(item["memory_peak_resident"]["value"])
+            for item in measurements if "memory_peak_resident" in item
+        ]
+        if resident_values:
+            payload += f"\nMaximum resident set size: {int(max(resident_values))} bytes\n"
+        statuses = [int(item.get("exit_code", 0)) for item in measurements]
+        status = next((code for code in statuses if code != 0), 0)
+        payload += f"\nhyperfine_runs={len(measurements)} elapsed_s={wall_seconds:.6f}\n"
+    except (OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        status = process.returncode or 1
+        wall_seconds = elapsed
+        payload += "\nhyperfine result could not be parsed\n"
+    log.write_text(payload, encoding="utf-8")
+    return status, wall_seconds, payload
 
 
 def generate(name: str, out: pathlib.Path, real_dir: pathlib.Path | None) -> list[pathlib.Path]:
@@ -106,12 +186,18 @@ def size_of(inputs: list[pathlib.Path]) -> int:
 
 def rss_line(payload: str) -> str:
     marker = "maximum resident set size" if platform.system() == "Darwin" else "Maximum resident set size"
-    return next((line.strip() for line in payload.splitlines() if marker in line), "RSS unavailable")
+    return next((line.strip() for line in payload.splitlines() if marker.lower() in line.lower()),
+                "RSS unavailable")
 
 
 def measurement(name: str, inputs: list[pathlib.Path], command: list[str], output: pathlib.Path,
-                work: pathlib.Path, timeout: int, tool_label: str) -> str:
-    status, elapsed, payload = timed(command, work / f"{name}-{tool_label}-time.txt", timeout)
+                work: pathlib.Path, timeout: int, tool_label: str, use_time_wrapper: bool,
+                hyperfine_runs: int | None) -> str:
+    log = work / f"{name}-{tool_label}-time.txt"
+    if hyperfine_runs:
+        status, elapsed, payload = hyperfine_timed(command, log, timeout, hyperfine_runs)
+    else:
+        status, elapsed, payload = timed(command, log, timeout, use_time_wrapper)
     input_bytes = size_of(inputs)
     result_status = "OK" if status == 0 else ("TIMEOUT" if status == 124 else f"ERROR_{status}")
     throughput = f"{input_bytes / elapsed / 1_000_000:.1f} MB/s" if status == 0 and elapsed else "n/a"
@@ -128,17 +214,26 @@ def main() -> int:
     parser.add_argument("--workload", choices=("all", *WORKLOAD_NAMES), default="all")
     parser.add_argument("--real-dir", type=pathlib.Path)
     parser.add_argument("--node-bin", type=pathlib.Path)
+    parser.add_argument("--binary", type=pathlib.Path, default=ROOT / "bin/lcovmerge")
+    parser.add_argument("--skip-lcov", action="store_true",
+                        help="omit LCOV when its comparison was measured in another run")
+    parser.add_argument("--hyperfine-runs", type=int,
+                        help="use one hyperfine warmup and this many measured runs per command")
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--report", type=pathlib.Path, default=ROOT / "docs/validation/benchmark.txt")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.hyperfine_runs is not None and args.hyperfine_runs <= 0:
+        parser.error("--hyperfine-runs must be positive")
     if args.workload == "all" and args.real_dir is None:
         parser.error("--real-dir is required when --workload all or REAL")
     if args.workload == "REAL" and args.real_dir is None:
         parser.error("--real-dir is required for REAL")
 
-    binary = ROOT / "bin/lcovmerge"
+    use_time_wrapper = time_wrapper_available() if not args.hyperfine_runs else False
+
+    binary = args.binary.resolve()
     if not binary.is_file():
         parser.error("build lcovmerge first with make")
     node_candidate = args.node_bin or (pathlib.Path(shutil.which("lcov-result-merger"))
@@ -150,7 +245,13 @@ def main() -> int:
         f"host={platform.platform()}",
         f"timeout_seconds={args.timeout}",
         "fixture_generator=tools/gen-lcov.py --benchmark-compatible",
-        "temporary_data=outside repository; generated inputs removed automatically",
+        "temporary_data=under TMPDIR; generated inputs removed automatically",
+        (f"measurement_source=hyperfine {args.hyperfine_runs} runs after one warmup; wall time is median; RSS is max sample" if args.hyperfine_runs else
+         "measurement_source=single run"),
+        ("rss_source=hyperfine memory_peak_resident" if args.hyperfine_runs else
+         "/usr/bin/time -l" if platform.system() == "Darwin" and use_time_wrapper else
+         "rss_source=unavailable; host policy blocks /usr/bin/time -l sysctl query" if platform.system() == "Darwin" else
+         "/usr/bin/time -v" if use_time_wrapper else "rss_source=unavailable"),
         "measurement_date=" + time.strftime("%Y-%m-%d", time.gmtime()),
     ]
     exit_code = 0
@@ -165,7 +266,8 @@ def main() -> int:
             report.append(f"{name}: shards={len(inputs)} input_bytes={total_bytes}")
             output = work / f"{name}.lcovmerge.info"
             command = [str(binary), "-o", str(output), *map(str, inputs)]
-            row = measurement(name, inputs, command, output, work, args.timeout, "lcovmerge-default")
+            row = measurement(name, inputs, command, output, work, args.timeout, "lcovmerge-default",
+                              use_time_wrapper, args.hyperfine_runs)
             report.append(row)
             if "status=OK" not in row:
                 exit_code = 1
@@ -175,15 +277,18 @@ def main() -> int:
                     job_output = work / f"M-j{jobs}.info"
                     job_command = [str(binary), "--jobs", str(jobs), "-o", str(job_output), *map(str, inputs)]
                     report.append(measurement(name, inputs, job_command, job_output, work, args.timeout,
-                                              f"lcovmerge-j{jobs}"))
+                                              f"lcovmerge-j{jobs}", use_time_wrapper, args.hyperfine_runs))
 
-            if lcov:
+            if args.skip_lcov:
+                report.append(f"{name} (lcov-2.6): skipped by request")
+            elif lcov:
                 lcov_output = work / f"{name}.lcov.info"
                 lcov_command = [lcov, "--branch-coverage"]
                 for item in inputs:
                     lcov_command.extend(("-a", str(item)))
                 lcov_command.extend(("-o", str(lcov_output)))
-                report.append(measurement(name, inputs, lcov_command, lcov_output, work, args.timeout, "lcov-2.6"))
+                report.append(measurement(name, inputs, lcov_command, lcov_output, work, args.timeout,
+                                          "lcov-2.6", use_time_wrapper, args.hyperfine_runs))
             else:
                 report.append(f"{name} (lcov-2.6): unavailable")
 
@@ -191,7 +296,8 @@ def main() -> int:
                 node_output = work / f"{name}.node.info"
                 pattern = str(inputs[0] if name == "PATH-HEAVY" else inputs[0].parent / "*.info")
                 report.append(measurement(name, inputs, [node, pattern, str(node_output)], node_output,
-                                          work, args.timeout, "lcov-result-merger"))
+                                          work, args.timeout, "lcov-result-merger", use_time_wrapper,
+                                          args.hyperfine_runs))
             else:
                 report.append(f"{name} (lcov-result-merger): unavailable")
     args.report.parent.mkdir(parents=True, exist_ok=True)

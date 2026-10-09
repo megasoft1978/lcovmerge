@@ -1,9 +1,14 @@
-host=macOS-27.0-arm64-arm-64bit
-timeout_seconds=1800
-fixture_generator=tools/gen-lcov.py --benchmark-compatible
-temporary_data=outside repository; generated inputs removed automatically
-measurement_date=2026-10-09
-S: shards=8 input_bytes=99996906
-S (lcovmerge-default): input_bytes=99996906 wall_seconds=0.237 throughput=422.0 MB/s status=OK 3080192  maximum resident set size
-S (lcov-2.6): input_bytes=99996906 wall_seconds=4.365 throughput=22.9 MB/s status=OK 240943104  maximum resident set size
-S (lcov-result-merger): input_bytes=99996906 wall_seconds=17.521 throughput=5.7 MB/s status=OK 458964992  maximum resident set size
+host=macOS 27.0 arm64; logical_cpus=18; memory_bytes=68719476736
+host_cpu_model=unavailable through sandbox
+fixture_generator=synthetic deterministic benchmark input
+workload=S input_bytes=99996906 shards=8 shards
+temporary_data=TMPDIR=./.luna-tmp; generated inputs removed after measurements
+baseline/final=paired on the same generated fixture with hyperfine 2.0.0
+wall_time=median; peak_rss=maximum across measured runs
+baseline_runs=10 final_runs=10
+baseline_median_s=0.264305 throughput_mb_s=378.3 peak_rss_bytes=3096576
+final_median_s=0.259979 throughput_mb_s=384.6 peak_rss_bytes=3096576
+speedup_vs_baseline=1.017x
+lcov_2_6_single_run_s=5.317 speedup_vs_lcov=20.45x status=OK
+lcov_prior_rss_bytes=240943104
+rss_source=hyperfine memory_peak_resident for lcovmerge; LCOV RSS is prior canonical data when present

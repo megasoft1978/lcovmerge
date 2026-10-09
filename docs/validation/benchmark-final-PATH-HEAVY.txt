@@ -1,9 +1,14 @@
-host=macOS-27.0-arm64-arm-64bit
-timeout_seconds=1800
-fixture_generator=tools/gen-lcov.py --benchmark-compatible
-temporary_data=outside repository; generated inputs removed automatically
-measurement_date=2026-10-09
-PATH-HEAVY: shards=1 input_bytes=130000000
-PATH-HEAVY (lcovmerge-default): input_bytes=130000000 wall_seconds=1.912 throughput=68.0 MB/s status=OK 20643840  maximum resident set size
-PATH-HEAVY (lcov-2.6): input_bytes=130000000 wall_seconds=89.383 throughput=n/a status=ERROR_1 7037173760  maximum resident set size
-PATH-HEAVY (lcov-result-merger): input_bytes=130000000 wall_seconds=1800.002 throughput=n/a status=TIMEOUT RSS unavailable
+host=macOS 27.0 arm64; logical_cpus=18; memory_bytes=68719476736
+host_cpu_model=unavailable through sandbox
+fixture_generator=synthetic deterministic benchmark input
+workload=PATH-HEAVY input_bytes=130000000 shards=1 file
+temporary_data=TMPDIR=./.luna-tmp; generated inputs removed after measurements
+baseline/final=paired on the same generated fixture with hyperfine 2.0.0
+wall_time=median; peak_rss=maximum across measured runs
+baseline_runs=5 final_runs=5
+baseline_median_s=2.232275 throughput_mb_s=58.2 peak_rss_bytes=21331968
+final_median_s=2.121826 throughput_mb_s=61.3 peak_rss_bytes=21217280
+speedup_vs_baseline=1.052x
+lcov_2_6_single_run_s=98.805 speedup_vs_lcov=n/a status=ERROR_1 exit_code=1
+lcov_current_peak_rss=unavailable; host blocked /usr/bin/time -l sysctl query
+rss_source=hyperfine memory_peak_resident for lcovmerge; LCOV RSS is prior canonical data when present

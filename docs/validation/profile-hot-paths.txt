@@ -13,3 +13,10 @@ Representative stack samples:
 Top-of-stack summary included _platform_memmove (17), memcpy (13), _platform_strcmp (11), writer_bytes (19 across two addresses), strcmp (8), direct_input_next (7), writer_u64 (6), and _platform_strlen (5).
 
 Interpretation: the sorted-input direct stream path was active. Sampling supports that parsing, selecting/merging records, string comparisons/copies, and output writing account for visible CPU work. A short sample is diagnostic evidence, not an instruction-level profile or a performance distribution.
+
+## 2026-10-09 follow-up attempt
+
+Attempted to capture a fresh profile of the follow-up binary on generated M input with `/usr/bin/sample`. The host
+denied process inspection (`sample cannot examine process ... for unknown reasons; try running with sudo`). No new
+profile was captured; the earlier summary above remains historical and was not treated as a profile of the
+follow-up build.
