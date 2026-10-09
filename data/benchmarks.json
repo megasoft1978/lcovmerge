@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "measured_on": "2026-10-09",
-  "source": "bench/run.py and tools/gen-lcov.py --benchmark-compatible",
+  "source": "bench/run.py, hyperfine 2.0.0, and tools/gen-lcov.py --benchmark-compatible; tools/gen-path-heavy.py",
   "external_evidence": {
     "bazel_issue_26383": {
       "input_description": "two LCOV files of several hundred megabytes",
@@ -19,15 +19,15 @@
   },
   "host": {
     "os": "macOS 27.0 arm64",
-    "cpu": "Apple M5 Max",
+    "cpu": "Apple silicon (exact model unavailable in this sandbox)",
     "cores": 18,
     "memory_gib": 64,
-    "cache": "uncontrolled; fixtures generated immediately before measurements"
+    "cache": "no explicit cache flush; paired hyperfine warmups; machine load uncontrolled"
   },
   "environment": {
-    "os": "macOS 27.0 (build 26A425)",
+    "os": "macOS 27.0",
     "architecture": "arm64",
-    "cpu": "Apple M5 Max",
+    "cpu": "Apple silicon (exact model unavailable in this sandbox)",
     "cores": 18,
     "memory_bytes": 68719476736,
     "compiler": "Apple clang 21.0.0",
@@ -35,24 +35,25 @@
     "node": "v24.14.0",
     "npm": "11.9.0",
     "lcov": "2.6-0",
-    "lcov-result-merger": "6.0.0"
+    "lcov-result-merger": "unavailable in this run; prior results retained",
+    "hyperfine": "2.0.0"
   },
   "method": {
     "timeout_seconds": 1800,
     "comparison_runs_per_tool": 1,
     "repeat_counts": {
-      "S": 1,
+      "S": 10,
       "M": 5,
-      "L": 1,
-      "XL-single": 1,
-      "PATH-HEAVY": 1,
+      "L": 2,
+      "XL-single": 5,
+      "PATH-HEAVY": 5,
       "REAL": 0
     },
-    "large_runs": "One run per tool/workload; M also has default, -j1, -j2, -j4, and -j8 lcovmerge runs.",
-    "measurement_order": "lcovmerge, then lcov 2.6, then lcov-result-merger for each workload.",
-    "cache_state": "No explicit cache flush or read-based warm-up; generated files are read immediately after creation.",
-    "rss_source": "/usr/bin/time -l. PATH-HEAVY npm was timed out; ps RSS was sampled once per second during its final 308.3 s only.",
-    "throughput": "Input bytes divided by wall seconds using decimal MB/s; reported only for successful exits."
+    "large_runs": "Baseline and final lcovmerge binaries were paired on the same generated fixture. S used three warmups and ten measured runs; the other paired workloads used one warmup. Dataset M jobs scaling used one warmup and five measured runs per setting.",
+    "measurement_order": "lcovmerge baseline then final in each hyperfine comparison; lcov 2.6 was measured once by bench/run.py after the baseline merge for each dataset.",
+    "cache_state": "No explicit cache flush. Paired measurements used one warmup except S, which used three; operating-system cache and machine load remain uncontrolled.",
+    "rss_source": "lcovmerge peak RSS is hyperfine 2.0 memory_peak_resident, maximum over measured runs. Apple /usr/bin/time -l failed its kern.clockrate sysctl query under host policy. Successful lcov comparator RSS values retain the previous canonical measurements; PATH-HEAVY current failed-run RSS is unavailable.",
+    "throughput": "Decimal MB/s. lcovmerge uses input bytes divided by median hyperfine wall time; lcov 2.6 uses the single bench/run.py wall time and reports throughput only after success."
   },
   "datasets": [
     {
@@ -63,18 +64,18 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 0.237,
-          "rss_mib": 2.9375,
-          "rss_bytes": 3080192,
-          "throughput_mb_s": 422.0,
+          "time_s": 0.259979,
+          "rss_mib": 2.953125,
+          "rss_bytes": 3096576,
+          "throughput_mb_s": 384.6,
           "status": "OK",
           "exit_code": 0
         },
         "lcov": {
-          "time_s": 4.365,
+          "time_s": 5.317,
           "rss_mib": 229.78125,
           "rss_bytes": 240943104,
-          "throughput_mb_s": 22.9,
+          "throughput_mb_s": 18.8,
           "status": "OK",
           "exit_code": 0
         },
@@ -86,6 +87,18 @@
           "status": "OK",
           "exit_code": 0
         }
+      },
+      "comparison": {
+        "baseline_lcovmerge": {
+          "time_s": 0.264305,
+          "rss_bytes": 3096576,
+          "rss_mib": 2.953125,
+          "throughput_mb_s": 378.3,
+          "run_count": 10
+        },
+        "speedup_vs_baseline": 1.0166,
+        "lcov_2_6_single_run_time_s": 5.317,
+        "speedup_vs_lcov": 20.452
       }
     },
     {
@@ -96,18 +109,18 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 3.316,
+          "time_s": 3.488279,
           "rss_mib": 5.125,
           "rss_bytes": 5373952,
-          "throughput_mb_s": 337.4,
+          "throughput_mb_s": 320.7,
           "status": "OK",
           "exit_code": 0
         },
         "lcov": {
-          "time_s": 43.352,
+          "time_s": 50.542,
           "rss_mib": 610.203125,
           "rss_bytes": 639844352,
-          "throughput_mb_s": 25.8,
+          "throughput_mb_s": 22.1,
           "status": "OK",
           "exit_code": 0
         },
@@ -119,6 +132,18 @@
           "status": "OK",
           "exit_code": 0
         }
+      },
+      "comparison": {
+        "baseline_lcovmerge": {
+          "time_s": 3.591969,
+          "rss_bytes": 5390336,
+          "rss_mib": 5.140625,
+          "throughput_mb_s": 311.4,
+          "run_count": 5
+        },
+        "speedup_vs_baseline": 1.0297,
+        "lcov_2_6_single_run_time_s": 50.542,
+        "speedup_vs_lcov": 14.489
       }
     },
     {
@@ -129,18 +154,18 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 27.657,
-          "rss_mib": 25.671875,
-          "rss_bytes": 26918912,
-          "throughput_mb_s": 175.5,
+          "time_s": 27.723422,
+          "rss_mib": 25.0625,
+          "rss_bytes": 26279936,
+          "throughput_mb_s": 175.1,
           "status": "OK",
           "exit_code": 0
         },
         "lcov": {
-          "time_s": 195.144,
+          "time_s": 203.235,
           "rss_mib": 1430.234375,
           "rss_bytes": 1499709440,
-          "throughput_mb_s": 24.9,
+          "throughput_mb_s": 23.9,
           "status": "OK",
           "exit_code": 0
         },
@@ -152,6 +177,18 @@
           "status": "OK",
           "exit_code": 0
         }
+      },
+      "comparison": {
+        "baseline_lcovmerge": {
+          "time_s": 28.922665,
+          "rss_bytes": 31801344,
+          "rss_mib": 30.328125,
+          "throughput_mb_s": 167.8,
+          "run_count": 2
+        },
+        "speedup_vs_baseline": 1.0433,
+        "lcov_2_6_single_run_time_s": 203.235,
+        "speedup_vs_lcov": 7.331
       }
     },
     {
@@ -162,18 +199,18 @@
       "description": "Generated single tracefile.",
       "results": {
         "lcovmerge": {
-          "time_s": 1.37,
-          "rss_mib": 2.265625,
-          "rss_bytes": 2375680,
-          "throughput_mb_s": 543.7,
+          "time_s": 1.455709,
+          "rss_mib": 2.28125,
+          "rss_bytes": 2392064,
+          "throughput_mb_s": 511.8,
           "status": "OK",
           "exit_code": 0
         },
         "lcov": {
-          "time_s": 35.378,
+          "time_s": 37.803,
           "rss_mib": 3577.375,
           "rss_bytes": 3751149568,
-          "throughput_mb_s": 21.1,
+          "throughput_mb_s": 19.7,
           "status": "OK",
           "exit_code": 0
         },
@@ -185,6 +222,18 @@
           "status": "ERROR_1",
           "exit_code": 1
         }
+      },
+      "comparison": {
+        "baseline_lcovmerge": {
+          "time_s": 1.429299,
+          "rss_bytes": 2359296,
+          "rss_mib": 2.25,
+          "throughput_mb_s": 521.2,
+          "run_count": 5
+        },
+        "speedup_vs_baseline": 0.9819,
+        "lcov_2_6_single_run_time_s": 37.803,
+        "speedup_vs_lcov": 25.969
       }
     },
     {
@@ -195,20 +244,21 @@
       "description": "Generated input with two million distinct source paths.",
       "results": {
         "lcovmerge": {
-          "time_s": 1.912,
-          "rss_mib": 19.6875,
-          "rss_bytes": 20643840,
-          "throughput_mb_s": 68.0,
+          "time_s": 2.121826,
+          "rss_mib": 20.234375,
+          "rss_bytes": 21217280,
+          "throughput_mb_s": 61.3,
           "status": "OK",
           "exit_code": 0
         },
         "lcov": {
-          "time_s": 89.383,
-          "rss_mib": 6711.171875,
-          "rss_bytes": 7037173760,
+          "time_s": 98.805,
+          "rss_mib": null,
+          "rss_bytes": null,
           "throughput_mb_s": null,
           "status": "ERROR_1",
-          "exit_code": 1
+          "exit_code": 1,
+          "rss_display": "RSS unavailable for current failed run"
         },
         "lcov-result-merger": {
           "time_s": 1800.002,
@@ -221,6 +271,18 @@
           "rss_sample_duration_s": 308.3,
           "rss_display": "842 MiB sampled in final 308 s; full-run peak unavailable"
         }
+      },
+      "comparison": {
+        "baseline_lcovmerge": {
+          "time_s": 2.232275,
+          "rss_bytes": 21331968,
+          "rss_mib": 20.34375,
+          "throughput_mb_s": 58.2,
+          "run_count": 5
+        },
+        "speedup_vs_baseline": 1.0521,
+        "lcov_2_6_single_run_time_s": 98.805,
+        "speedup_vs_lcov": null
       }
     },
     {
@@ -260,55 +322,55 @@
   "scaling": {
     "M": {
       "default": {
-        "time_s": 3.316,
-        "rss_mib": 5.125,
-        "rss_bytes": 5373952,
-        "throughput_mb_s": 337.4,
+        "time_s": 3.619627,
+        "rss_bytes": 5406720,
+        "rss_mib": 5.15625,
+        "throughput_mb_s": 309.1,
         "status": "OK",
         "exit_code": 0
       },
       "1": {
-        "time_s": 3.388,
-        "rss_mib": 5.140625,
-        "rss_bytes": 5390336,
-        "throughput_mb_s": 330.2,
+        "time_s": 4.159647,
+        "rss_bytes": 5406720,
+        "rss_mib": 5.15625,
+        "throughput_mb_s": 268.9,
         "status": "OK",
         "exit_code": 0
       },
       "2": {
-        "time_s": 3.314,
-        "rss_mib": 5.125,
-        "rss_bytes": 5373952,
-        "throughput_mb_s": 337.5,
+        "time_s": 3.703596,
+        "rss_bytes": 5423104,
+        "rss_mib": 5.171875,
+        "throughput_mb_s": 302.1,
         "status": "OK",
         "exit_code": 0
       },
       "4": {
-        "time_s": 3.302,
-        "rss_mib": 5.109375,
-        "rss_bytes": 5357568,
-        "throughput_mb_s": 338.8,
+        "time_s": 3.695652,
+        "rss_bytes": 5423104,
+        "rss_mib": 5.171875,
+        "throughput_mb_s": 302.7,
         "status": "OK",
         "exit_code": 0
       },
       "8": {
-        "time_s": 3.356,
-        "rss_mib": 5.125,
-        "rss_bytes": 5373952,
-        "throughput_mb_s": 333.3,
+        "time_s": 3.726964,
+        "rss_bytes": 5406720,
+        "rss_mib": 5.15625,
+        "throughput_mb_s": 300.2,
         "status": "OK",
         "exit_code": 0
       }
     }
   },
   "caveats": [
-    "Single-run measurements on one Apple M5 Max host; they are not a median, confidence interval, or cross-platform performance claim.",
-    "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available; only fuzz-corpus test fixtures were present.",
-    "No explicit cache control was applied, and measurements were run in a fixed tool order, so operating-system cache state and machine load may affect cross-tool comparisons.",
-    "Benchmark command exit status and resource use were measured; outputs were not compared pairwise. Semantic coverage is checked by the golden, oracle, and lcov differential suites.",
-    "Sorted regular input shards use the direct single-threaded path. M job-setting runs therefore record timing variation, not external-sort worker scaling.",
-    "lcov exited with an error on PATH-HEAVY after 89.383 s and used 7,037,177,760 B peak RSS; no throughput is reported for that failed run.",
-    "lcov-result-merger PATH-HEAVY reached the 1,800 s timeout. /usr/bin/time did not report RSS on forced termination; a one-second sample during the final 308.3 s observed 841,888 KiB, which is not a full-run peak.",
-    "The external Bazel issue evidence is context and was not measured with these commands."
+    "Measurements cover one macOS arm64 host. Exact SoC model was unavailable in the sandbox; results are not a cross-platform claim.",
+    "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available.",
+    "lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts are listed per workload. Cache warmups were used, but no explicit cache flush was applied.",
+    "lcov 2.6 ran once per dataset after the baseline merge. Its PATH-HEAVY run exited with status 1 after 98.805 s; no valid speedup or current-run RSS is reported for that failure.",
+    "Successful lcov comparator RSS values remain from the prior canonical benchmark; the current host policy blocked the /usr/bin/time -l sysctl query.",
+    "lcov-result-merger was unavailable in this run; its prior canonical measurements remain unchanged. Benchmark outputs were not compared against external tools.",
+    "Dataset M sorted regular shards use the direct single-threaded path; --jobs timings record run variation and do not demonstrate worker scaling.",
+    "The external Bazel issue is context only and was not measured with these commands."
   ]
 }

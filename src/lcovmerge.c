@@ -385,18 +385,34 @@ static int writer_char(Writer *writer, char value) {
 }
 
 static int writer_u64(Writer *writer, uint64_t value) {
+    static const char digit_pairs[] =
+        "00010203040506070809"
+        "10111213141516171819"
+        "20212223242526272829"
+        "30313233343536373839"
+        "40414243444546474849"
+        "50515253545556575859"
+        "60616263646566676869"
+        "70717273747576777879"
+        "80818283848586878889"
+        "90919293949596979899";
     char digits[20];
-    size_t length = 0;
-    do {
-        digits[length++] = (char)('0' + (value % UINT64_C(10)));
-        value /= UINT64_C(10);
-    } while (value != 0);
-    for (size_t left = 0, right = length - 1; left < right; ++left, --right) {
-        char temporary = digits[left];
-        digits[left] = digits[right];
-        digits[right] = temporary;
+    char *cursor = digits + sizeof(digits);
+    while (value >= UINT64_C(100)) {
+        uint64_t quotient = value / UINT64_C(100);
+        unsigned remainder = (unsigned)(value - quotient * UINT64_C(100));
+        cursor -= 2;
+        memcpy(cursor, digit_pairs + (size_t)remainder * 2u, 2u);
+        value = quotient;
     }
-    return writer_bytes(writer, digits, length);
+    unsigned remainder = (unsigned)value;
+    if (remainder < 10u) {
+        *--cursor = (char)('0' + remainder);
+    } else {
+        cursor -= 2;
+        memcpy(cursor, digit_pairs + (size_t)remainder * 2u, 2u);
+    }
+    return writer_bytes(writer, cursor, (size_t)(digits + sizeof(digits) - cursor));
 }
 
 static int writer_format(Writer *writer, const char *format, ...) {
