@@ -6,13 +6,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- On POSIX, handle SIGINT, SIGTERM, and SIGHUP cooperatively and remove temporary sort runs on
-  caught interruption. On POSIX, lcovmerge ignores SIGPIPE so a closed pipe is reported as EPIPE
-  and follows normal failure cleanup. Windows has no equivalent interruption guarantee, and
-  stdout output cannot be rolled back after a later signal or write failure.
-
 ## [1.0.0] - 2026-10-09
 
 ### Added
@@ -24,3 +17,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional branch/function record handling, strict checksum checks, unknown-record warnings, statistics, and
 quiet/verbose modes.
 - Linux, macOS, and Windows release targets and command-line documentation.
+- Interruption handling: on POSIX, handle SIGINT, SIGTERM, and SIGHUP cooperatively and remove temporary sort runs on
+  caught interruption. On POSIX, lcovmerge ignores SIGPIPE so a closed pipe is reported as EPIPE
+  and follows normal failure cleanup. Windows has no equivalent interruption guarantee, and
+  stdout output cannot be rolled back after a later signal or write failure.
+- Windows hardening: extended-length paths, collision-checked temporary files, console Ctrl handler, and broken-pipe stdin treated as end of input.
+- Validation on real C/C++ projects (see `docs/validation/real-projects.md`) and expanded boundary, randomized differential, and fuzz-seed tests.

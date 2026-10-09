@@ -81,7 +81,8 @@ try {
     $mergedBytes = [System.IO.File]::ReadAllBytes((Get-ExtendedPath $outputPath))
     $mergedText = $utf8.GetString($mergedBytes)
     if ($mergedText.Contains("`r") -or
-        -not $mergedText.Contains("DA:1,5`nDA:2,4`nend_of_record`n")) {
+        -not $mergedText.Contains("DA:1,5`nDA:2,4`n") -or
+        -not $mergedText.EndsWith("LF:2`nLH:2`nend_of_record`n")) {
         throw 'Long-path output was malformed or changed LF bytes.'
     }
     if ([System.IO.Directory]::GetFileSystemEntries((Get-ExtendedPath $runDirectory)).Length -ne 0) {
