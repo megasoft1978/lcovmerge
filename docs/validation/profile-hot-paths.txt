@@ -1,0 +1,15 @@
+Final macOS sample profile summary
+Date: 2026-10-09
+Command: /usr/bin/sample lcovmerge <pid> 3 1
+Input: generated M, 1,118,686,233 bytes across 32 shards; inputs were outside the repository and removed after profiling.
+
+Representative stack samples:
+  lcovmerge_main: 1218, 760, and 194 samples in separate addresses
+  direct_tree_winner: 57 samples
+  record_key_compare_same_path: 9 samples
+  merge_aggregate: 6 samples
+  parse_direct_da: present in top-of-stack summary (5 samples)
+
+Top-of-stack summary included _platform_memmove (17), memcpy (13), _platform_strcmp (11), writer_bytes (19 across two addresses), strcmp (8), direct_input_next (7), writer_u64 (6), and _platform_strlen (5).
+
+Interpretation: the sorted-input direct stream path was active. Sampling supports that parsing, selecting/merging records, string comparisons/copies, and output writing account for visible CPU work. A short sample is diagnostic evidence, not an instruction-level profile or a performance distribution.

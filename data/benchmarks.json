@@ -1,0 +1,314 @@
+{
+  "version": "1.0.0",
+  "measured_on": "2026-10-09",
+  "source": "bench/run.py and tools/gen-lcov.py --benchmark-compatible",
+  "external_evidence": {
+    "bazel_issue_26383": {
+      "input_description": "two LCOV files of several hundred megabytes",
+      "reported_heap_requirement_gb": 10,
+      "single_file_size_mb": 745,
+      "single_file_heap_cap_gb": 5,
+      "source": "https://github.com/bazelbuild/bazel/issues/26383"
+    }
+  },
+  "tool_labels": {
+    "lcovmerge": "lcovmerge 1.0.0",
+    "lcov": "lcov 2.6",
+    "lcov-result-merger": "lcov-result-merger 6.0.0",
+    "grcov": "grcov 0.10.7 (not measured in this validation run)"
+  },
+  "host": {
+    "os": "macOS 27.0 arm64",
+    "cpu": "Apple M5 Max",
+    "cores": 18,
+    "memory_gib": 64,
+    "cache": "uncontrolled; fixtures generated immediately before measurements"
+  },
+  "environment": {
+    "os": "macOS 27.0 (build 26A425)",
+    "architecture": "arm64",
+    "cpu": "Apple M5 Max",
+    "cores": 18,
+    "memory_bytes": 68719476736,
+    "compiler": "Apple clang 21.0.0",
+    "python": "3.12.8",
+    "node": "v24.14.0",
+    "npm": "11.9.0",
+    "lcov": "2.6-0",
+    "lcov-result-merger": "6.0.0"
+  },
+  "method": {
+    "timeout_seconds": 1800,
+    "comparison_runs_per_tool": 1,
+    "repeat_counts": {
+      "S": 1,
+      "M": 5,
+      "L": 1,
+      "XL-single": 1,
+      "PATH-HEAVY": 1,
+      "REAL": 0
+    },
+    "large_runs": "One run per tool/workload; M also has default, -j1, -j2, -j4, and -j8 lcovmerge runs.",
+    "measurement_order": "lcovmerge, then lcov 2.6, then lcov-result-merger for each workload.",
+    "cache_state": "No explicit cache flush or read-based warm-up; generated files are read immediately after creation.",
+    "rss_source": "/usr/bin/time -l. PATH-HEAVY npm was timed out; ps RSS was sampled once per second during its final 308.3 s only.",
+    "throughput": "Input bytes divided by wall seconds using decimal MB/s; reported only for successful exits."
+  },
+  "datasets": [
+    {
+      "name": "S",
+      "input_mb": 99.996906,
+      "input_bytes": 99996906,
+      "shards": "8 shards",
+      "description": "Generated sharded LCOV input.",
+      "results": {
+        "lcovmerge": {
+          "time_s": 0.237,
+          "rss_mib": 2.9375,
+          "rss_bytes": 3080192,
+          "throughput_mb_s": 422.0,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov": {
+          "time_s": 4.365,
+          "rss_mib": 229.78125,
+          "rss_bytes": 240943104,
+          "throughput_mb_s": 22.9,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov-result-merger": {
+          "time_s": 17.521,
+          "rss_mib": 437.703125,
+          "rss_bytes": 458964992,
+          "throughput_mb_s": 5.7,
+          "status": "OK",
+          "exit_code": 0
+        }
+      }
+    },
+    {
+      "name": "M",
+      "input_mb": 1118.686233,
+      "input_bytes": 1118686233,
+      "shards": "32 shards",
+      "description": "Generated sharded LCOV input.",
+      "results": {
+        "lcovmerge": {
+          "time_s": 3.316,
+          "rss_mib": 5.125,
+          "rss_bytes": 5373952,
+          "throughput_mb_s": 337.4,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov": {
+          "time_s": 43.352,
+          "rss_mib": 610.203125,
+          "rss_bytes": 639844352,
+          "throughput_mb_s": 25.8,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov-result-merger": {
+          "time_s": 145.171,
+          "rss_mib": 2381.96875,
+          "rss_bytes": 2497675264,
+          "throughput_mb_s": 7.7,
+          "status": "OK",
+          "exit_code": 0
+        }
+      }
+    },
+    {
+      "name": "L",
+      "input_mb": 4853.340843,
+      "input_bytes": 4853340843,
+      "shards": "64 shards",
+      "description": "Generated sharded LCOV input.",
+      "results": {
+        "lcovmerge": {
+          "time_s": 27.657,
+          "rss_mib": 25.671875,
+          "rss_bytes": 26918912,
+          "throughput_mb_s": 175.5,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov": {
+          "time_s": 195.144,
+          "rss_mib": 1430.234375,
+          "rss_bytes": 1499709440,
+          "throughput_mb_s": 24.9,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov-result-merger": {
+          "time_s": 604.28,
+          "rss_mib": 3106.125,
+          "rss_bytes": 3257008128,
+          "throughput_mb_s": 8.0,
+          "status": "OK",
+          "exit_code": 0
+        }
+      }
+    },
+    {
+      "name": "XL-single",
+      "input_mb": 744.992058,
+      "input_bytes": 744992058,
+      "shards": "1 file",
+      "description": "Generated single tracefile.",
+      "results": {
+        "lcovmerge": {
+          "time_s": 1.37,
+          "rss_mib": 2.265625,
+          "rss_bytes": 2375680,
+          "throughput_mb_s": 543.7,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov": {
+          "time_s": 35.378,
+          "rss_mib": 3577.375,
+          "rss_bytes": 3751149568,
+          "throughput_mb_s": 21.1,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov-result-merger": {
+          "time_s": 0.17,
+          "rss_mib": 607.671875,
+          "rss_bytes": 637190144,
+          "throughput_mb_s": null,
+          "status": "ERROR_1",
+          "exit_code": 1
+        }
+      }
+    },
+    {
+      "name": "PATH-HEAVY",
+      "input_mb": 130.0,
+      "input_bytes": 130000000,
+      "shards": "1 file",
+      "description": "Generated input with two million distinct source paths.",
+      "results": {
+        "lcovmerge": {
+          "time_s": 1.912,
+          "rss_mib": 19.6875,
+          "rss_bytes": 20643840,
+          "throughput_mb_s": 68.0,
+          "status": "OK",
+          "exit_code": 0
+        },
+        "lcov": {
+          "time_s": 89.383,
+          "rss_mib": 6711.171875,
+          "rss_bytes": 7037173760,
+          "throughput_mb_s": null,
+          "status": "ERROR_1",
+          "exit_code": 1
+        },
+        "lcov-result-merger": {
+          "time_s": 1800.002,
+          "rss_mib": null,
+          "rss_bytes": null,
+          "throughput_mb_s": null,
+          "status": "TIMEOUT",
+          "exit_code": 124,
+          "rss_sampled_bytes": 862093312,
+          "rss_sample_duration_s": 308.3,
+          "rss_display": "842 MiB sampled in final 308 s; full-run peak unavailable"
+        }
+      }
+    },
+    {
+      "name": "REAL",
+      "input_mb": null,
+      "input_bytes": null,
+      "shards": "not supplied",
+      "description": "No project-derived LCOV capture was available.",
+      "results": {
+        "lcovmerge": {
+          "time_s": null,
+          "rss_mib": null,
+          "rss_bytes": null,
+          "throughput_mb_s": null,
+          "status": "NOT MEASURED",
+          "exit_code": null
+        },
+        "lcov": {
+          "time_s": null,
+          "rss_mib": null,
+          "rss_bytes": null,
+          "throughput_mb_s": null,
+          "status": "NOT MEASURED",
+          "exit_code": null
+        },
+        "lcov-result-merger": {
+          "time_s": null,
+          "rss_mib": null,
+          "rss_bytes": null,
+          "throughput_mb_s": null,
+          "status": "NOT MEASURED",
+          "exit_code": null
+        }
+      }
+    }
+  ],
+  "scaling": {
+    "M": {
+      "default": {
+        "time_s": 3.316,
+        "rss_mib": 5.125,
+        "rss_bytes": 5373952,
+        "throughput_mb_s": 337.4,
+        "status": "OK",
+        "exit_code": 0
+      },
+      "1": {
+        "time_s": 3.388,
+        "rss_mib": 5.140625,
+        "rss_bytes": 5390336,
+        "throughput_mb_s": 330.2,
+        "status": "OK",
+        "exit_code": 0
+      },
+      "2": {
+        "time_s": 3.314,
+        "rss_mib": 5.125,
+        "rss_bytes": 5373952,
+        "throughput_mb_s": 337.5,
+        "status": "OK",
+        "exit_code": 0
+      },
+      "4": {
+        "time_s": 3.302,
+        "rss_mib": 5.109375,
+        "rss_bytes": 5357568,
+        "throughput_mb_s": 338.8,
+        "status": "OK",
+        "exit_code": 0
+      },
+      "8": {
+        "time_s": 3.356,
+        "rss_mib": 5.125,
+        "rss_bytes": 5373952,
+        "throughput_mb_s": 333.3,
+        "status": "OK",
+        "exit_code": 0
+      }
+    }
+  },
+  "caveats": [
+    "Single-run measurements on one Apple M5 Max host; they are not a median, confidence interval, or cross-platform performance claim.",
+    "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available; only fuzz-corpus test fixtures were present.",
+    "No explicit cache control was applied, and measurements were run in a fixed tool order, so operating-system cache state and machine load may affect cross-tool comparisons.",
+    "Benchmark command exit status and resource use were measured; outputs were not compared pairwise. Semantic coverage is checked by the golden, oracle, and lcov differential suites.",
+    "Sorted regular input shards use the direct single-threaded path. M job-setting runs therefore record timing variation, not external-sort worker scaling.",
+    "lcov exited with an error on PATH-HEAVY after 89.383 s and used 7,037,177,760 B peak RSS; no throughput is reported for that failed run.",
+    "lcov-result-merger PATH-HEAVY reached the 1,800 s timeout. /usr/bin/time did not report RSS on forced termination; a one-second sample during the final 308.3 s observed 841,888 KiB, which is not a full-run peak.",
+    "The external Bazel issue evidence is context and was not measured with these commands."
+  ]
+}

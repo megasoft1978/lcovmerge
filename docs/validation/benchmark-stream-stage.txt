@@ -1,0 +1,13 @@
+host=macOS-27.0-arm64-arm-64bit
+timeout_seconds=900
+fixture_generator=tools/gen-lcov.py --benchmark-compatible
+temporary_data=outside repository; generated inputs removed automatically
+measurement_date=2026-10-09
+M: shards=32 input_bytes=1118686233
+M (lcovmerge-default): input_bytes=1118686233 wall_seconds=5.811 throughput=192.5 MB/s status=OK 5406720  maximum resident set size
+M (lcovmerge-j1): input_bytes=1118686233 wall_seconds=5.932 throughput=188.6 MB/s status=OK 5423104  maximum resident set size
+M (lcovmerge-j2): input_bytes=1118686233 wall_seconds=5.904 throughput=189.5 MB/s status=OK 5423104  maximum resident set size
+M (lcovmerge-j4): input_bytes=1118686233 wall_seconds=5.919 throughput=189.0 MB/s status=OK 5423104  maximum resident set size
+M (lcovmerge-j8): input_bytes=1118686233 wall_seconds=5.876 throughput=190.4 MB/s status=OK 5423104  maximum resident set size
+M (lcov-2.6): input_bytes=1118686233 wall_seconds=44.810 throughput=25.0 MB/s status=OK 641630208  maximum resident set size
+M (lcov-result-merger): unavailable

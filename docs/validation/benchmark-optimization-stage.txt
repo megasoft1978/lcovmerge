@@ -1,0 +1,11 @@
+host=macOS-27.0-arm64-arm-64bit
+timeout_seconds=1800
+generator=deterministic LCOV benchmark fixture generator
+temporary_data=outside repository; removed automatically
+M: input_bytes=1118686233 wall_seconds=4.749 throughput_MB_s=235.6 status=0 24723456  maximum resident set size
+M jobs=1: input_bytes=1118686233 wall_seconds=5.663 throughput_MB_s=197.5 status=0 24641536  maximum resident set size
+M jobs=2: input_bytes=1118686233 wall_seconds=4.908 throughput_MB_s=227.9 status=0 26968064  maximum resident set size
+M jobs=4: input_bytes=1118686233 wall_seconds=4.837 throughput_MB_s=231.3 status=0 23937024  maximum resident set size
+M jobs=8: input_bytes=1118686233 wall_seconds=5.411 throughput_MB_s=206.7 status=0 40222720  maximum resident set size
+M vs lcov: input_bytes=1118686233 wall_seconds=45.529 throughput_MB_s=24.6 status=0 643039232  maximum resident set size
+M vs lcov-result-merger: input_bytes=1118686233 wall_seconds=144.538 throughput_MB_s=7.7 status=0 2451619840  maximum resident set size

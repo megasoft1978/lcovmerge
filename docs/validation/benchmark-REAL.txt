@@ -1,0 +1,5 @@
+measurement_date=2026-10-09
+status=NOT_MEASURED
+reason=No project-derived LCOV capture directory was supplied or found in the repository.
+search=Repository search for *.info found only tests/fuzz-corpus/basic.info, empty.info, invalid.info, and mcdc.info.
+decision=Test corpus files were not substituted for a REAL project workload.
