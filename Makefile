@@ -13,6 +13,7 @@ LDFLAGS ?=
 ifeq ($(OS),Windows_NT)
 PLATFORM_SRC = src/platform_win32.c
 ENTRY_SRC =
+LDFLAGS += -municode
 BIN ?= bin/lcovmerge.exe
 else
 PLATFORM_SRC = src/platform_posix.c
