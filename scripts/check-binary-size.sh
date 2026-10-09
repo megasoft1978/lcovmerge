@@ -24,7 +24,8 @@ for binary in $binaries; do
   size=$(wc -c < "$binary" | tr -d '[:space:]')
   printf '%s: %s bytes (limit %s)\n' "$binary" "$size" "$limit_bytes"
   if [ "$size" -gt "$limit_bytes" ]; then
-    printf 'Size budget exceeded: %s\n' "$binary" >&2
+    printf 'Size budget exceeded: %s is %s bytes; limit is %s bytes.\n' \
+      "$binary" "$size" "$limit_bytes" >&2
     status=1
   fi
 done
