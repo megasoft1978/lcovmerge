@@ -1,0 +1,6 @@
+$ make BIN=/tmp/lcovmerge-make-win.exe OS=Windows_NT CC="zig cc -target x86_64-windows-gnu" LDFLAGS="-static -municode -Wl,-s"
+zig cc -target x86_64-windows-gnu ... src/lcovmerge.c src/platform_win32.c -static -municode -Wl,-s -o /tmp/lcovmerge-make-win.exe
+$ file /tmp/lcovmerge-make-win.exe
+/tmp/lcovmerge-make-win.exe: PE32+ executable (console) x86-64, for MS Windows
+make_windows_cross=PASS PE32+ x86_64 stripped_size=137728
+The Makefile Windows source-selection branch was cross-built from macOS; Windows runtime was not executed (Wine unavailable).
