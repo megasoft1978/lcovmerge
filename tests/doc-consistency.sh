@@ -49,5 +49,18 @@ for name, found in (("man page", man_options), ("USAGE.md", usage_options)):
             details.append("extra: " + ", ".join(extra))
         raise SystemExit(f"{name} option list differs from --help ({'; '.join(details)})")
 
+exit_statuses = {
+    "0": "Merge completed.",
+    "1": "Invalid or incomplete command-line options.",
+    "2": "Input or tracefile format error, including strict checksum disagreement.",
+    "3": "Input/output or temporary-file I/O failure, allocation failure, or interruption.",
+}
+for code, meaning in exit_statuses.items():
+    tick = chr(96)
+    row = f"| {tick}{code}{tick} | {meaning} |"
+    if row not in usage_text:
+        raise SystemExit(f"USAGE.md exit-status table is missing or changed status {code}")
+
 print(f"doc_option_lists=PASS options={len(help_options)}")
+print(f"doc_exit_statuses=PASS statuses={len(exit_statuses)}")
 PY

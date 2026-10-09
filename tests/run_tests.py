@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import random
 import re
@@ -63,6 +64,7 @@ def golden_cases() -> list[dict]:
         mk_case("missing-end-of-record", ["SF:/eof.c\nDA:7,2"], rows="DA:7,2\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("crlf", ["SF:/crlf.c\r\nDA:1,1\r\nend_of_record\r\n"], rows="DA:1,1\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("duplicate-source-sections", ["SF:/dup.c\nDA:4,2\nend_of_record\nSF:/dup.c\nDA:4,3\nend_of_record\n"], rows="DA:4,5\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
+        mk_case("duplicate-source-across-files", ["SF:/dup-files.c\nDA:4,2\nend_of_record\n", "SF:/dup-files.c\nDA:4,3\nend_of_record\n"], rows="DA:4,5\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("da-without-checksum", ["SF:/da.c\nDA:3,9\nend_of_record\n"], rows="DA:3,9\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("da-with-checksum", ["SF:/da.c\nDA:3,9,abc123\nend_of_record\n"], rows="DA:3,9,abc123\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("checksum-stable-choice", ["SF:/da.c\nDA:3,2,zz\nend_of_record\n", "SF:/da.c\nDA:3,4,aa\nend_of_record\n"], rows="DA:3,6,aa\n", summary=(0, 0, 0, 0, 0, 0, 1, 1), warning="checksum mismatch"),
@@ -70,9 +72,10 @@ def golden_cases() -> list[dict]:
         mk_case("old-function-end-line", ["SF:/fn.c\nFN:8,14,run\nFNDA:0,run\nend_of_record\n"], rows="FN:8,14,run\nFNDA:0,run\n", summary=(1, 0, 0, 0, 0, 0, 0, 0)),
         mk_case("orphan-fnda", ["SF:/fn.c\nFNDA:5,missing\nend_of_record\n"], rows="FNDA:5,missing\n", summary=(0, 1, 0, 0, 0, 0, 0, 0)),
         mk_case("fnda-saturating-merge", ["SF:/fn.c\nFNDA:9,run\nend_of_record\n", "SF:/fn.c\nFNDA:12,run\nend_of_record\n"], rows="FNDA:21,run\n", summary=(0, 1, 0, 0, 0, 0, 0, 0)),
+        mk_case("fnda-u64-saturation", [f"SF:/fn-sat.c\nFNDA:{MAX_U64 - 2},run\nend_of_record\n", "SF:/fn-sat.c\nFNDA:7,run\nend_of_record\n"], rows=f"FNDA:{MAX_U64},run\n", summary=(0, 1, 0, 0, 0, 0, 0, 0)),
         mk_case("fnl-fna-aliases", ["SF:/fnl.c\nFNL:0,3,9\nFNA:0,2,first\nFNA:0,0,alias\nend_of_record\n"], rows="FNL:0,3,9\nFNA:0,0,alias\nFNA:0,2,first\n", summary=(1, 1, 0, 0, 0, 0, 0, 0)),
         mk_case("fnl-fna-count-merge", ["SF:/fnl.c\nFNL:0,3\nFNA:0,2,first\nend_of_record\n", "SF:/fnl.c\nFNL:0,3\nFNA:0,4,first\nend_of_record\n"], rows="FNL:0,3\nFNA:0,6,first\n", summary=(1, 1, 0, 0, 0, 0, 0, 0)),
-        mk_case("da-saturating-merge", [f"SF:/sat.c\nDA:1,{MAX_U64}\nend_of_record\n", "SF:/sat.c\nDA:1,1\nend_of_record\n"], rows=f"DA:1,{MAX_U64}\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
+        mk_case("da-saturating-merge", [f"SF:/sat.c\nDA:1,{MAX_U64 - 1}\nend_of_record\n", "SF:/sat.c\nDA:1,10\nend_of_record\n"], rows=f"DA:1,{MAX_U64}\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("branch-numeric", ["SF:/br.c\nBRDA:5,0,2,4\nend_of_record\n"], rows="BRDA:5,0,2,4\n", summary=(0, 0, 1, 1, 0, 0, 0, 0)),
         mk_case("branch-dash", ["SF:/br.c\nBRDA:5,0,2,-\nend_of_record\n"], rows="BRDA:5,0,2,-\n", summary=(0, 0, 1, 0, 0, 0, 0, 0)),
         mk_case("branch-dash-and-count", ["SF:/br.c\nBRDA:5,0,2,-\nend_of_record\n", "SF:/br.c\nBRDA:5,0,2,3\nend_of_record\n"], rows="BRDA:5,0,2,3\n", summary=(0, 0, 1, 1, 0, 0, 0, 0)),
@@ -80,6 +83,7 @@ def golden_cases() -> list[dict]:
         mk_case("branch-exception-and-fallthrough", ["SF:/br.c\nBRDA:5,e0,0,1\nBRDA:5,f0,1,2\nend_of_record\n"], rows="BRDA:5,e0,0,1\nBRDA:5,f0,1,2\n", summary=(0, 0, 2, 2, 0, 0, 0, 0)),
         mk_case("unreachable-branch", ["SF:/br.c\nBRDA:5,U0,0,3\nend_of_record\n"], rows="BRDA:5,U0,0,3\n", summary=(0, 0, 0, 0, 0, 0, 0, 0)),
         mk_case("mcdc-count", ["SF:/mcdc.c\nMCDC:7,2,t,3,0,condition\nend_of_record\n"], rows="MCDC:7,2,t,3,0,condition\n", summary=(0, 0, 0, 0, 1, 1, 0, 0)),
+        mk_case("mcdc-u64-saturation", [f"SF:/mcdc-sat.c\nMCDC:7,2,t,{MAX_U64 - 3},0,condition\nend_of_record\n", "SF:/mcdc-sat.c\nMCDC:7,2,t,9,0,condition\nend_of_record\n"], rows=f"MCDC:7,2,t,{MAX_U64},0,condition\n", summary=(0, 0, 0, 0, 1, 1, 0, 0)),
         mk_case("mcdc-unreachable", ["SF:/mcdc.c\nMCDC:7,U2,f,3,0,condition\nend_of_record\n"], rows="MCDC:7,U2,f,3,0,condition\n", summary=(0, 0, 0, 0, 0, 0, 0, 0)),
         mk_case("mcdc-comma-expression-and-sum", ["SF:/mcdc.c\nMCDC:7,2,t,1,0,fn(a,b)\nend_of_record\n", "SF:/mcdc.c\nMCDC:7,2,t,2,0,fn(a,b)\nend_of_record\n"], rows="MCDC:7,2,t,3,0,fn(a,b)\n", summary=(0, 0, 0, 0, 1, 1, 0, 0)),
         mk_case("unknown-extension-preserved", ["SF:/x.c\nX:opaque\nend_of_record\n"], rows="X:opaque\n"),
@@ -117,13 +121,35 @@ def golden_cases() -> list[dict]:
         mk_case("branch-count-saturation", [f"SF:/brsat.c\nBRDA:1,0,0,{MAX_U64}\nend_of_record\n", "SF:/brsat.c\nBRDA:1,0,0,2\nend_of_record\n"], rows=f"BRDA:1,0,0,{MAX_U64}\n", summary=(0,0,1,1,0,0,0,0)),
         mk_case("fnl-summary-groups", ["SF:/groups.c\nFNL:0,1\nFNA:0,0,a\nFNA:0,1,b\nFNL:1,1\nFNA:1,0,c\nend_of_record\n"], rows="FNL:0,1\nFNA:0,0,a\nFNA:0,1,b\nFNL:1,1\nFNA:1,0,c\n", summary=(2,1,0,0,0,0,0,0)),
         mk_case("include-exclude-precedence", ["SF:/src/keep.c\nDA:1,1\nend_of_record\n"], expected="", options=("--include", "*", "--exclude", "*/keep.c")),
+        mk_case("rewrite-then-strip-and-glob-filters", [
+            "SF:/old/root/src/a1.c\nDA:1,1\nend_of_record\n"
+            "SF:/old/root/src/b2.c\nDA:1,1\nend_of_record\n"
+            "SF:/old/root/src/other.c\nDA:1,1\nend_of_record\n"
+        ], path="src/a1.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1),
+            options=("--rebase", "/old/root=/new/root", "--prefix-strip", "/new/root",
+                     "--include", "src/[a-b]?.c", "--exclude", "src/b?.c")),
+        mk_case("prefix-strip-path-boundary", ["SF:/work/projectile/a.c\nDA:1,1\nend_of_record\n"],
+            path="/work/projectile/a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1),
+            options=("--prefix-strip", "/work/project")),
+        mk_case("wildcard-negated-class", [
+            "SF:/src/a.c\nDA:1,1\nend_of_record\n"
+            "SF:/src/b.c\nDA:1,1\nend_of_record\n"
+            "SF:/src/c.c\nDA:1,1\nend_of_record\n"
+        ], expected=(
+            expected_trace("/src/a.c", "DA:1,1\n", summary=(0,0,0,0,0,0,1,1)) +
+            expected_trace("/src/c.c", "DA:1,1\n", summary=(0,0,0,0,0,0,1,1))
+        ), options=("--include", "*/[!b].c")),
+        mk_case("rebase-path-boundary", ["SF:/old/projectile/a.c\nDA:1,1\nend_of_record\n"],
+            path="/old/projectile/a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1),
+            options=("--rebase", "/old/project=/new/project")),
     ]
     return cases
 
 
-def run(command: list[str], *, input_data: bytes | None = None, env=None) -> subprocess.CompletedProcess:
+def run(command: list[str], *, input_data: bytes | None = None, env=None,
+        preexec_fn=None) -> subprocess.CompletedProcess:
     return subprocess.run(command, input=input_data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          env=env, check=False)
+                          env=env, preexec_fn=preexec_fn, check=False)
 
 
 def run_goldens(binary: Path, temporary: Path) -> int:
@@ -150,14 +176,37 @@ def run_goldens(binary: Path, temporary: Path) -> int:
     return len(cases)
 
 
+def parser_boundary_tests(binary: Path, temporary: Path) -> int:
+    base = temporary / "parser-boundaries"
+    base.mkdir()
+    max_line = 1 << 20
+    line = b"X:" + b"a" * (max_line - 2)
+    if len(line) != max_line:
+        raise AssertionError("test fixture did not create an exactly 1 MiB line")
+    source = base / "exactly-1mib.info"
+    source.write_bytes(b"SF:/line-limit.c\n" + line + b"\nend_of_record\n")
+    output = base / "exactly-1mib-out.info"
+    result = run([str(binary), str(source), "-o", str(output)])
+    expected = expected_trace("/line-limit.c", line.decode("ascii") + "\n").encode("ascii")
+    if result.returncode != 0 or output.read_bytes() != expected:
+        raise AssertionError(
+            f"exactly 1 MiB line was not preserved: status={result.returncode}, "
+            f"stderr={result.stderr!r}"
+        )
+    return 1
+
+
 def malformed_tests(binary: Path, temporary: Path) -> int:
+    max_line = 1 << 20
     examples = [
         ("bad-number", b"SF:/bad.c\nDA:nope,1\n", 2, b"DA record"),
         ("no-colon", b"not-lcov\n", 2, b"outside an SF"),
         ("bare-garbage", b"garbage", 2, b"outside an SF"),
         ("binary-nul", b"SF:/bad.c\nX:\x00\n", 2, b"binary or invalid UTF-8"),
         ("invalid-utf8", b"SF:/bad.c\nX:\xff\n", 2, b"binary or invalid UTF-8"),
-        ("oversize-line", b"SF:/bad.c\nX:" + b"a" * ((1 << 20) + 1) + b"\n", 2, b"line exceeds 1 MiB"),
+        ("oversize-line", b"SF:/bad.c\nX:" + b"a" * (max_line - 1) + b"\n", 2, b"line exceeds 1 MiB"),
+        ("truncated-record", b"SF:/truncated.c\nDA:7,", 2, b"DA record"),
+        ("truncated-utf8", b"SF:/truncated.c\nX:\xe2\x82", 2, b"binary or invalid UTF-8"),
         ("end-without-section", b"end_of_record\n", 2, b"end_of_record without SF"),
     ]
     for name, content, expected_code, text in examples:
@@ -295,6 +344,115 @@ def differential_tests(binary: Path, temporary: Path, count: int = 220) -> int:
     return count + len(malformed)
 
 
+def randomized_differential_tests(binary: Path, temporary: Path) -> tuple[int, int]:
+    spec = importlib.util.spec_from_file_location("lcovmerge_oracle_for_tests", ORACLE)
+    if spec is None or spec.loader is None:
+        raise AssertionError("could not load the Python oracle")
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+
+    case_count = 128 if os.environ.get("SOAK") == "1" else 32
+    rng = random.Random(0x5EEDC0DE)
+    executions = 0
+    for case_index in range(case_count):
+        case_dir = temporary / f"randomized-diff-{case_index:03d}"
+        case_dir.mkdir()
+        raw_inputs: list[Path] = []
+        normalized_inputs: list[Path] = []
+        for input_index in range(8):
+            raw_path = case_dir / f"raw-{input_index}.info"
+            trace = random_trace(rng, case_index, input_index)
+            trace = trace.replace(
+                "FNF:0\nLF:0\nBRF:0\nBRH:0\n",
+                "DA:900000,1\nDA:900001,2\nFNF:0\nLF:0\nBRF:0\nBRH:0\n",
+            )
+            raw_path.write_text(trace, encoding="utf-8")
+            raw_inputs.append(raw_path)
+
+            normalized_path = case_dir / f"normalized-{input_index}.info"
+            normalized_path.write_text(
+                oracle.render(oracle.merge([str(raw_path)])), encoding="utf-8"
+            )
+            normalized_inputs.append(normalized_path)
+
+        expected = oracle.render(oracle.merge([str(path) for path in raw_inputs])).encode("utf-8")
+        outputs: list[bytes] = []
+        for jobs in range(1, 9):
+            order = list(normalized_inputs)
+            rng.shuffle(order)
+            output = case_dir / f"direct-{jobs}.info"
+            result = run([
+                str(binary), "--mem-limit", "64M", "--jobs", str(jobs), "-v",
+                *(str(path) for path in order), "-o", str(output),
+            ])
+            if result.returncode != 0 or b"sorted-input fast path" not in result.stderr:
+                raise AssertionError(
+                    f"randomized direct case {case_index}, jobs={jobs} did not use "
+                    f"the sorted-input path: status={result.returncode}, stderr={result.stderr!r}"
+                )
+            payload = output.read_bytes()
+            if payload != expected:
+                raise AssertionError(
+                    f"randomized direct case {case_index}, jobs={jobs} differed from oracle"
+                )
+            outputs.append(payload)
+            executions += 1
+
+        fallback_inputs: list[Path] = []
+        for input_index, normalized_path in enumerate(normalized_inputs):
+            fallback_path = case_dir / f"fallback-{input_index}.info"
+            lines = normalized_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            if input_index == 0:
+                first = next((i for i, line in enumerate(lines) if line.startswith("DA:900000,")), None)
+                second = next((i for i, line in enumerate(lines) if line.startswith("DA:900001,")), None)
+                if first is None or second is None:
+                    raise AssertionError("randomized fixture lacks the forced out-of-order DA rows")
+                lines[first], lines[second] = lines[second], lines[first]
+            fallback_path.write_text("".join(lines), encoding="utf-8")
+            fallback_inputs.append(fallback_path)
+
+        for jobs in range(1, 9):
+            order = list(fallback_inputs)
+            rng.shuffle(order)
+            output = case_dir / f"fallback-out-{jobs}.info"
+            result = run([
+                str(binary), "--mem-limit", "64M", "--jobs", str(jobs), "-v",
+                *(str(path) for path in order), "-o", str(output),
+            ])
+            expected_workers = jobs
+            worker_report = f"using {expected_workers} job(s)".encode()
+            if result.returncode != 0 or worker_report not in result.stderr:
+                raise AssertionError(
+                    f"randomized fallback case {case_index}, jobs={jobs} did not use "
+                    f"the external-sort path: status={result.returncode}, stderr={result.stderr!r}"
+                )
+            payload = output.read_bytes()
+            if payload != expected:
+                raise AssertionError(
+                    f"randomized fallback case {case_index}, jobs={jobs} differed from oracle"
+                )
+            outputs.append(payload)
+            executions += 1
+
+        tiny_output = case_dir / "fallback-8m.info"
+        tiny_result = run([
+            str(binary), "--mem-limit", "8M", "--jobs", "1", "-v",
+            *(str(path) for path in fallback_inputs), "-o", str(tiny_output),
+        ])
+        if (tiny_result.returncode != 0 or b"using 1 job(s)" not in tiny_result.stderr or
+                tiny_output.read_bytes() != expected):
+            raise AssertionError(
+                f"randomized 8 MiB fallback case {case_index} failed: "
+                f"status={tiny_result.returncode}, stderr={tiny_result.stderr!r}"
+            )
+        outputs.append(tiny_output.read_bytes())
+        executions += 1
+
+        if any(payload != outputs[0] for payload in outputs):
+            raise AssertionError(f"randomized case {case_index} was not byte-deterministic")
+    return case_count, executions
+
+
 def determinism_test(binary: Path, temporary: Path) -> int:
     base = temporary / "determinism"
     base.mkdir()
@@ -342,6 +500,15 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     expected_stdout = expected_trace("/stdin.c", "DA:2,7\n", summary=(0,0,0,0,0,0,1,1)).encode()
     if stdio.returncode != 0 or stdio.stdout != expected_stdout:
         raise AssertionError("stdin/stdout mode failed")
+    mixed_stdin = b"SF:/list.c\nDA:1,7\nend_of_record\n"
+    mixed = run([str(binary), "-", str(first), "-o", "-"], input_data=mixed_stdin)
+    mixed_expected = expected_trace("/list.c", "DA:1,9\n", summary=(0,0,0,0,0,0,1,1)).encode()
+    if mixed.returncode != 0 or mixed.stdout != mixed_expected:
+        raise AssertionError("stdin plus file input with stdout output failed")
+    stdin_file_output = root / "stdin-file-output.info"
+    stdin_to_file = run([str(binary), "-", "-o", str(stdin_file_output)], input_data=stdin_text)
+    if stdin_to_file.returncode != 0 or stdin_file_output.read_bytes() != expected_stdout:
+        raise AssertionError("stdin input with file output failed")
     run_dir = root / "runs"
     run_dir.mkdir()
     temp_output = root / "tmpdir-out.info"
@@ -357,7 +524,165 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     expected_in_place = expected_trace("/same.c", "DA:1,3\n", summary=(0,0,0,0,0,0,1,1))
     if same_path.returncode != 0 or in_place.read_text(encoding="utf-8") != expected_in_place:
         raise AssertionError("atomic output did not support overwriting an input")
-    return 5
+    return 7
+
+
+def listfile_boundary_tests(binary: Path, temporary: Path) -> int:
+    root = temporary / "listfile-boundaries"
+    root.mkdir()
+    source = root / "input.info"
+    source.write_text("SF:/nested-list.c\nDA:1,4\nend_of_record\n", encoding="utf-8")
+    empty = root / "empty.list"
+    empty.write_text("# no inputs\n\n", encoding="utf-8")
+    output = root / "empty-plus-file.info"
+    result = run([str(binary), f"@{empty}", str(source), "-o", str(output)])
+    expected = expected_trace("/nested-list.c", "DA:1,4\n", summary=(0,0,0,0,0,0,1,1))
+    if result.returncode != 0 or output.read_text(encoding="utf-8") != expected:
+        raise AssertionError("empty listfile changed or rejected another valid input")
+    no_inputs = run([str(binary), f"@{empty}", "-o", str(root / "empty-only.info")])
+    if no_inputs.returncode != 1:
+        raise AssertionError(f"empty listfile alone returned {no_inputs.returncode}, expected usage status 1")
+
+    for depth, expected_status in ((8, 0), (9, 1)):
+        chain = [root / f"depth-{depth}-{index}.list" for index in range(depth)]
+        for index, path in enumerate(chain):
+            next_entry = f"@{chain[index + 1]}\n" if index + 1 < depth else f"{source}\n"
+            path.write_text(next_entry, encoding="utf-8")
+        nested_output = root / f"depth-{depth}.info"
+        nested = run([str(binary), f"@{chain[0]}", "-o", str(nested_output)])
+        if nested.returncode != expected_status:
+            raise AssertionError(
+                f"{depth}-level listfile chain returned {nested.returncode}, "
+                f"expected {expected_status}: {nested.stderr!r}"
+            )
+        if expected_status == 0 and nested_output.read_text(encoding="utf-8") != expected:
+            raise AssertionError("eight-level listfile chain produced incorrect output")
+        if expected_status == 1 and b"nesting exceeds 8" not in nested.stderr:
+            raise AssertionError("nine-level listfile chain did not explain the nesting limit")
+    return 4
+
+
+def limits_and_io_failure_tests(binary: Path, temporary: Path) -> int:
+    root = temporary / "limits-and-io"
+    root.mkdir()
+    source = root / "small.info"
+    source.write_text("SF:/limits.c\nDA:1,1\nend_of_record\n", encoding="utf-8")
+    out_of_order = root / "out-of-order.info"
+    out_of_order.write_text("SF:/limits.c\nDA:2,1\nDA:1,1\nend_of_record\n", encoding="utf-8")
+
+    valid = run([str(binary), "--mem-limit", "8M", "--jobs", "1", str(source),
+                 "-o", str(root / "8m.info")])
+    if valid.returncode != 0:
+        raise AssertionError(f"8 MiB, one-job minimum was rejected: {valid.stderr!r}")
+    invalid_limits = [
+        ["--mem-limit", "7M", "--jobs", "1"],
+        ["--mem-limit", "8M", "--jobs", "2"],
+        ["--mem-limit", "256M", "--jobs", "33"],
+        ["--mem-limit", "18446744073709551616"],
+        ["--mem-limit", "18446744073709551615G"],
+        ["--mem-limit", "0"],
+        ["--jobs", "0"],
+        ["--jobs", "33"],
+        ["--jobs"],
+        ["--branch-coverage", "sometimes"],
+        ["--rebase", "missing-equals"],
+        ["--not-a-real-option"],
+    ]
+    for options in invalid_limits:
+        result = run([str(binary), *options, str(source), "-o", str(root / "invalid.info")])
+        if result.returncode != 1:
+            raise AssertionError(
+                f"invalid options {options!r} returned {result.returncode}, "
+                f"expected usage status 1: {result.stderr!r}"
+            )
+
+    max_mem = run([str(binary), "--mem-limit", "18446744073709551615", str(source),
+                   "-o", str(root / "max-mem.info")])
+    if max_mem.returncode != 0:
+        raise AssertionError(f"UINT64_MAX byte memory limit was rejected: {max_mem.stderr!r}")
+    max_jobs = run([str(binary), "--mem-limit", "256M", "--jobs", "32", "-v",
+                    *([str(out_of_order)] * 32), "-o", str(root / "32-jobs.info")])
+    if max_jobs.returncode != 0 or b"using 32 job(s)" not in max_jobs.stderr:
+        raise AssertionError(
+            f"32-worker fallback failed: status={max_jobs.returncode}, stderr={max_jobs.stderr!r}"
+        )
+
+    blocked_parent = root / "not-a-directory"
+    blocked_parent.write_text("synthetic blocker\n", encoding="utf-8")
+    bad_output = run([str(binary), str(source), "-o", str(blocked_parent / "out.info")])
+    if bad_output.returncode != 3:
+        raise AssertionError(f"output under a non-directory parent returned {bad_output.returncode}")
+
+    for name, tmpdir in (("missing", root / "missing-tmpdir"),):
+        output = root / f"{name}-preserved.info"
+        original = "preserve this output\n"
+        output.write_text(original, encoding="utf-8")
+        failed = run([str(binary), "--tmpdir", str(tmpdir), "--mem-limit", "8M", "--jobs", "1",
+                      str(out_of_order), "-o", str(output)])
+        if failed.returncode != 3 or output.read_text(encoding="utf-8") != original:
+            raise AssertionError(f"{name} --tmpdir failure did not preserve existing output")
+
+    file_tmpdir = root / "file-as-tmpdir"
+    file_tmpdir.write_text("not a directory\n", encoding="utf-8")
+    output = root / "file-tmpdir-preserved.info"
+    original = "preserve this output\n"
+    output.write_text(original, encoding="utf-8")
+    failed = run([str(binary), "--tmpdir", str(file_tmpdir), "--mem-limit", "8M", "--jobs", "1",
+                  str(out_of_order), "-o", str(output)])
+    if failed.returncode != 3 or output.read_text(encoding="utf-8") != original:
+        raise AssertionError("non-directory --tmpdir failure did not preserve existing output")
+
+    readonly_tested = False
+    if os.name != "nt":
+        readonly_tmpdir = root / "read-only-tmpdir"
+        readonly_tmpdir.mkdir()
+        readonly_tmpdir.chmod(0o500)
+        try:
+            if not os.access(readonly_tmpdir, os.W_OK):
+                readonly_tested = True
+                output = root / "readonly-tmpdir-preserved.info"
+                output.write_text(original, encoding="utf-8")
+                failed = run([
+                    str(binary), "--tmpdir", str(readonly_tmpdir), "--mem-limit", "8M", "--jobs", "1",
+                    str(out_of_order), "-o", str(output),
+                ])
+                if failed.returncode != 3 or output.read_text(encoding="utf-8") != original:
+                    raise AssertionError("unwritable --tmpdir did not preserve existing output")
+        finally:
+            readonly_tmpdir.chmod(0o700)
+
+        fullish_run_dir = root / "full-ish-runs"
+        fullish_run_dir.mkdir()
+        output = root / "full-ish-preserved.info"
+        output.write_text(original, encoding="utf-8")
+
+        def limit_child_file_size() -> None:
+            import resource
+
+            signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+            _soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+            cap = 128 if hard_limit == resource.RLIM_INFINITY else min(128, hard_limit)
+            resource.setrlimit(resource.RLIMIT_FSIZE, (cap, cap))
+
+        fullish = run([
+            str(binary), "--tmpdir", str(fullish_run_dir), "--mem-limit", "8M", "--jobs", "1",
+            str(out_of_order), "-o", str(output),
+        ], preexec_fn=limit_child_file_size)
+        if (fullish.returncode != 3 or output.read_text(encoding="utf-8") != original or
+                list(fullish_run_dir.iterdir())):
+            raise AssertionError(
+                "simulated full-ish temporary storage failure did not preserve output and clean runs: "
+                f"status={fullish.returncode}, stderr={fullish.stderr!r}"
+            )
+
+    malformed = root / "bad-input.info"
+    malformed.write_bytes(b"SF:/bad.c\nDA:1,broken\n")
+    preserved = root / "atomic-preserved.info"
+    preserved.write_text("old output\n", encoding="utf-8")
+    failed = run([str(binary), str(malformed), "-o", str(preserved)])
+    if failed.returncode != 2 or preserved.read_text(encoding="utf-8") != "old output\n":
+        raise AssertionError("format failure changed an existing output file")
+    return 20 + int(readonly_tested)
 
 
 def signal_cleanup_tests(binary: Path) -> int:
@@ -716,19 +1041,26 @@ def main() -> int:
         parser.error(f"binary does not exist: {binary}")
     with tempfile.TemporaryDirectory(prefix="lcovmerge-tests-") as temp:
         temporary = Path(temp)
+        boundaries = parser_boundary_tests(binary, temporary)
         goldens = run_goldens(binary, temporary)
         malformed = malformed_tests(binary, temporary)
         differential = differential_tests(binary, temporary)
+        randomized_sets, randomized_runs = randomized_differential_tests(binary, temporary)
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
+        listfile_cases = listfile_boundary_tests(binary, temporary)
+        limit_io_cases = limits_and_io_failure_tests(binary, temporary)
         signal_cases = signal_cleanup_tests(binary)
         closed_pipe_cases = closed_stdout_pipe_cleanup_test(binary, temporary)
         staged_signal_cases = interrupted_staged_output_tests(binary)
         interruption_doc_cases = interruption_documentation_tests()
         many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
-    print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
-          f"determinism_runs={deterministic} io_cases={io_cases} signal_cleanup_cases={signal_cases} "
+    print(f"boundary_cases={boundaries} golden_cases={goldens} malformed_cases={malformed} "
+          f"oracle_cases={differential} randomized_sets={randomized_sets} "
+          f"randomized_runs={randomized_runs} determinism_runs={deterministic} "
+          f"io_cases={io_cases} listfile_cases={listfile_cases} limit_io_cases={limit_io_cases} "
+          f"signal_cleanup_cases={signal_cases} "
           f"closed_pipe_cases={closed_pipe_cases} "
           f"interrupted_staged_output_cases={staged_signal_cases} many_paths_cases={many_paths_cases} "
           f"interruption_doc_cases={interruption_doc_cases} "
