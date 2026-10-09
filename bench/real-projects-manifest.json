@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "coverage": {
+    "compiler": "clang",
+    "c_flags": "--coverage",
+    "cxx_flags": "--coverage",
+    "linker_flags": "--coverage"
+  },
+  "projects": [
+    {
+      "name": "zlib",
+      "url": "https://github.com/madler/zlib.git",
+      "commit": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "commit_date": "2024-01-22",
+      "build": "CMake examples and tests",
+      "test": "ctest"
+    },
+    {
+      "name": "lua",
+      "url": "https://github.com/lua/lua.git",
+      "commit": "1ab3208a1fceb12fca8f24ba57d6e13c5bff15e3",
+      "commit_date": "2024-06-13",
+      "build": "make with MYCFLAGS and MYLDFLAGS",
+      "test": "lua -e _port=true -W all.lua (portable mode)"
+    },
+    {
+      "name": "cjson",
+      "url": "https://github.com/DaveGamble/cJSON.git",
+      "commit": "acc76239bee01d8e9c858ae2cab296704e52d916",
+      "commit_date": "2024-05-13",
+      "build": "CMake test target",
+      "test": "ctest"
+    },
+    {
+      "name": "json-c",
+      "url": "https://github.com/json-c/json-c.git",
+      "commit": "41a55cfcedb54d9c1874f2f0eb07b504091d7e37",
+      "commit_date": "2024-09-15",
+      "build": "CMake test targets",
+      "test": "ctest"
+    },
+    {
+      "name": "libyaml",
+      "url": "https://github.com/yaml/libyaml.git",
+      "commit": "2c891fc7a770e8ba2fec34fc6b545c672beb37e6",
+      "commit_date": "2020-06-01",
+      "build": "CMake test targets",
+      "test": "ctest"
+    },
+    {
+      "name": "tinyxml2",
+      "url": "https://github.com/leethomason/tinyxml2.git",
+      "commit": "9148bdf719e997d1f474be6bcc7943881046dba1",
+      "commit_date": "2025-03-15",
+      "build": "CMake C++ test target",
+      "test": "ctest"
+    }
+  ]
+}
