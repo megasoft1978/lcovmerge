@@ -110,7 +110,7 @@ def merge(paths: list[str]) -> dict:
                         end, name = 0, parts[1]
                     if not name:
                         raise ValueError("format")
-                    group = (0, 0, 0, 0, name)
+                    group = (0, start, end, 0, name)
                     current["groups"].add(group)
                     current["old_fns"].add((start, end, name))
                     fnl = None
@@ -227,19 +227,25 @@ def render(files: dict) -> str:
         for name, count in sorted(record["old_fnda"].items()):
             output.append(f"FNDA:{count},{name}\n")
 
+        coverage_rows: list[tuple[tuple, str]] = []
         branch_data = record["br"]
-        for (line_no, block, branch, branch_text, markers), (count, dash, numeric) in sorted(branch_data.items()):
+        for (line_no, block, branch, branch_text, markers), (count, dash, numeric) in branch_data.items():
             block_text = "".join(ch for ch in "efU" if ch in markers) + str(block)
             branch_value = str(branch) if numeric else branch_text
             count_value = "-" if dash else str(count)
-            output.append(f"BRDA:{line_no},{block_text},{branch_value},{count_value}\n")
-        for (line_no, group, index, flags), (count, expression) in sorted(record["mcdc"].items()):
+            marker_rank = sum({"e": 8, "f": 16, "U": 32}[marker] for marker in set(markers))
+            branch_sort = (branch, marker_rank, branch_value)
+            coverage_rows.append(((line_no, 1, block, branch_sort),
+                                  f"BRDA:{line_no},{block_text},{branch_value},{count_value}\n"))
+        for (line_no, group, index, flags), (count, expression) in record["mcdc"].items():
             unreachable = "U" if flags & 2 else ""
             sense = "t" if flags & 1 else "f"
-            output.append(f"MCDC:{line_no},{unreachable}{group},{sense},{count},{index},{expression}\n")
-        for line_no, (count, checksum) in sorted(record["da"].items()):
+            coverage_rows.append(((line_no, 2, group, index, flags, expression),
+                                  f"MCDC:{line_no},{unreachable}{group},{sense},{count},{index},{expression}\n"))
+        for line_no, (count, checksum) in record["da"].items():
             suffix = f",{checksum}" if checksum else ""
-            output.append(f"DA:{line_no},{count}{suffix}\n")
+            coverage_rows.append(((line_no, 0, checksum), f"DA:{line_no},{count}{suffix}\n"))
+        output.extend(row for _key, row in sorted(coverage_rows))
         output.extend(f"{row}\n" for row in sorted(record["ext"]))
 
         group_hits = set()

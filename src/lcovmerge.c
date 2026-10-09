@@ -54,10 +54,13 @@ typedef struct {
 
 typedef struct {
     Record *rows;
+    Record last_row;
     size_t count, capacity;
     char *arena;
     size_t arena_size, arena_used;
     size_t budget;
+    int have_last_row;
+    int sorted;
 } Chunk;
 
 typedef struct {
@@ -392,16 +395,28 @@ static int new_function_event(const Record *record) {
            (record->flags & FLAG_FN_NEW) != 0;
 }
 
+static int legacy_function_event(const Record *record) {
+    return (record->type == REC_GROUP || record->type == REC_FN) &&
+           (record->flags & FLAG_FN_NEW) == 0;
+}
+
+static int coverage_event(const Record *record) {
+    return record->type == REC_DA || record->type == REC_BRDA || record->type == REC_MCDC;
+}
+
+static unsigned coverage_order(const Record *record) {
+    if (record->type == REC_DA) return 0u;
+    if (record->type == REC_BRDA) return 1u;
+    return 2u;
+}
+
 static unsigned record_order(const Record *record) {
     if (record->type == REC_TN) return 0u;
     if (record->type == REC_SECTION) return 1u;
-    if (record->type == REC_GROUP && !new_function_event(record)) return 2u;
     if (new_function_event(record)) return 3u;
-    if (record->type == REC_FN) return 4u;
+    if (legacy_function_event(record)) return 4u;
     if (record->type == REC_FNDA) return 5u;
-    if (record->type == REC_BRDA) return 6u;
-    if (record->type == REC_MCDC) return 7u;
-    if (record->type == REC_DA) return 8u;
+    if (coverage_event(record)) return 6u;
     return 9u;
 }
 
@@ -417,6 +432,20 @@ static int record_key_compare(const Record *left, const Record *right) {
         if (left->type != right->type) return left->type == REC_GROUP ? -1 : 1;
         if (left->type == REC_GROUP) return string_compare(left->extra, right->extra);
         return string_compare(left->text, right->text);
+    }
+    if (legacy_function_event(left) && legacy_function_event(right)) {
+        if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
+        if (left->b != right->b) return (left->b > right->b) - (left->b < right->b);
+        if (left->c != right->c) return (left->c > right->c) - (left->c < right->c);
+        result = string_compare(left->extra, right->extra);
+        if (result) return result;
+        if (left->type != right->type) return left->type == REC_GROUP ? -1 : 1;
+        return string_compare(left->text, right->text);
+    }
+    if (coverage_event(left) && coverage_event(right)) {
+        if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
+        unsigned left_rank = coverage_order(left), right_rank = coverage_order(right);
+        if (left_rank != right_rank) return (left_rank > right_rank) - (left_rank < right_rank);
     }
     unsigned left_order = record_order(left), right_order = record_order(right);
     if (left_order != right_order) return (left_order > right_order) - (left_order < right_order);
@@ -565,7 +594,7 @@ static char *arena_copy(Chunk *chunk, const char *value, size_t length) {
 
 static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     if (chunk->count == 0) return 0;
-    qsort(chunk->rows, chunk->count, sizeof(*chunk->rows), record_qsort_compare);
+    if (!chunk->sorted) qsort(chunk->rows, chunk->count, sizeof(*chunk->rows), record_qsort_compare);
     char *path = NULL;
     lm_handle handle = LM_INVALID_HANDLE;
     if (lm_create_temp(tmpdir, &path, &handle) != 0) return -1;
@@ -590,6 +619,8 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     }
     chunk->count = 0;
     chunk->arena_used = 0;
+    chunk->have_last_row = 0;
+    chunk->sorted = 1;
     return 0;
 }
 
@@ -609,6 +640,10 @@ static int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Reco
     stored->text = arena_copy(chunk, record->text, text_length);
     stored->extra = arena_copy(chunk, record->extra, extra_length);
     if (!stored->path || !stored->text || !stored->extra) return -2;
+    if (chunk->have_last_row && record_total_compare(&chunk->last_row, stored) > 0)
+        chunk->sorted = 0;
+    chunk->last_row = *stored;
+    chunk->have_last_row = 1;
     ++chunk->count;
     return 0;
 }
@@ -631,6 +666,7 @@ static int chunk_init(Chunk *chunk, size_t budget) {
         return -1;
     }
     chunk->budget = budget;
+    chunk->sorted = 1;
     return 0;
 }
 
@@ -929,7 +965,7 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
             name = cursor;
         } else name = next_field;
         if (*keep_path) {
-            if (add_row(worker, chunk, *path, REC_GROUP, name, name, 0, 0, 0,
+            if (add_row(worker, chunk, *path, REC_GROUP, name, name, start, end, 0,
                         0, 0, input_id, line_no) != 0 ||
                 add_row(worker, chunk, *path, REC_FN, name, name, start, end, 0,
                         0, 0, input_id, line_no) != 0) return -1;
@@ -1270,7 +1306,12 @@ static void *worker_main(void *raw) {
             (void)worker_error(worker, 3, worker->options->inputs.items[i], 0, "interrupted");
             break;
         }
-        if (parse_input_file(worker, &chunk, worker->options->inputs.items[i], (uint32_t)i) != 0) break;
+        const char *filename = worker->options->inputs.items[i];
+        if (parse_input_file(worker, &chunk, filename, (uint32_t)i) != 0) break;
+        if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0) {
+            (void)worker_error(worker, 3, filename, 0, "cannot write temporary run");
+            break;
+        }
     }
     if (worker->error_code == 0 && flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0)
         (void)worker_error(worker, 3, worker->current_file, 0, "cannot write temporary run");

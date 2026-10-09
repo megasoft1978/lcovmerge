@@ -46,15 +46,15 @@ def generate(generator: pathlib.Path, path_heavy: pathlib.Path, out: pathlib.Pat
     generator_binary = out / "gen-lcov"
     subprocess.run([cc, "-std=c11", "-O2", "-Wall", "-Wextra", str(generator), "-o", str(generator_binary)], check=True)
     workloads = {
-        "S": (8, 64, 23000),
-        "M": (32, 256, 23000),
+        "S": (8, 56, 23000),
+        "M": (32, 220, 16000),
         "XL-single": (1, 1, 30340000),
     }
     inputs: dict[str, list[pathlib.Path]] = {}
     for name, (shards, files, lines) in workloads.items():
         directory = generated / name
         subprocess.run([str(generator_binary), "--out", str(directory), "--shards", str(shards),
-                        "--files", str(files), "--lines", str(lines), "--seed", "1", "--checksums"], check=True)
+                        "--files", str(files), "--lines", str(lines), "--seed", "4242", "--checksums"], check=True)
         inputs[name] = sorted(directory.glob("*.info"))
     heavy = generated / "path-heavy.info"
     subprocess.run(["python3", str(path_heavy), "--count", "2000000", "--output", str(heavy)], check=True)
@@ -104,7 +104,7 @@ def main() -> int:
                 exit_code = status
                 break
             if name == "M":
-                for jobs in (1, 2, 8):
+                for jobs in (1, 2, 4, 8):
                     job_output = work / f"M-j{jobs}.info"
                     job_command = [str(binary), "--jobs", str(jobs), "-o", str(job_output), *map(str, paths)]
                     code, duration, job_log = timed(job_command, work / f"M-j{jobs}-time.txt", args.timeout)
