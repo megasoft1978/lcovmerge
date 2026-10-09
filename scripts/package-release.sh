@@ -16,7 +16,16 @@ esac
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 build_dir=${LCOVMERGE_BUILD_DIR:-dist}
-release_dir=dist/release
+release_dir=${LCOVMERGE_RELEASE_DIR:-dist/release}
+case "$release_dir" in
+  /*) ;;
+  *) release_dir="$repo_root/$release_dir" ;;
+esac
+docker_context=${LCOVMERGE_DOCKER_CONTEXT:-packaging/docker}
+case "$docker_context" in
+  /*) ;;
+  *) docker_context="$repo_root/$docker_context" ;;
+esac
 stage_dir=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-package.XXXXXX")
 trap 'rm -rf "$stage_dir"' EXIT HUP INT TERM
 
@@ -38,7 +47,7 @@ package_tarball() {
   cp "$source" "$stage/$binary_name"
   chmod 755 "$stage/$binary_name"
   archive="$release_dir/lcovmerge-$version-$asset_arch.tar.gz"
-  python3 scripts/create-tarball.py "$stage/$binary_name" "$repo_root/$archive"
+  python3 scripts/create-tarball.py "$stage/$binary_name" "$archive"
 }
 
 package_tarball linux-x86_64 linux-x86_64
@@ -85,7 +94,6 @@ scripts/update-packaging.sh "$release_dir/SHA256SUMS" "$version"
 python3 scripts/write-sbom.py "$version" "$build_dir" "$release_dir/sbom.cdx.json"
 python3 scripts/extract-release-notes.py "$version" CHANGELOG.md "$release_dir/RELEASE_NOTES.md"
 
-docker_context=packaging/docker
 rm -rf "$docker_context/amd64" "$docker_context/arm64"
 mkdir -p "$docker_context/amd64" "$docker_context/arm64"
 cp "$build_dir/lcovmerge-$version-linux-x86_64" "$docker_context/amd64/lcovmerge"

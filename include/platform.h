@@ -33,5 +33,8 @@ lm_handle lm_stdout_handle(void);
 unsigned lm_cpu_count(void);
 int lm_thread_start(lm_thread *thread, lm_thread_fn function, void *argument);
 int lm_thread_join(lm_thread thread);
+#ifdef _WIN32
+int lm_install_console_ctrl_handler(void);
+#endif
 
 #endif
