@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #ifdef _WIN32
 typedef void *lm_thread;
@@ -19,8 +20,10 @@ typedef void *(*lm_thread_fn)(void *);
 int lm_open_read(const char *path, lm_handle *out);
 int lm_is_regular_file(const char *path);
 int lm_create_temp(const char *directory, char **path_out, lm_handle *out);
-int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out);
-int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out);
+int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,
+            const atomic_bool *cancelled);
+int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out,
+             const atomic_bool *cancelled);
 int lm_close(lm_handle handle);
 int lm_remove(const char *path);
 int lm_rename(const char *from, const char *to);

@@ -81,7 +81,9 @@ int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
     return 0;
 }
 
-int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out) {
+int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out,
+            const atomic_bool *cancelled) {
+    (void)cancelled;
     HANDLE handle = (HANDLE)(intptr_t)raw;
     DWORD request = capacity > UINT32_MAX ? UINT32_MAX : (DWORD)capacity;
     DWORD result = 0;
@@ -90,7 +92,9 @@ int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out) {
     return 0;
 }
 
-int lm_write(lm_handle raw, const void *buffer, size_t length, size_t *written_out) {
+int lm_write(lm_handle raw, const void *buffer, size_t length, size_t *written_out,
+             const atomic_bool *cancelled) {
+    (void)cancelled;
     HANDLE handle = (HANDLE)(intptr_t)raw;
     DWORD request = length > UINT32_MAX ? UINT32_MAX : (DWORD)length;
     DWORD result = 0;

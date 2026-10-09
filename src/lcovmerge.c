@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,11 +207,38 @@ typedef struct {
     int have_fn_group, fn_group_hit;
 } OutputState;
 
-static volatile sig_atomic_t interrupted;
+static atomic_bool interrupted = ATOMIC_VAR_INIT(0);
+_Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "signal cancellation flag must be lock-free");
 
 static void on_signal(int signal_number) {
     (void)signal_number;
-    interrupted = 1;
+    atomic_store_explicit(&interrupted, 1, memory_order_relaxed);
+}
+
+static int install_signal_handlers(void) {
+#ifdef _WIN32
+    if (signal(SIGINT, on_signal) == SIG_ERR || signal(SIGTERM, on_signal) == SIG_ERR) return -1;
+#ifdef SIGHUP
+    if (signal(SIGHUP, on_signal) == SIG_ERR) return -1;
+#endif
+#else
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = on_signal;
+    action.sa_flags = 0;
+    if (sigemptyset(&action.sa_mask) != 0 ||
+        sigaction(SIGINT, &action, NULL) != 0 ||
+        sigaction(SIGTERM, &action, NULL) != 0) return -1;
+#ifdef SIGHUP
+    if (sigaction(SIGHUP, &action, NULL) != 0) return -1;
+#endif
+    struct sigaction ignore_pipe;
+    memset(&ignore_pipe, 0, sizeof(ignore_pipe));
+    ignore_pipe.sa_handler = SIG_IGN;
+    if (sigemptyset(&ignore_pipe.sa_mask) != 0 ||
+        sigaction(SIGPIPE, &ignore_pipe, NULL) != 0) return -1;
+#endif
+    return 0;
 }
 
 static void print_usage(FILE *stream) {
@@ -313,7 +341,8 @@ static int writer_flush(Writer *writer) {
     size_t pos = 0;
     while (pos < writer->used) {
         size_t amount = 0;
-        if (lm_write(writer->handle, writer->buffer + pos, writer->used - pos, &amount) != 0 || amount == 0) {
+        if (lm_write(writer->handle, writer->buffer + pos, writer->used - pos,
+                     &amount, &interrupted) != 0 || amount == 0) {
             writer->failed = 1;
             return -1;
         }
@@ -439,7 +468,8 @@ static int line_reader_next(LineReader *reader) {
     for (;;) {
         if (reader->pos == reader->len) {
             size_t amount = 0;
-            if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount) != 0) return -1;
+            if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount,
+                        &interrupted) != 0) return -1;
             reader->pos = 0;
             reader->len = amount;
             if (amount == 0) {
@@ -1426,7 +1456,10 @@ static int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, 
     uint64_t fnl_index = 0, fnl_line = 0, fnl_end = 0;
     int fnl_valid = 0;
     for (;;) {
-        if (interrupted) { status = worker_error(worker, 3, filename, reader.line_no, "interrupted"); break; }
+        if (atomic_load_explicit(&interrupted, memory_order_relaxed)) {
+            status = worker_error(worker, 3, filename, reader.line_no, "interrupted");
+            break;
+        }
         int got = line_reader_next(&reader);
         if (got == 0) break;
         if (got == -1) { status = worker_error(worker, 3, filename, reader.line_no + 1, "input read failed"); break; }
@@ -1720,7 +1753,8 @@ static int run_reader_fill(RunReader *reader, void *destination, size_t length) 
     while (copied < length) {
         if (reader->pos == reader->len) {
             size_t amount = 0;
-            if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount) != 0) return -1;
+            if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount,
+                        &interrupted) != 0) return -1;
             reader->pos = 0;
             reader->len = amount;
             if (amount == 0) return copied == 0 ? 0 : -1;
@@ -2175,7 +2209,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     Record aggregate;
     int have_aggregate = 0;
     while (status == 0 && heap_count != 0) {
-        if (interrupted) { status = 3; break; }
+        if (atomic_load_explicit(&interrupted, memory_order_relaxed)) { status = 3; break; }
         size_t reader_index = heap[0];
         Record *row = &readers[reader_index].row;
         if (!final_output) {
@@ -2271,7 +2305,7 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
     if (input->eof) return 0;
     worker->current_file = input->filename;
     for (;;) {
-        if (interrupted) {
+        if (atomic_load_explicit(&interrupted, memory_order_relaxed)) {
             (void)worker_error(worker, 3, input->filename, input->reader.line_no, "interrupted");
             return -1;
         }
@@ -2505,7 +2539,7 @@ static int run_direct_merge(const Options *options) {
     Record aggregate;
     int have_aggregate = 0;
     while (!fallback && status == 0 && active_count != 0) {
-        if (interrupted) { status = 3; break; }
+        if (atomic_load_explicit(&interrupted, memory_order_relaxed)) { status = 3; break; }
         size_t input_index = tree[1];
         Worker *worker = &inputs[input_index].worker;
         Record *row = direct_current_row(&inputs[input_index]);
@@ -2695,11 +2729,10 @@ static int run_merge(const Options *options) {
 }
 
 int lcovmerge_main(int argc, char **argv) {
-    signal(SIGINT, on_signal);
-    signal(SIGTERM, on_signal);
-#ifdef SIGHUP
-    signal(SIGHUP, on_signal);
-#endif
+    if (install_signal_handlers() != 0) {
+        fprintf(stderr, "lcovmerge: cannot install signal handlers: %s\n", strerror(errno));
+        return 3;
+    }
     Options options;
     int option_status = parse_options(argc, argv, &options);
     if (option_status == 0) { options_destroy(&options); return 0; }

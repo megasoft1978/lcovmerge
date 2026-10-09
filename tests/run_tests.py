@@ -366,7 +366,7 @@ def signal_cleanup_tests(binary: Path) -> int:
 
     signals = [(name, getattr(signal, name)) for name in ("SIGHUP", "SIGTERM", "SIGINT")
                if hasattr(signal, name)]
-    cache_root = ROOT / ".cache" / "luna-1009-1853"
+    cache_root = Path(tempfile.gettempdir())
     cache_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="signal-cleanup-", dir=cache_root) as work_dir:
         work = Path(work_dir)
@@ -422,6 +422,70 @@ def signal_cleanup_tests(binary: Path) -> int:
                     f"remaining={remaining!r}, stdout={stdout!r}, stderr={stderr!r}"
                 )
     return len(signals)
+
+
+def closed_stdout_pipe_cleanup_test(binary: Path, temporary: Path) -> int:
+    if os.name == "nt":
+        return 0
+
+    work = temporary / "closed-stdout-pipe"
+    work.mkdir()
+    source = work / "out-of-order.info"
+    with source.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write("SF:/closed-pipe.c\n")
+        for line_number in range(300_000, 0, -1):
+            stream.write(f"DA:{line_number},1\n")
+        stream.write("end_of_record\n")
+
+    run_dir = work / "runs"
+    run_dir.mkdir()
+    process = subprocess.Popen(
+        [str(binary), "--mem-limit", "8M", "--jobs", "1", "--tmpdir", str(run_dir),
+         str(source), "-o", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    stdout = process.stdout
+    stderr = process.stderr
+    try:
+        deadline = time.monotonic() + 30
+        run_files = []
+        while time.monotonic() < deadline:
+            run_files = list(run_dir.iterdir())
+            if run_files:
+                break
+            if process.poll() is not None:
+                output, error = process.communicate()
+                raise AssertionError(
+                    "closed-pipe test exited before creating an external-sort run: "
+                    f"status={process.returncode}, stdout={output!r}, stderr={error!r}"
+                )
+            time.sleep(0.01)
+        if not run_files:
+            raise AssertionError("closed-pipe test did not create an external-sort run")
+
+        stdout.close()
+        returncode = process.wait(timeout=30)
+        error = stderr.read()
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if stdout is not None and not stdout.closed:
+            stdout.close()
+        if stderr is not None:
+            stderr.close()
+        raise
+
+    remaining = list(run_dir.iterdir())
+    if returncode != 3 or remaining:
+        raise AssertionError(
+            "closed stdout pipe did not fail through normal cleanup: "
+            f"status={returncode}, runs_before_close={run_files!r}, remaining={remaining!r}, "
+            f"stderr={error!r}"
+        )
+    if stderr is not None:
+        stderr.close()
+    return 1
 
 
 def many_paths_test(binary: Path, temporary: Path) -> int:
@@ -524,10 +588,12 @@ def main() -> int:
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
         signal_cases = signal_cleanup_tests(binary)
+        closed_pipe_cases = closed_stdout_pipe_cleanup_test(binary, temporary)
         many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
           f"determinism_runs={deterministic} io_cases={io_cases} signal_cleanup_cases={signal_cases} "
+          f"closed_pipe_cases={closed_pipe_cases} "
           f"many_paths_cases={many_paths_cases} "
           f"lcov_cases={lcov_cases}")
     return 0

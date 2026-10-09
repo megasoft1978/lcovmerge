@@ -46,21 +46,27 @@ int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
     return 0;
 }
 
-int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out) {
+int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,
+            const atomic_bool *cancelled) {
     size_t request = capacity;
     if (request > (size_t)INT_MAX) request = (size_t)INT_MAX;
     ssize_t result;
-    do { result = read((int)handle, buffer, request); } while (result < 0 && errno == EINTR);
+    do { result = read((int)handle, buffer, request); }
+    while (result < 0 && errno == EINTR &&
+           !atomic_load_explicit(cancelled, memory_order_relaxed));
     if (result < 0) return -1;
     *read_out = (size_t)result;
     return 0;
 }
 
-int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out) {
+int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out,
+             const atomic_bool *cancelled) {
     size_t request = length;
     if (request > (size_t)INT_MAX) request = (size_t)INT_MAX;
     ssize_t result;
-    do { result = write((int)handle, buffer, request); } while (result < 0 && errno == EINTR);
+    do { result = write((int)handle, buffer, request); }
+    while (result < 0 && errno == EINTR &&
+           !atomic_load_explicit(cancelled, memory_order_relaxed));
     if (result < 0) return -1;
     *written_out = (size_t)result;
     return 0;
