@@ -18,6 +18,8 @@
 #define RUN_FANIN_MAX 16u
 #define MAX_JOBS 32u
 #define DEFAULT_MEM_LIMIT ((size_t)64u << 20)
+#define MIN_WORKER_BUDGET ((size_t)8u << 20)
+#define ARENA_HEADROOM ((size_t)24u << 20)
 
 enum RecordType {
     REC_TN = 1,
@@ -1359,11 +1361,11 @@ static int parse_options(int argc, char **argv, Options *options) {
             if (list_add_string(&options->inputs, argv[i]) != 0) return 3;
         }
     }
-    if (!options->jobs_explicit && options->jobs > options->mem_limit / (((size_t)8u << 20)))
-        options->jobs = (unsigned)(options->mem_limit / (((size_t)8u << 20)));
+    if (!options->jobs_explicit && options->jobs > options->mem_limit / MIN_WORKER_BUDGET)
+        options->jobs = (unsigned)(options->mem_limit / MIN_WORKER_BUDGET);
     if (options->jobs == 0) options->jobs = 1;
-    if (!options->output || options->inputs.count == 0 || options->mem_limit < ((size_t)8u << 20) ||
-        options->jobs > options->mem_limit / (((size_t)8u << 20))) goto usage_error;
+    if (!options->output || options->inputs.count == 0 || options->mem_limit < MIN_WORKER_BUDGET ||
+        options->jobs > options->mem_limit / MIN_WORKER_BUDGET) goto usage_error;
     return 99;
 
 usage_error:
@@ -1959,7 +1961,10 @@ static int run_merge(const Options *options) {
     }
     unsigned job_count = options->jobs;
     if ((size_t)job_count > options->inputs.count) job_count = (unsigned)options->inputs.count;
-    size_t budget = options->mem_limit / job_count;
+    size_t worker_floor = (size_t)job_count * MIN_WORKER_BUDGET;
+    size_t arena_limit = options->mem_limit > ARENA_HEADROOM ? options->mem_limit - ARENA_HEADROOM : 0;
+    if (arena_limit < worker_floor) arena_limit = worker_floor;
+    size_t budget = arena_limit / job_count;
     Worker *workers = calloc(job_count, sizeof(*workers));
     lm_thread *threads = job_count > 1 ? calloc(job_count - 1u, sizeof(*threads)) : NULL;
     unsigned started = 0;

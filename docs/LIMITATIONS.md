@@ -16,7 +16,7 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 ## Input and operational bounds
 
 - Maximum input line: 1 MiB. Maximum @listfile nesting: 8. Maximum workers: 32, with an 8 MiB minimum arena budget per worker.
-- --mem-limit bounds worker record arenas, not total process RSS. Parser lines, I/O buffers, merge bookkeeping, temporary path lists, allocator metadata, and runtime/library state contribute additional memory.
+- --mem-limit bounds worker record arenas, not total process RSS. Up to 24 MiB of the setting is reserved for parser lines, I/O buffers, merge bookkeeping, thread stacks, allocator metadata, and runtime/library state, while preserving at least 8 MiB per worker.
 - External sorting consumes temporary disk space proportional to input plus intermediate runs. A named run file is necessary because the merge performs bounded-fan-in passes and reopens runs. --tmpdir selects their directory. Files are created privately on POSIX and removed during handled exit/error paths.
 - A signal during a long read is checked at line boundaries; cleanup starts after the current read call returns. Sudden process termination such as SIGKILL or power loss can leave named run files behind.
 - Parallel parsing is across input files. -j gives no parser scaling when the workload contains only one input file. The merge stage itself is single-threaded.
