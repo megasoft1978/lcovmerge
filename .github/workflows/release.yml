@@ -29,6 +29,16 @@ jobs:
       - name: Run host tests
         run: make test
 
+      - name: Install Zig 0.17.0 (checksum verified)
+        run: |
+          set -eu
+          archive="$RUNNER_TEMP/zig.tar.xz"
+          curl -fsSL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$archive"
+          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $archive" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
       - name: Build all release targets with Zig
         run: scripts/build-all.sh
 
