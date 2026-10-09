@@ -1,0 +1,51 @@
+name: lcovmerge
+description: Merge LCOV tracefiles with a verified release binary.
+inputs:
+  files:
+    description: Newline-separated file paths or shell-style glob patterns; relative paths use the workspace, absolute paths are accepted, empty lines and directories are skipped, and duplicate files are removed.
+    required: true
+  output:
+    description: Required output tracefile path relative to the workspace, or an absolute path. The action does not support standard-output mode.
+    required: false
+    default: coverage-merged.info
+  mem-limit:
+    description: Optional lcovmerge record-arena cap in bytes or with case-insensitive binary K, M, or G suffixes (default 64M; at least 8M per job).
+    required: false
+  extra-args:
+    description: Optional shell-quoted lcovmerge options, such as --prefix-strip PREFIX or --branch-coverage off. File inputs and output are set by this action.
+    required: false
+  version:
+    description: Release version to download, without or with a leading v.
+    required: false
+    default: 1.0.0
+outputs:
+  summary:
+    description: Summary text emitted by lcovmerge --stats.
+    value: ${{ steps.merge.outputs.summary || steps['merge-windows'].outputs.summary }}
+runs:
+  using: composite
+  steps:
+    - name: Download, verify, and run lcovmerge (Unix)
+      id: merge
+      if: runner.os != 'Windows'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_MEM_LIMIT: ${{ inputs.mem-limit }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: python3 "$GITHUB_ACTION_PATH/action/scripts/entrypoint.py"
+    - name: Download, verify, and run lcovmerge (Windows)
+      id: merge-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      env:
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_MEM_LIMIT: ${{ inputs.mem-limit }}
+        INPUT_EXTRA_ARGS: ${{ inputs.extra-args }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: python "$env:GITHUB_ACTION_PATH\action\scripts\entrypoint.py"
