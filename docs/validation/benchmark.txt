@@ -1,0 +1,15 @@
+host=macOS-27.0-arm64-arm-64bit
+bench_repo=/Users/megasoft78/Desktop/Freelance/lcov-merge-bench
+timeout_seconds=1800
+generator=/Users/megasoft78/Desktop/Freelance/lcov-merge-bench/tools/gen-lcov.c
+temporary_data=outside repository; removed automatically
+S: input_bytes=99996906 wall_seconds=0.450 throughput_MB_s=222.1 status=0 23216128  maximum resident set size
+M: input_bytes=1118686233 wall_seconds=6.687 throughput_MB_s=167.3 status=0 25395200  maximum resident set size
+M jobs=1: input_bytes=1118686233 wall_seconds=6.533 throughput_MB_s=171.2 status=0 21512192  maximum resident set size
+M jobs=2: input_bytes=1118686233 wall_seconds=6.773 throughput_MB_s=165.2 status=0 23560192  maximum resident set size
+M jobs=4: input_bytes=1118686233 wall_seconds=6.868 throughput_MB_s=162.9 status=0 24035328  maximum resident set size
+M jobs=8: input_bytes=1118686233 wall_seconds=6.364 throughput_MB_s=175.8 status=0 38993920  maximum resident set size
+M vs lcov: input_bytes=1118686233 wall_seconds=43.037 throughput_MB_s=26.0 status=0 642662400  maximum resident set size
+M vs lcov-result-merger: input_bytes=1118686233 wall_seconds=139.030 throughput_MB_s=8.0 status=0 2399617024  maximum resident set size
+XL-single: input_bytes=744992058 wall_seconds=3.184 throughput_MB_s=234.0 status=0 23953408  maximum resident set size
+PATH-HEAVY: input_bytes=130000000 wall_seconds=1.964 throughput_MB_s=66.2 status=0 20545536  maximum resident set size

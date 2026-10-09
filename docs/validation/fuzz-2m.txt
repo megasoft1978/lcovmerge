@@ -1,0 +1,26 @@
+clang -Iinclude -DLCOVMERGE_GIT_COMMIT=\"554997886973\" -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
+ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+		bin/lcovmerge-fuzz tests/fuzz-corpus ${FUZZ_RUNS:-2000000}
+fuzz executions=100000
+fuzz executions=200000
+fuzz executions=300000
+fuzz executions=400000
+fuzz executions=500000
+fuzz executions=600000
+fuzz executions=700000
+fuzz executions=800000
+fuzz executions=900000
+fuzz executions=1000000
+fuzz executions=1100000
+fuzz executions=1200000
+fuzz executions=1300000
+fuzz executions=1400000
+fuzz executions=1500000
+fuzz executions=1600000
+fuzz executions=1700000
+fuzz executions=1800000
+fuzz executions=1900000
+fuzz executions=2000000
+fuzz complete executions=2000000 seeds=4

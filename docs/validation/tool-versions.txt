@@ -1,0 +1,4 @@
+lcov: LCOV version 2.6-0
+0.17.0
+Python 3.12.8
+Apple clang version 21.0.0 (clang-2100.3.34.2)

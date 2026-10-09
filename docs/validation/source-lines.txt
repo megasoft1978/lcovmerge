@@ -1,0 +1,5 @@
+    2099 src/lcovmerge.c
+      94 src/platform_posix.c
+     176 src/platform_win32.c
+       5 src/platform_entry.c
+    2374 total

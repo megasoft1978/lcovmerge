@@ -1,0 +1,32 @@
+lcovmerge-1.0.0-linux-aarch64: OK
+lcovmerge-1.0.0-linux-aarch64.tar.gz: OK
+lcovmerge-1.0.0-linux-aarch64.zip: OK
+lcovmerge-1.0.0-linux-x86_64: OK
+lcovmerge-1.0.0-linux-x86_64.tar.gz: OK
+lcovmerge-1.0.0-linux-x86_64.zip: OK
+lcovmerge-1.0.0-macos-arm64: OK
+lcovmerge-1.0.0-macos-arm64.tar.gz: OK
+lcovmerge-1.0.0-macos-arm64.zip: OK
+lcovmerge-1.0.0-macos-x86_64: OK
+lcovmerge-1.0.0-macos-x86_64.tar.gz: OK
+lcovmerge-1.0.0-macos-x86_64.zip: OK
+lcovmerge-1.0.0-windows-x86_64.exe: OK
+lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: OK
+lcovmerge-1.0.0-windows-x86_64.exe.zip: OK
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64:             ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.tar.gz:      gzip compressed data, last modified: Fri Oct  9 10:52:07 2026, max compression, original size modulo 2^32 92160
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.zip:         Zip archive data, at least v2.0 to extract, compression method=deflate
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64:              ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 10:52:07 2026, max compression, original size modulo 2^32 92160
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64:               Mach-O 64-bit executable arm64
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.tar.gz:        gzip compressed data, last modified: Fri Oct  9 10:52:07 2026, max compression, original size modulo 2^32 92160
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.zip:           Zip archive data, at least v2.0 to extract, compression method=deflate
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64:              Mach-O 64-bit executable x86_64
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 10:52:07 2026, max compression, original size modulo 2^32 61440
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe:        PE32+ executable (console) x86-64, for MS Windows
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: gzip compressed data, last modified: Fri Oct  9 10:52:07 2026, max compression, original size modulo 2^32 143360
+/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.zip:    Zip archive data, at least v2.0 to extract, compression method=deflate
+windows_pe=x86_64 PASS
+reproducible=PASS source_date_epoch=1791543127 git=5298d7f59aad version=1.0.0
