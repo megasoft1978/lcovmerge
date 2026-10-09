@@ -1,13 +1,13 @@
 #!/bin/sh
 set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 zig_bin=${ZIG_CC:-zig}
 command -v "$zig_bin" >/dev/null 2>&1 || { echo "zig cc is required (install with brew install zig)" >&2; exit 1; }
 version=$(sed -n 's/^#define LCOVMERGE_VERSION "\([^"]*\)"/\1/p' include/version.h)
 commit=$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD 2>/dev/null || printf 0)}
-export SOURCE_DATE_EPOCH=$epoch
+export SOURCE_DATE_EPOCH="$epoch"
 dist="$root/dist"
 work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-dist.XXXXXX")
 cleanup() { python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' "$work"; }

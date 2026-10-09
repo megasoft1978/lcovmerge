@@ -3,5 +3,13 @@
 /build/
 /tests/tmp/
 /tests/fuzz-artifacts/
+/bench/data/
+/bench/generated/
+/node_modules/
+/packaging/docker/amd64/
+/packaging/docker/arm64/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 *.profraw
 *.dSYM/

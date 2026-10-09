@@ -1,0 +1,23 @@
+{
+  "version": "@VERSION@",
+  "description": "Streaming, bounded-memory LCOV tracefile merger",
+  "homepage": "https://github.com/megasoft1978/lcovmerge",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/megasoft1978/lcovmerge/releases/download/v@VERSION@/lcovmerge-@VERSION@-windows-x86_64.zip",
+      "hash": "@SHA256_WINDOWS_X86_64@"
+    }
+  },
+  "bin": "lcovmerge.exe",
+  "checkver": {
+    "github": "https://github.com/megasoft1978/lcovmerge"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/megasoft1978/lcovmerge/releases/download/v$version/lcovmerge-$version-windows-x86_64.zip"
+      }
+    }
+  }
+}
