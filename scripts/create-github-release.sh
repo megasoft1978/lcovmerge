@@ -22,4 +22,9 @@ if [ -f dist/release/SHA256SUMS.sigstore.json ]; then
   set -- "$@" dist/release/SHA256SUMS.sigstore.json
 fi
 
-gh release create "$tag" "$@" --verify-tag --title "$tag" --notes-file dist/release/RELEASE_NOTES.md
+if gh release view "$tag" >/dev/null 2>&1; then
+  gh release upload "$tag" "$@" --clobber
+  gh release edit "$tag" --title "$tag" --notes-file dist/release/RELEASE_NOTES.md
+else
+  gh release create "$tag" "$@" --verify-tag --title "$tag" --notes-file dist/release/RELEASE_NOTES.md
+fi

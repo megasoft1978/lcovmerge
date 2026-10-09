@@ -1,0 +1,115 @@
+name: Action smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  action-smoke:
+    name: Smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            python: python3
+          - os: macos-latest
+            python: python3
+          - os: windows-latest
+            python: python
+    env:
+      TMPDIR: ${{ github.workspace }}/.luna-tmp
+      TMP: ${{ github.workspace }}/.luna-tmp
+      TEMP: ${{ github.workspace }}/.luna-tmp
+      LCOVMERGE_PYTHON: ${{ matrix.python }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up MSYS2 and MinGW toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
+
+      - name: Prepare synthetic shards
+        run: ${{ env.LCOVMERGE_PYTHON }} action/tests/prepare_smoke.py
+
+      - name: Test Action entrypoint logic
+        run: ${{ env.LCOVMERGE_PYTHON }} -m unittest discover -s action/tests -v
+
+      - name: Build CLI oracle (Unix)
+        if: runner.os != 'Windows'
+        run: make
+
+      - name: Build CLI oracle (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: make
+
+      - name: Run CLI oracle
+        run: ${{ env.LCOVMERGE_PYTHON }} action/tests/run_oracle.py
+
+      - name: Merge with the published v1.0.0 Action
+        id: merge
+        uses: ./
+        with:
+          files: |
+            coverage/shards/unit.info
+            coverage/shards/*.info
+            coverage/shards
+          output: coverage/action-merged.info
+          mem-limit: 8M
+          extra-args: --branch-coverage on
+          version: v1.0.0
+
+      - name: Assert output, CLI parity, and summary
+        env:
+          ACTION_SUMMARY: ${{ steps.merge.outputs.summary }}
+        run: ${{ env.LCOVMERGE_PYTHON }} action/tests/assert_smoke.py
+
+      - name: Reject missing files input
+        id: missing-files
+        continue-on-error: true
+        uses: ./
+        with:
+          files: ""
+          output: coverage/missing-files.info
+          version: v1.0.0
+
+      - name: Assert missing files input failed
+        if: always()
+        env:
+          ACTION_OUTCOME: ${{ steps.missing-files.outcome }}
+          ACTION_OUTPUT_PATH: coverage/missing-files.info
+        run: ${{ env.LCOVMERGE_PYTHON }} action/tests/assert_failure.py
+
+      - name: Reject malformed LCOV input
+        id: malformed-input
+        continue-on-error: true
+        uses: ./
+        with:
+          files: coverage/bad.info
+          output: coverage/malformed-output.info
+          version: v1.0.0
+
+      - name: Assert malformed LCOV input failed
+        if: always()
+        env:
+          ACTION_OUTCOME: ${{ steps.malformed-input.outcome }}
+          ACTION_OUTPUT_PATH: coverage/malformed-output.info
+        run: ${{ env.LCOVMERGE_PYTHON }} action/tests/assert_failure.py
