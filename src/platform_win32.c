@@ -208,7 +208,11 @@ int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out,
     HANDLE handle = (HANDLE)(intptr_t)raw;
     DWORD request = capacity > UINT32_MAX ? UINT32_MAX : (DWORD)capacity;
     DWORD result = 0;
-    if (!ReadFile(handle, buffer, request, &result, NULL)) return -1;
+    if (!ReadFile(handle, buffer, request, &result, NULL)) {
+        /* A closed write end of a pipe is end-of-file, not an error. */
+        if (GetLastError() != ERROR_BROKEN_PIPE) return -1;
+        result = 0;
+    }
     *read_out = (size_t)result;
     return 0;
 }

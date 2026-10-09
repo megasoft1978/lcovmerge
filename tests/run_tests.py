@@ -499,7 +499,8 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     stdio = run([str(binary), "-", "-o", "-"], input_data=stdin_text)
     expected_stdout = expected_trace("/stdin.c", "DA:2,7\n", summary=(0,0,0,0,0,0,1,1)).encode()
     if stdio.returncode != 0 or stdio.stdout != expected_stdout:
-        raise AssertionError("stdin/stdout mode failed")
+        raise AssertionError(f"stdin/stdout mode failed: status={stdio.returncode}, "
+                             f"stdout={stdio.stdout!r}, stderr={stdio.stderr!r}")
     mixed_stdin = b"SF:/list.c\nDA:1,7\nend_of_record\n"
     mixed = run([str(binary), "-", str(first), "-o", "-"], input_data=mixed_stdin)
     mixed_expected = expected_trace("/list.c", "DA:1,9\n", summary=(0,0,0,0,0,0,1,1)).encode()
@@ -848,8 +849,7 @@ def interrupted_staged_output_tests(binary: Path) -> int:
                     output = case_dir / "output.info"
                     original = "preexisting output\n"
                     output.write_text(original, encoding="utf-8")
-                    expected_size = source.stat().st_size + len(summary)
-                    target_size = expected_size - (512 * 1024)
+                    target_size = 64 * 1024
                     process = subprocess.Popen(
                         [str(binary), "--mem-limit", "8M", "--jobs", "1", "--tmpdir", str(run_dir),
                          str(source), "-o", str(output)],
