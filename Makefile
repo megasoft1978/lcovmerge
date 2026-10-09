@@ -15,16 +15,24 @@ PLATFORM_SRC = src/platform_win32.c
 ENTRY_SRC =
 LDFLAGS += -municode
 BIN ?= bin/lcovmerge.exe
+UNIT_BIN ?= bin/lcovmerge-unit.exe
+UNIT_LDFLAGS =
 else
 PLATFORM_SRC = src/platform_posix.c
 ENTRY_SRC = src/platform_entry.c
 LDFLAGS += -pthread
 BIN ?= bin/lcovmerge
+UNIT_BIN ?= bin/lcovmerge-unit
+UNIT_LDFLAGS = -pthread
 endif
 
 SOURCES = src/lcovmerge.c $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h
-.PHONY: all test test-docker asan fuzz bench dist clean install uninstall check-format
+UNIT_SOURCE = tests/unit/helpers.c
+UNIT_CPPFLAGS = -Dlcovmerge_main=lcovmerge_unit_unused_main -Dwmain=lcovmerge_unit_unused_wmain
+ASAN_CFLAGS = -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+	-fsanitize=address,undefined -fno-omit-frame-pointer
+.PHONY: all test unit test-docker asan fuzz bench dist clean install uninstall check-format
 
 all: $(BIN)
 
@@ -34,16 +42,25 @@ $(BIN): $(SOURCES) $(HEADERS) | bin
 bin:
 	mkdir -p $@
 
-test: $(BIN)
+test: $(BIN) $(UNIT_BIN)
+	./$(UNIT_BIN)
 	$(PYTHON) tests/run_tests.py --binary $(BIN)
 	sh tests/doc-consistency.sh $(BIN)
+
+unit: $(UNIT_BIN)
+	./$(UNIT_BIN)
+
+$(UNIT_BIN): $(UNIT_SOURCE) src/lcovmerge.c $(PLATFORM_SRC) $(HEADERS) | bin
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o $@
 
 test-docker: dist
 	sh scripts/test-docker.sh
 
 asan: | bin
-	$(CC) $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-		-fsanitize=address,undefined -fno-omit-frame-pointer $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-asan
+	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-asan
+	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o bin/lcovmerge-unit-asan
+	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+		bin/lcovmerge-unit-asan
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		$(PYTHON) tests/run_tests.py --binary bin/lcovmerge-asan --no-lcov
 
@@ -70,7 +87,7 @@ uninstall:
 
 check-format:
 	git diff --check
-	@if command -v clang-format >/dev/null 2>&1; then clang-format --dry-run --Werror $(SOURCES) $(HEADERS); \
+	@if command -v clang-format >/dev/null 2>&1; then clang-format --dry-run --Werror $(SOURCES) $(HEADERS) $(UNIT_SOURCE); \
 	else echo 'clang-format unavailable; checked whitespace with git diff --check'; fi
 
 clean:
