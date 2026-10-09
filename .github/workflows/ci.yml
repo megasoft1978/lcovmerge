@@ -91,6 +91,38 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: scripts/build-all.sh
 
+      - name: Upload the Zig-built Windows executable
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-release-exe
+          path: dist/lcovmerge-*-windows-x86_64.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  windows-release-binary:
+    name: Windows release binary (Zig build)
+    needs: release-size
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the Zig-built Windows executable
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-release-exe
+          path: windows-exe
+
+      - name: Run the test suite and smoke test against the shipped binary
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem windows-exe -Filter 'lcovmerge-*-windows-x86_64.exe').FullName
+          & $exe --version
+          python tests/run_tests.py --binary $exe --no-lcov
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/run-windows-smoke.ps1 -Binary $exe
+
   sanitizers:
     name: ASan and UBSan
     runs-on: ubuntu-24.04
