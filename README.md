@@ -11,7 +11,7 @@ Use lcovmerge --help or the [man page](man/lcovmerge.1) for the full option list
 
 ## Build and test
 
-make uses the system C11 compiler. The POSIX build needs pthreads; it has no third-party runtime dependency. make test runs 55 golden cases, 14 malformed-input cases, 226 seeded generated oracle cases, I/O/options checks, determinism checks, and 200 lcov -a summary comparisons when lcov is installed. The same Python runner is available through tests/run.sh and tests/run.ps1.
+make uses the system C11 compiler. The POSIX build needs pthreads; it has no third-party runtime dependency. make test runs 56 golden cases, 14 malformed-input cases, 226 seeded generated oracle cases, I/O/options checks, determinism checks, and 200 lcov -a summary comparisons when lcov is installed. The same Python runner is available through tests/run.sh and tests/run.ps1.
 
     make test
     make asan

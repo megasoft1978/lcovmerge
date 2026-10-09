@@ -96,6 +96,12 @@ def golden_cases() -> list[dict]:
         mk_case("jobs-two", ["SF:/jobs.c\nDA:1,1\nend_of_record\n", "SF:/jobs.c\nDA:1,2\nend_of_record\n"], rows="DA:1,3\n", summary=(0, 0, 0, 0, 0, 0, 1, 1), options=("--jobs", "2")),
         mk_case("utf8-source-path", ["SF:/src/café.c\nDA:1,1\nend_of_record\n"], path="/src/café.c", rows="DA:1,1\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("source-paths-sort", ["SF:/z.c\nDA:1,1\nend_of_record\nSF:/a.c\nDA:1,1\nend_of_record\n"], expected=(expected_trace("/a.c", "DA:1,1\n", summary=(0,0,0,0,0,0,1,1)) + expected_trace("/z.c", "DA:1,1\n", summary=(0,0,0,0,0,0,1,1)))),
+        mk_case("repeated-paths-across-runs", [
+            "SF:/a.c\nDA:1,1\nend_of_record\nSF:/c.c\nDA:1,3\nend_of_record\n",
+            "SF:/a.c\nDA:1,2\nend_of_record\nSF:/d.c\nDA:1,4\nend_of_record\n",
+        ], expected=(expected_trace("/a.c", "DA:1,3\n", summary=(0,0,0,0,0,0,1,1)) +
+                     expected_trace("/c.c", "DA:1,3\n", summary=(0,0,0,0,0,0,1,1)) +
+                     expected_trace("/d.c", "DA:1,4\n", summary=(0,0,0,0,0,0,1,1)))),
         mk_case("test-name-deduplicates", ["TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n", "TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n"], rows="DA:1,2\n", tn=("alpha",), summary=(0, 0, 0, 0, 0, 0, 1, 1)),
         mk_case("input-summaries-recomputed", ["SF:/sum.c\nFNF:91\nFNH:88\nLF:72\nLH:69\nBRF:100\nBRH:99\nDA:1,0\nend_of_record\n"], rows="DA:1,0\n", summary=(0, 0, 0, 0, 0, 0, 1, 0)),
         mk_case("multiple-branches-sort", ["SF:/order.c\nBRDA:9,0,10,1\nBRDA:2,0,2,1\nBRDA:2,0,1,1\nend_of_record\n"], rows="BRDA:2,0,1,1\nBRDA:2,0,2,1\nBRDA:9,0,10,1\n", summary=(0, 0, 3, 3, 0, 0, 0, 0)),

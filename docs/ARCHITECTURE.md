@@ -3,7 +3,7 @@
 ## Data flow
 
 1. **Streaming parse.** Each worker reads one input at a time through a 64 KiB I/O block and a reusable line buffer. Lines are capped at 1 MiB and checked for NUL and valid UTF-8. Parsing validates each recognized row and rewrites/filters SF paths before storing coverpoints.
-2. **Bounded run generation.** Parsed rows are copied into a compact array plus string arena. At the worker's arena threshold, qsort orders the chunk and serializes it to a uniquely created temporary run. Each worker receives a share of --mem-limit; the requested job count must leave at least 8 MiB per worker.
+2. **Bounded run generation.** Parsed rows are copied into a compact array plus string arena. Repeated SF paths are stored once per adjacent section, and empty row fields use a shared empty string. At the worker's arena threshold, qsort orders a chunk only if its rows arrived out of canonical order, then serializes it to a uniquely created temporary run. Each worker receives a share of --mem-limit; the requested job count must leave at least 8 MiB per worker.
 3. **K-way merge.** A min-heap merges at most 16 sorted runs at once. If more remain, intermediate sorted runs are written in another pass until the final merge has a bounded fan-in. Per-key counts are combined as rows stream through the heap.
 4. **Emit.** The final merge emits one SF section at a time. Function, branch, MC/DC, and line summaries are recomputed. File output is staged in the destination directory and renamed only after all reads, writes, closes, and summary emission succeed.
 
@@ -21,7 +21,7 @@ Sorted runs must be reopened across merge passes, so run paths remain named unti
 
 ## Determinism
 
-The comparator orders first by rewritten SF path, then record class and typed keys, then textual fields, values, and origin tie-breakers. Numeric keys compare numerically; textual branch identifiers and unknown rows compare by UTF-8 byte order. Merge operators for counts are commutative and saturating. Checksum and MC/DC expression disagreements choose the lexicographically smallest spelling. TN rows are sorted and deduplicated; unknown records retain multiplicity. The resulting bytes do not depend on input order or the number of workers.
+The comparator orders first by rewritten SF path, then record class and typed keys, then textual fields, values, and origin tie-breakers. DA, BRDA, and MC/DC rows are sorted in separate record families by line and their remaining numeric/textual keys. Numeric keys compare numerically; textual branch identifiers and unknown rows compare by UTF-8 byte order. Merge operators for counts are commutative and saturating. Checksum and MC/DC expression disagreements choose the lexicographically smallest spelling. TN rows are sorted and deduplicated; unknown records retain multiplicity. The resulting bytes do not depend on input order or the number of workers.
 
 ## Limits
 

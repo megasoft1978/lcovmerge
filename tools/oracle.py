@@ -235,16 +235,16 @@ def render(files: dict) -> str:
             count_value = "-" if dash else str(count)
             marker_rank = sum({"e": 8, "f": 16, "U": 32}[marker] for marker in set(markers))
             branch_sort = (branch, marker_rank, branch_value)
-            coverage_rows.append(((line_no, 1, block, branch_sort),
+            coverage_rows.append(((1, line_no, block, branch_sort),
                                   f"BRDA:{line_no},{block_text},{branch_value},{count_value}\n"))
         for (line_no, group, index, flags), (count, expression) in record["mcdc"].items():
             unreachable = "U" if flags & 2 else ""
             sense = "t" if flags & 1 else "f"
-            coverage_rows.append(((line_no, 2, group, index, flags, expression),
+            coverage_rows.append(((2, line_no, group, index, flags, expression),
                                   f"MCDC:{line_no},{unreachable}{group},{sense},{count},{index},{expression}\n"))
         for line_no, (count, checksum) in record["da"].items():
             suffix = f",{checksum}" if checksum else ""
-            coverage_rows.append(((line_no, 0, checksum), f"DA:{line_no},{count}{suffix}\n"))
+            coverage_rows.append(((0, line_no, checksum), f"DA:{line_no},{count}{suffix}\n"))
         output.extend(row for _key, row in sorted(coverage_rows))
         output.extend(f"{row}\n" for row in sorted(record["ext"]))
 

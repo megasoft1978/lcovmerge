@@ -50,11 +50,14 @@ typedef struct {
     uint64_t a, b, c, value, origin_line;
     uint32_t input_id;
     uint8_t type, flags;
+    uint16_t path_id;
 } Record;
 
 typedef struct {
     Record *rows;
     Record last_row;
+    char *last_path;
+    const char *last_source_path;
     size_t count, capacity;
     char *arena;
     size_t arena_size, arena_used;
@@ -87,6 +90,8 @@ typedef struct {
     lm_handle handle;
     unsigned char *buffer;
     size_t used, capacity;
+    char *run_path;
+    size_t run_path_capacity;
     int failed;
 } Writer;
 
@@ -96,7 +101,11 @@ typedef struct {
     size_t pos, len;
     unsigned char *storage;
     size_t storage_capacity;
+    char *path_storage;
+    size_t path_capacity;
     Record row;
+    uint16_t path_id;
+    int have_path;
     int has_row;
     const char *path;
 } RunReader;
@@ -301,6 +310,25 @@ static int writer_text(Writer *writer, const char *text) {
     return writer_bytes(writer, text, strlen(text));
 }
 
+static int writer_char(Writer *writer, char value) {
+    return writer_bytes(writer, &value, 1);
+}
+
+static int writer_u64(Writer *writer, uint64_t value) {
+    char digits[20];
+    size_t length = 0;
+    do {
+        digits[length++] = (char)('0' + (value % UINT64_C(10)));
+        value /= UINT64_C(10);
+    } while (value != 0);
+    for (size_t left = 0, right = length - 1; left < right; ++left, --right) {
+        char temporary = digits[left];
+        digits[left] = digits[right];
+        digits[right] = temporary;
+    }
+    return writer_bytes(writer, digits, length);
+}
+
 static int writer_format(Writer *writer, const char *format, ...) {
     char buffer[256];
     va_list arguments;
@@ -313,11 +341,21 @@ static int writer_format(Writer *writer, const char *format, ...) {
 
 static void writer_destroy(Writer *writer) {
     free(writer->buffer);
+    free(writer->run_path);
     memset(writer, 0, sizeof(*writer));
 }
 
 static int utf8_valid(const unsigned char *bytes, size_t length) {
     size_t i = 0;
+    const uint64_t high_bits = UINT64_C(0x8080808080808080);
+    const uint64_t byte_ones = UINT64_C(0x0101010101010101);
+    while (length - i >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, bytes + i, sizeof(word));
+        if (word & high_bits) break;
+        if (((word - byte_ones) & ~word & high_bits) != 0) return 0;
+        i += sizeof(word);
+    }
     while (i < length) {
         unsigned char c = bytes[i++];
         if (c == 0) return 0;
@@ -400,29 +438,25 @@ static int legacy_function_event(const Record *record) {
            (record->flags & FLAG_FN_NEW) == 0;
 }
 
-static int coverage_event(const Record *record) {
-    return record->type == REC_DA || record->type == REC_BRDA || record->type == REC_MCDC;
-}
-
-static unsigned coverage_order(const Record *record) {
-    if (record->type == REC_DA) return 0u;
-    if (record->type == REC_BRDA) return 1u;
-    return 2u;
-}
-
 static unsigned record_order(const Record *record) {
     if (record->type == REC_TN) return 0u;
     if (record->type == REC_SECTION) return 1u;
     if (new_function_event(record)) return 3u;
     if (legacy_function_event(record)) return 4u;
     if (record->type == REC_FNDA) return 5u;
-    if (coverage_event(record)) return 6u;
+    if (record->type == REC_DA) return 6u;
+    if (record->type == REC_BRDA) return 7u;
+    if (record->type == REC_MCDC) return 8u;
     return 9u;
 }
 
 static int record_key_compare(const Record *left, const Record *right) {
-    int result = string_compare(left->path, right->path);
-    if (result) return result;
+    int result = 0;
+    if (left->path != right->path &&
+        (left->path_id == 0 || right->path_id == 0 || left->path_id != right->path_id)) {
+        result = string_compare(left->path, right->path);
+        if (result) return result;
+    }
     int left_new = new_function_event(left);
     int right_new = new_function_event(right);
     if (left_new && right_new) {
@@ -441,11 +475,6 @@ static int record_key_compare(const Record *left, const Record *right) {
         if (result) return result;
         if (left->type != right->type) return left->type == REC_GROUP ? -1 : 1;
         return string_compare(left->text, right->text);
-    }
-    if (coverage_event(left) && coverage_event(right)) {
-        if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
-        unsigned left_rank = coverage_order(left), right_rank = coverage_order(right);
-        if (left_rank != right_rank) return (left_rank > right_rank) - (left_rank < right_rank);
     }
     unsigned left_order = record_order(left), right_order = record_order(right);
     if (left_order != right_order) return (left_order > right_order) - (left_order < right_order);
@@ -565,7 +594,17 @@ static int write_record(Writer *writer, const Record *record) {
     if (path_length > UINT32_MAX || text_length > UINT32_MAX || extra_length > UINT32_MAX) return -1;
     DiskRecord disk;
     memset(&disk, 0, sizeof(disk));
-    disk.path_length = (uint32_t)path_length;
+    int new_path = !writer->run_path || strcmp(writer->run_path, record->path) != 0;
+    if (new_path) {
+        if (path_length + 1 > writer->run_path_capacity) {
+            char *grown = realloc(writer->run_path, path_length + 1);
+            if (!grown) return -1;
+            writer->run_path = grown;
+            writer->run_path_capacity = path_length + 1;
+        }
+        memcpy(writer->run_path, record->path, path_length + 1);
+    }
+    disk.path_length = new_path ? (uint32_t)path_length : 0;
     disk.text_length = (uint32_t)text_length;
     disk.extra_length = (uint32_t)extra_length;
     disk.type = record->type;
@@ -577,7 +616,7 @@ static int write_record(Writer *writer, const Record *record) {
     disk.origin_line = record->origin_line;
     disk.input_id = record->input_id;
     if (writer_bytes(writer, &disk, sizeof(disk)) != 0 ||
-        writer_bytes(writer, record->path, path_length) != 0 ||
+        (new_path && writer_bytes(writer, record->path, path_length) != 0) ||
         writer_bytes(writer, record->text, text_length) != 0 ||
         writer_bytes(writer, record->extra, extra_length) != 0) return -1;
     return 0;
@@ -620,6 +659,8 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     chunk->count = 0;
     chunk->arena_used = 0;
     chunk->have_last_row = 0;
+    chunk->last_path = NULL;
+    chunk->last_source_path = NULL;
     chunk->sorted = 1;
     return 0;
 }
@@ -628,18 +669,43 @@ static int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Reco
     size_t path_length = strlen(record->path);
     size_t text_length = strlen(record->text);
     size_t extra_length = strlen(record->extra);
-    if (path_length > SIZE_MAX - text_length - extra_length - 3) return -1;
-    size_t need = path_length + text_length + extra_length + 3;
+    int reuse_path = chunk->last_source_path == record->path ||
+                     (chunk->last_path && strcmp(chunk->last_path, record->path) == 0);
+    size_t need = 0;
+    if (!reuse_path) {
+        if (path_length == SIZE_MAX) return -1;
+        need = path_length + 1;
+    }
+    if (text_length) {
+        if (text_length >= SIZE_MAX - need) return -1;
+        need += text_length + 1;
+    }
+    if (extra_length) {
+        if (extra_length >= SIZE_MAX - need) return -1;
+        need += extra_length + 1;
+    }
     if (chunk->count == chunk->capacity || need > chunk->arena_size - chunk->arena_used) {
         if (flush_chunk(chunk, runs, tmpdir) != 0) return -1;
+        reuse_path = 0;
+        need = path_length + 1;
+        if (text_length) {
+            if (text_length >= SIZE_MAX - need) return -1;
+            need += text_length + 1;
+        }
+        if (extra_length) {
+            if (extra_length >= SIZE_MAX - need) return -1;
+            need += extra_length + 1;
+        }
     }
     if (chunk->count == chunk->capacity || need > chunk->arena_size) return -2;
     Record *stored = &chunk->rows[chunk->count];
     *stored = *record;
-    stored->path = arena_copy(chunk, record->path, path_length);
-    stored->text = arena_copy(chunk, record->text, text_length);
-    stored->extra = arena_copy(chunk, record->extra, extra_length);
+    stored->path = reuse_path ? chunk->last_path : arena_copy(chunk, record->path, path_length);
+    if (!reuse_path) chunk->last_path = stored->path;
+    stored->text = text_length ? arena_copy(chunk, record->text, text_length) : "";
+    stored->extra = extra_length ? arena_copy(chunk, record->extra, extra_length) : "";
     if (!stored->path || !stored->text || !stored->extra) return -2;
+    chunk->last_source_path = record->path;
     if (chunk->have_last_row && record_total_compare(&chunk->last_row, stored) > 0)
         chunk->sorted = 0;
     chunk->last_row = *stored;
@@ -794,7 +860,6 @@ static int add_row(Worker *worker, Chunk *chunk, const char *source_path, uint8_
                    uint64_t c, uint64_t value, uint8_t flags,
                    uint32_t input_id, uint64_t input_line) {
     Record record;
-    memset(&record, 0, sizeof(record));
     record.path = (char *)source_path;
     record.text = (char *)(text ? text : "");
     record.extra = (char *)(extra ? extra : "");
@@ -804,6 +869,7 @@ static int add_row(Worker *worker, Chunk *chunk, const char *source_path, uint8_
     record.value = value;
     record.flags = flags;
     record.type = type;
+    record.path_id = 0;
     record.input_id = input_id;
     record.origin_line = input_line;
     int result = chunk_add(chunk, &worker->runs, worker->options->tmpdir, &record);
@@ -835,7 +901,18 @@ static char *field_next(char **cursor, char delimiter) {
 }
 
 static int parse_decimal_field(char *field, uint64_t *value) {
-    return parse_u64(field, strlen(field), value);
+    if (!*field) return 0;
+    uint64_t result = 0;
+    const uint64_t max_div_10 = UINT64_MAX / UINT64_C(10);
+    const uint64_t max_mod_10 = UINT64_MAX % UINT64_C(10);
+    for (const unsigned char *cursor = (const unsigned char *)field; *cursor; ++cursor) {
+        if (*cursor < (unsigned char)'0' || *cursor > (unsigned char)'9') return 0;
+        uint64_t digit = (uint64_t)(*cursor - (unsigned char)'0');
+        if (result > max_div_10 || (result == max_div_10 && digit > max_mod_10)) return 0;
+        result = result * UINT64_C(10) + digit;
+    }
+    *value = result;
+    return 1;
 }
 
 static int parse_block(char *field, uint64_t *block, uint8_t *flags) {
@@ -857,17 +934,17 @@ static int append_pending_row(Worker *worker, Chunk *chunk, const char *path,
 
 static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
                              const char *filename, uint32_t input_id,
-                             uint64_t line_no, char **path, int *keep_path,
+                             uint64_t line_no, size_t length, char **path, int *keep_path,
                              int *section_open, char **pending_tn,
                              uint64_t *fnl_index, uint64_t *fnl_line,
                              uint64_t *fnl_end, int *fnl_valid) {
-    size_t length = strlen(line);
     if (length && line[length - 1] == '\r') line[--length] = '\0';
     if (length == 0 || line[0] == '#') return 0;
     if (strcmp(line, "end_of_record") == 0) {
         if (!*section_open) return worker_error(worker, 2, filename, line_no, "end_of_record without SF record");
         *section_open = 0;
         *fnl_valid = 0;
+        chunk->last_source_path = NULL;
         free(*path);
         *path = NULL;
         *keep_path = 0;
@@ -888,9 +965,9 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         *section_open = 1;
         *fnl_valid = 0;
         if (*keep_path) {
+            if (*pending_tn && append_pending_row(worker, chunk, *path, *pending_tn, input_id, line_no) != 0) return -1;
             if (add_row(worker, chunk, *path, REC_SECTION, "", "", 0, 0, 0, 0, 0,
                         input_id, line_no) != 0) return -1;
-            if (*pending_tn && append_pending_row(worker, chunk, *path, *pending_tn, input_id, line_no) != 0) return -1;
         }
         free(*pending_tn);
         *pending_tn = NULL;
@@ -904,6 +981,19 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         return 0;
     }
     if (!*section_open) return worker_error(worker, 2, filename, line_no, "coverpoint outside an SF section");
+    if (line[0] == 'D' && line[1] == 'A' && line[2] == ':') {
+        char *cursor = line + 3;
+        char *line_field = field_next(&cursor, ',');
+        char *count_field = cursor ? field_next(&cursor, ',') : NULL;
+        uint64_t line_number, count;
+        if (!line_field || !count_field || !parse_decimal_field(line_field, &line_number) ||
+            !parse_decimal_field(count_field, &count))
+            return worker_error(worker, 2, filename, line_no, "invalid DA record");
+        const char *checksum = cursor ? cursor : "";
+        if (*keep_path && add_row(worker, chunk, *path, REC_DA, "", checksum, line_number, 0, 0,
+                                  count, 0, input_id, line_no) != 0) return -1;
+        return 0;
+    }
     if (strncmp(line, "FNF:", 4) == 0 || strncmp(line, "FNH:", 4) == 0 ||
         strncmp(line, "LF:", 3) == 0 || strncmp(line, "LH:", 3) == 0 ||
         strncmp(line, "BRF:", 4) == 0 || strncmp(line, "BRH:", 4) == 0 ||
@@ -983,19 +1073,6 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
             if (add_row(worker, chunk, *path, REC_FNDA, cursor, cursor, 0, 0, 0,
                         count, 0, input_id, line_no) != 0) return -1;
         }
-        return 0;
-    }
-    if (strncmp(line, "DA:", 3) == 0) {
-        char *cursor = line + 3;
-        char *line_field = field_next(&cursor, ',');
-        char *count_field = cursor ? field_next(&cursor, ',') : NULL;
-        uint64_t line_number, count;
-        if (!line_field || !count_field || !parse_decimal_field(line_field, &line_number) ||
-            !parse_decimal_field(count_field, &count))
-            return worker_error(worker, 2, filename, line_no, "invalid DA record");
-        const char *checksum = cursor ? cursor : "";
-        if (*keep_path && add_row(worker, chunk, *path, REC_DA, "", checksum, line_number, 0, 0,
-                                  count, 0, input_id, line_no) != 0) return -1;
         return 0;
     }
     if (strncmp(line, "BRDA:", 5) == 0) {
@@ -1090,7 +1167,7 @@ static int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, 
         }
         reader.line[reader.line_len] = '\0';
         if (parse_record_line(worker, chunk, reader.line, filename, input_id, reader.line_no,
-                              &path, &keep_path, &section_open, &pending_tn,
+                              reader.line_len, &path, &keep_path, &section_open, &pending_tn,
                               &fnl_index, &fnl_line, &fnl_end, &fnl_valid) != 0) {
             status = -1;
             break;
@@ -1103,6 +1180,7 @@ static int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, 
     worker->input_bytes = saturating_add(worker->input_bytes, reader.bytes_read);
     uint64_t final_line_no = reader.line_no;
     free(path);
+    chunk->last_source_path = NULL;
     free(pending_tn);
     line_reader_destroy(&reader);
     if (owns_handle && lm_close(handle) != 0 && status == 0)
@@ -1385,7 +1463,36 @@ static int run_reader_fill(RunReader *reader, void *destination, size_t length) 
     return 1;
 }
 
-static int run_reader_next(RunReader *reader) {
+static int run_reader_set_path_id(RunReader *reader, size_t reader_index,
+                                  size_t reader_count, uint16_t protected_path_id,
+                                  RunReader *readers) {
+    for (size_t i = 0; i < reader_count; ++i) {
+        if (i != reader_index && readers[i].has_row &&
+            strcmp(reader->path_storage, readers[i].row.path) == 0) {
+            reader->path_id = readers[i].row.path_id;
+            return 0;
+        }
+    }
+    for (uint32_t candidate = 1; candidate <= reader_count + 1; ++candidate) {
+        int used = (uint16_t)candidate == protected_path_id;
+        for (size_t i = 0; i < reader_count; ++i) {
+            if (i != reader_index && readers[i].has_row &&
+                readers[i].row.path_id == (uint16_t)candidate) {
+                used = 1;
+                break;
+            }
+        }
+        if (!used) {
+            reader->path_id = (uint16_t)candidate;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int run_reader_next(RunReader *reader, size_t reader_index,
+                           size_t reader_count, uint16_t protected_path_id,
+                           RunReader *readers) {
     DiskRecord disk;
     int got = run_reader_fill(reader, &disk, sizeof(disk));
     if (got <= 0) { reader->has_row = 0; return got; }
@@ -1393,29 +1500,35 @@ static int run_reader_next(RunReader *reader) {
     size_t text_length = disk.text_length;
     size_t extra_length = disk.extra_length;
     if (path_length > MAX_LINE || text_length > MAX_LINE || extra_length > MAX_LINE ||
-        text_length > SIZE_MAX - extra_length - 3 ||
-        path_length > SIZE_MAX - text_length - extra_length - 3) return -1;
-    size_t required = path_length + text_length + extra_length + 3;
+        text_length > SIZE_MAX - extra_length - 2) return -1;
+    if (path_length != 0) {
+        if (path_length + 1 > reader->path_capacity) {
+            char *grown = realloc(reader->path_storage, path_length + 1);
+            if (!grown) return -1;
+            reader->path_storage = grown;
+            reader->path_capacity = path_length + 1;
+        }
+        if (run_reader_fill(reader, reader->path_storage, path_length) != 1) return -1;
+        reader->path_storage[path_length] = '\0';
+        reader->have_path = 1;
+        if (run_reader_set_path_id(reader, reader_index, reader_count,
+                                   protected_path_id, readers) != 0) return -1;
+    } else if (!reader->have_path) return -1;
+    size_t required = text_length + extra_length + 2;
     if (required > reader->storage_capacity) {
         unsigned char *grown = realloc(reader->storage, required);
         if (!grown) return -1;
         reader->storage = grown;
         reader->storage_capacity = required;
     }
-    size_t total = path_length + text_length + extra_length;
-    if (run_reader_fill(reader, reader->storage, total) != 1) return -1;
-    /* Shift fields from right to left to make room for one NUL per field. */
+    if (run_reader_fill(reader, reader->storage, text_length + extra_length) != 1) return -1;
     if (extra_length)
-        memmove(reader->storage + path_length + text_length + 2,
-                reader->storage + path_length + text_length, extra_length);
-    if (text_length)
-        memmove(reader->storage + path_length + 1, reader->storage + path_length, text_length);
-    reader->storage[path_length] = '\0';
-    reader->storage[path_length + text_length + 1] = '\0';
-    reader->storage[path_length + text_length + extra_length + 2] = '\0';
-    reader->row.path = (char *)reader->storage;
-    reader->row.text = (char *)reader->storage + path_length + 1;
-    reader->row.extra = (char *)reader->storage + path_length + text_length + 2;
+        memmove(reader->storage + text_length + 1, reader->storage + text_length, extra_length);
+    reader->storage[text_length] = '\0';
+    reader->storage[text_length + extra_length + 1] = '\0';
+    reader->row.path = reader->path_storage;
+    reader->row.text = (char *)reader->storage;
+    reader->row.extra = (char *)reader->storage + text_length + 1;
     reader->row.type = disk.type;
     reader->row.flags = disk.flags;
     reader->row.a = disk.a;
@@ -1424,6 +1537,7 @@ static int run_reader_next(RunReader *reader) {
     reader->row.value = disk.value;
     reader->row.origin_line = disk.origin_line;
     reader->row.input_id = disk.input_id;
+    reader->row.path_id = reader->path_id;
     reader->has_row = 1;
     return 1;
 }
@@ -1443,22 +1557,18 @@ static void heap_push(size_t *heap, size_t *count, size_t value, RunReader *read
     heap[index] = value;
 }
 
-static size_t heap_pop(size_t *heap, size_t *count, RunReader *readers) {
-    size_t first = heap[0];
-    size_t last = heap[--(*count)];
-    if (*count != 0) {
-        size_t index = 0;
-        while (index <= (*count - 1) / 2) {
-            size_t child = index * 2 + 1;
-            if (child >= *count) break;
-            if (child + 1 < *count && heap_less(heap[child + 1], heap[child], readers)) ++child;
-            if (!heap_less(heap[child], last, readers)) break;
-            heap[index] = heap[child];
-            index = child;
-        }
-        heap[index] = last;
+static void heap_sift_down_root(size_t *heap, size_t count, RunReader *readers) {
+    if (count == 0) return;
+    size_t value = heap[0];
+    size_t index = 0;
+    while (index < count / 2) {
+        size_t child = index * 2 + 1;
+        if (child + 1 < count && heap_less(heap[child + 1], heap[child], readers)) ++child;
+        if (!heap_less(heap[child], value, readers)) break;
+        heap[index] = heap[child];
+        index = child;
     }
-    return first;
+    heap[index] = value;
 }
 
 static int ensure_source_record(OutputState *output) {
@@ -1529,41 +1639,54 @@ static int output_record(OutputState *output, const Record *record) {
         case REC_GROUP:
             output->fnf = saturating_add(output->fnf, UINT64_C(1));
             if (record->flags & FLAG_FN_NEW) {
-                if (record->b != 0)
-                    return writer_format(&output->writer, "FNL:%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n",
-                                         record->c, record->a, record->b);
-                return writer_format(&output->writer, "FNL:%" PRIu64 ",%" PRIu64 "\n",
-                                     record->c, record->a);
+                if (writer_text(&output->writer, "FNL:") != 0 ||
+                    writer_u64(&output->writer, record->c) != 0 ||
+                    writer_char(&output->writer, ',') != 0 ||
+                    writer_u64(&output->writer, record->a) != 0) return -1;
+                if (record->b != 0 && (writer_char(&output->writer, ',') != 0 ||
+                    writer_u64(&output->writer, record->b) != 0)) return -1;
+                return writer_char(&output->writer, '\n');
             }
             return 0;
         case REC_FN:
             if (record->flags & FLAG_FN_NEW) {
                 if (add_function_hit(output, record) != 0) return -1;
-                if (writer_format(&output->writer, "FNA:%" PRIu64 ",%" PRIu64 ",",
-                                  record->c, record->value) != 0) return -1;
+                if (writer_text(&output->writer, "FNA:") != 0 ||
+                    writer_u64(&output->writer, record->c) != 0 ||
+                    writer_char(&output->writer, ',') != 0 ||
+                    writer_u64(&output->writer, record->value) != 0 ||
+                    writer_char(&output->writer, ',') != 0) return -1;
                 return writer_text(&output->writer, record->text) == 0 &&
                        writer_text(&output->writer, "\n") == 0 ? 0 : -1;
             }
-            if (record->b != 0) {
-                if (writer_format(&output->writer, "FN:%" PRIu64 ",%" PRIu64 ",", record->a, record->b) != 0) return -1;
-            } else if (writer_format(&output->writer, "FN:%" PRIu64 ",", record->a) != 0) return -1;
+            if (writer_text(&output->writer, "FN:") != 0 ||
+                writer_u64(&output->writer, record->a) != 0 ||
+                writer_char(&output->writer, ',') != 0) return -1;
+            if (record->b != 0 && (writer_u64(&output->writer, record->b) != 0 ||
+                writer_char(&output->writer, ',') != 0)) return -1;
             return writer_text(&output->writer, record->text) == 0 && writer_text(&output->writer, "\n") == 0 ? 0 : -1;
         case REC_FNDA:
             if (add_function_hit(output, record) != 0) return -1;
-            if (writer_format(&output->writer, "FNDA:%" PRIu64 ",", record->value) != 0) return -1;
+            if (writer_text(&output->writer, "FNDA:") != 0 ||
+                writer_u64(&output->writer, record->value) != 0 ||
+                writer_char(&output->writer, ',') != 0) return -1;
             return writer_text(&output->writer, record->text) == 0 && writer_text(&output->writer, "\n") == 0 ? 0 : -1;
         case REC_BRDA: {
-            if (writer_format(&output->writer, "BRDA:%" PRIu64 ",", record->a) != 0) return -1;
+            if (writer_text(&output->writer, "BRDA:") != 0 ||
+                writer_u64(&output->writer, record->a) != 0 ||
+                writer_char(&output->writer, ',') != 0) return -1;
             if ((record->flags & FLAG_BR_EXCEPTION) && writer_text(&output->writer, "e") != 0) return -1;
             if ((record->flags & FLAG_BR_FALLTHROUGH) && writer_text(&output->writer, "f") != 0) return -1;
             if ((record->flags & FLAG_BR_UNREACHABLE) && writer_text(&output->writer, "U") != 0) return -1;
-            if (writer_format(&output->writer, "%" PRIu64 ",", record->b) != 0) return -1;
+            if (writer_u64(&output->writer, record->b) != 0 || writer_char(&output->writer, ',') != 0) return -1;
             if (record->flags & FLAG_BRANCH_TEXT) {
                 if (writer_text(&output->writer, record->text) != 0) return -1;
-            } else if (writer_format(&output->writer, "%" PRIu64, record->c) != 0) return -1;
+            } else if (writer_u64(&output->writer, record->c) != 0) return -1;
             if (record->flags & FLAG_DASH) {
                 if (writer_text(&output->writer, ",-\n") != 0) return -1;
-            } else if (writer_format(&output->writer, ",%" PRIu64 "\n", record->value) != 0) return -1;
+            } else if (writer_char(&output->writer, ',') != 0 ||
+                       writer_u64(&output->writer, record->value) != 0 ||
+                       writer_char(&output->writer, '\n') != 0) return -1;
             if (!(record->flags & FLAG_BR_UNREACHABLE)) {
                 output->brf = saturating_add(output->brf, UINT64_C(1));
                 if (record->value != 0 && !(record->flags & FLAG_DASH))
@@ -1572,10 +1695,18 @@ static int output_record(OutputState *output, const Record *record) {
             return 0;
         }
         case REC_MCDC:
-            if (writer_format(&output->writer, "MCDC:%" PRIu64 ",%s%" PRIu64 ",%c,%" PRIu64 ",%" PRIu64 ",",
-                              record->a, (record->flags & FLAG_MCDC_UNREACHABLE) ? "U" : "",
-                              record->b, (record->flags & FLAG_MCDC_TRUE) ? 't' : 'f',
-                              record->value, record->c) != 0 ||
+            if (writer_text(&output->writer, "MCDC:") != 0 ||
+                writer_u64(&output->writer, record->a) != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
+                ((record->flags & FLAG_MCDC_UNREACHABLE) && writer_char(&output->writer, 'U') != 0) ||
+                writer_u64(&output->writer, record->b) != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
+                writer_char(&output->writer, (record->flags & FLAG_MCDC_TRUE) ? 't' : 'f') != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
+                writer_u64(&output->writer, record->value) != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
+                writer_u64(&output->writer, record->c) != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
                 writer_text(&output->writer, record->text) != 0 || writer_text(&output->writer, "\n") != 0) return -1;
             if (!(record->flags & FLAG_MCDC_UNREACHABLE)) {
                 output->mcf = saturating_add(output->mcf, UINT64_C(1));
@@ -1583,7 +1714,10 @@ static int output_record(OutputState *output, const Record *record) {
             }
             return 0;
         case REC_DA:
-            if (writer_format(&output->writer, "DA:%" PRIu64 ",%" PRIu64, record->a, record->value) != 0) return -1;
+            if (writer_text(&output->writer, "DA:") != 0 ||
+                writer_u64(&output->writer, record->a) != 0 ||
+                writer_char(&output->writer, ',') != 0 ||
+                writer_u64(&output->writer, record->value) != 0) return -1;
             if (*record->extra && (writer_text(&output->writer, ",") != 0 || writer_text(&output->writer, record->extra) != 0)) return -1;
             if (writer_text(&output->writer, "\n") != 0) return -1;
             output->lf = saturating_add(output->lf, UINT64_C(1));
@@ -1641,6 +1775,7 @@ static void aggregate_copy(Record *destination, const Record *source, char *stor
     destination->input_id = source->input_id;
     destination->type = source->type;
     destination->flags = source->flags;
+    destination->path_id = source->path_id;
 }
 
 static const char *input_name_for(const Options *options, uint32_t input_id) {
@@ -1722,7 +1857,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
             status = 3;
             break;
         }
-        int got = run_reader_next(&readers[i]);
+        int got = run_reader_next(&readers[i], i, count, 0, readers);
         if (got < 0) {
             fprintf(stderr, "lcovmerge: %s:0: corrupt temporary run\n", paths[i]);
             status = 3;
@@ -1734,7 +1869,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     int have_aggregate = 0;
     while (status == 0 && heap_count != 0) {
         if (interrupted) { status = 3; break; }
-        size_t reader_index = heap_pop(heap, &heap_count, readers);
+        size_t reader_index = heap[0];
         Record *row = &readers[reader_index].row;
         if (!final_output) {
             if (write_record(&run_writer, row) != 0) { status = 3; break; }
@@ -1745,13 +1880,22 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
             aggregate_copy(&aggregate, row, aggregate_storage);
             have_aggregate = 1;
         }
-        int got = run_reader_next(&readers[reader_index]);
+        uint16_t protected_path_id = final_output && have_aggregate ? aggregate.path_id : 0;
+        int got = run_reader_next(&readers[reader_index], reader_index, count,
+                                  protected_path_id, readers);
         if (got < 0) {
             fprintf(stderr, "lcovmerge: %s:0: corrupt temporary run\n", readers[reader_index].path);
             status = 3;
             break;
         }
-        if (got > 0) heap_push(heap, &heap_count, reader_index, readers);
+        if (got > 0) heap_sift_down_root(heap, heap_count, readers);
+        else {
+            --heap_count;
+            if (heap_count != 0) {
+                heap[0] = heap[heap_count];
+                heap_sift_down_root(heap, heap_count, readers);
+            }
+        }
     }
     if (status == 0 && final_output && have_aggregate && output_record(output, &aggregate) != 0) status = 3;
     if (have_run_writer) {
@@ -1763,6 +1907,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     for (size_t i = 0; i < count; ++i) {
         if (readers[i].handle != LM_INVALID_HANDLE) (void)lm_close(readers[i].handle);
         free(readers[i].storage);
+        free(readers[i].path_storage);
     }
     free(readers);
     free(heap);
