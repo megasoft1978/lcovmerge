@@ -11,9 +11,9 @@
 
 int lcovmerge_main(int argc, char **argv);
 
-static char fuzz_directory[128];
-static char fuzz_input[192];
-static char fuzz_output[192];
+static char fuzz_directory[1024];
+static char fuzz_input[1152];
+static char fuzz_output[1152];
 static int saved_stderr = -1;
 static int null_stderr = -1;
 
@@ -28,10 +28,16 @@ static void cleanup(void) {
 
 static int initialize(void) {
     if (fuzz_directory[0]) return 0;
-    memcpy(fuzz_directory, "/tmp/lcovmerge-fuzz-XXXXXX", sizeof("/tmp/lcovmerge-fuzz-XXXXXX"));
+    const char *temporary = getenv("TMPDIR");
+    if (!temporary || !temporary[0]) temporary = "/tmp";
+    int directory_length = snprintf(fuzz_directory, sizeof(fuzz_directory),
+                                    "%s/lcovmerge-fuzz-XXXXXX", temporary);
+    if (directory_length < 0 || (size_t)directory_length >= sizeof(fuzz_directory)) return -1;
     if (!mkdtemp(fuzz_directory)) return -1;
-    if (snprintf(fuzz_input, sizeof(fuzz_input), "%s/input.info", fuzz_directory) < 0 ||
-        snprintf(fuzz_output, sizeof(fuzz_output), "%s/output.info", fuzz_directory) < 0) return -1;
+    int input_length = snprintf(fuzz_input, sizeof(fuzz_input), "%s/input.info", fuzz_directory);
+    int output_length = snprintf(fuzz_output, sizeof(fuzz_output), "%s/output.info", fuzz_directory);
+    if (input_length < 0 || (size_t)input_length >= sizeof(fuzz_input) ||
+        output_length < 0 || (size_t)output_length >= sizeof(fuzz_output)) return -1;
     saved_stderr = dup(STDERR_FILENO);
     null_stderr = open("/dev/null", O_WRONLY);
     if (saved_stderr < 0 || null_stderr < 0) return -1;
