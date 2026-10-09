@@ -358,6 +358,29 @@ def list_and_stdio_tests(binary: Path, temporary: Path) -> int:
     return 5
 
 
+def path_table_capacity_test(binary: Path, temporary: Path) -> int:
+    base = temporary / "path-table-capacity"
+    base.mkdir()
+    source = base / "many-paths.info"
+    with source.open("w", encoding="utf-8", newline="\n") as stream:
+        for index in range(4105):
+            stream.write(f"SF:/table/{index:05}.c\nDA:1,1\nend_of_record\n")
+        stream.write("SF:/table/00000.c\nDA:1,2\nend_of_record\n")
+    output = base / "out.info"
+    result = run([str(binary), str(source), "-o", str(output)])
+    if result.returncode != 0:
+        raise AssertionError(f"path table overflow run failed: {result.stderr!r}")
+    trace = output.read_text(encoding="utf-8")
+    paths = re.findall(r"(?m)^SF:(.*)$", trace)
+    if len(paths) != 4105 or paths != sorted(paths) or len(set(paths)) != len(paths):
+        raise AssertionError("path table overflow produced missing, duplicate, or unsorted SF paths")
+    sections = trace.split("end_of_record\n")
+    first = next((section for section in sections if section.startswith("SF:/table/00000.c\n")), "")
+    if "DA:1,3\n" not in first:
+        raise AssertionError("path table overflow failed to merge a previously interned path")
+    return 1
+
+
 def lcov_differential(binary: Path, temporary: Path) -> int:
     import shutil
 
@@ -434,9 +457,11 @@ def main() -> int:
         differential = differential_tests(binary, temporary)
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
+        path_table_cases = path_table_capacity_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
-          f"determinism_runs={deterministic} io_cases={io_cases} lcov_cases={lcov_cases}")
+          f"determinism_runs={deterministic} io_cases={io_cases} path_table_cases={path_table_cases} "
+          f"lcov_cases={lcov_cases}")
     return 0
 
 

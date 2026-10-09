@@ -16,6 +16,7 @@
 #define IO_BLOCK ((size_t)1u << 16)
 #define WRITE_BLOCK ((size_t)1u << 18)
 #define RUN_FANIN_MAX 16u
+#define PATH_TABLE_CAP 4096u
 #define MAX_JOBS 32u
 #define DEFAULT_MEM_LIMIT ((size_t)64u << 20)
 #define MIN_WORKER_BUDGET ((size_t)8u << 20)
@@ -49,20 +50,31 @@ typedef struct {
     char *path;
     char *text;
     char *extra;
+    uint32_t path_length, text_length, extra_length;
     uint64_t a, b, c, value, origin_line;
     uint32_t input_id;
     uint8_t type, flags;
-    uint16_t path_id;
+    uint64_t path_id;
 } Record;
+
+typedef struct {
+    char *path;
+    uint64_t hash, id;
+    uint32_t length;
+} PathEntry;
 
 typedef struct {
     Record *rows;
     Record last_row;
     char *last_path;
     const char *last_source_path;
+    uint32_t last_path_length;
+    uint64_t last_path_id, next_path_id;
     size_t count, capacity;
     char *arena;
     size_t arena_size, arena_used;
+    PathEntry *path_table;
+    size_t path_table_capacity, path_table_count;
     size_t budget;
     int have_last_row;
     int sorted;
@@ -94,6 +106,8 @@ typedef struct {
     size_t used, capacity;
     char *run_path;
     size_t run_path_capacity;
+    size_t run_path_length;
+    uint64_t run_path_id;
     int failed;
 } Writer;
 
@@ -106,7 +120,9 @@ typedef struct {
     char *path_storage;
     size_t path_capacity;
     Record row;
-    uint16_t path_id;
+    uint32_t path_length;
+    uint64_t path_id;
+    uint8_t path_rank;
     int have_path;
     int has_row;
     const char *path;
@@ -590,13 +606,20 @@ typedef struct {
 } DiskRecord;
 
 static int write_record(Writer *writer, const Record *record) {
-    size_t path_length = strlen(record->path);
-    size_t text_length = strlen(record->text);
-    size_t extra_length = strlen(record->extra);
-    if (path_length > UINT32_MAX || text_length > UINT32_MAX || extra_length > UINT32_MAX) return -1;
+    size_t path_length = record->path_length;
+    size_t text_length = record->text_length;
+    size_t extra_length = record->extra_length;
+    if (path_length == SIZE_MAX) return -1;
     DiskRecord disk;
     memset(&disk, 0, sizeof(disk));
-    int new_path = !writer->run_path || strcmp(writer->run_path, record->path) != 0;
+    int new_path = !writer->run_path;
+    if (!new_path) {
+        if (record->path_id != 0 && writer->run_path_id != 0)
+            new_path = record->path_id != writer->run_path_id;
+        else
+            new_path = path_length != writer->run_path_length ||
+                       memcmp(writer->run_path, record->path, path_length) != 0;
+    }
     if (new_path) {
         if (path_length + 1 > writer->run_path_capacity) {
             char *grown = realloc(writer->run_path, path_length + 1);
@@ -605,6 +628,8 @@ static int write_record(Writer *writer, const Record *record) {
             writer->run_path_capacity = path_length + 1;
         }
         memcpy(writer->run_path, record->path, path_length + 1);
+        writer->run_path_length = path_length;
+        writer->run_path_id = record->path_id;
     }
     disk.path_length = new_path ? (uint32_t)path_length : 0;
     disk.text_length = (uint32_t)text_length;
@@ -631,6 +656,39 @@ static char *arena_copy(Chunk *chunk, const char *value, size_t length) {
     copy[length] = '\0';
     chunk->arena_used += length + 1;
     return copy;
+}
+
+static uint64_t path_hash(const char *path, size_t length) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (size_t i = 0; i < length; ++i) {
+        hash ^= (unsigned char)path[i];
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash == 0 ? UINT64_C(1) : hash;
+}
+
+static PathEntry *chunk_path_lookup(Chunk *chunk, const char *path, size_t length,
+                                    uint64_t hash, size_t *empty_slot) {
+    if (chunk->path_table_count == chunk->path_table_capacity) {
+        *empty_slot = SIZE_MAX;
+        return NULL;
+    }
+    size_t index = (size_t)hash & (chunk->path_table_capacity - 1);
+    for (size_t probe = 0; probe < chunk->path_table_capacity; ++probe) {
+        PathEntry *entry = &chunk->path_table[index];
+        if (entry->hash == 0) {
+            *empty_slot = index;
+            return NULL;
+        }
+        if (entry->hash == hash && entry->length == length &&
+            memcmp(entry->path, path, length) == 0) {
+            *empty_slot = index;
+            return entry;
+        }
+        index = (index + 1) & (chunk->path_table_capacity - 1);
+    }
+    *empty_slot = SIZE_MAX;
+    return NULL;
 }
 
 static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
@@ -663,33 +721,50 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     chunk->have_last_row = 0;
     chunk->last_path = NULL;
     chunk->last_source_path = NULL;
+    chunk->last_path_length = 0;
+    chunk->last_path_id = 0;
+    chunk->next_path_id = 0;
+    chunk->path_table_count = 0;
+    memset(chunk->path_table, 0, chunk->path_table_capacity * sizeof(*chunk->path_table));
     chunk->sorted = 1;
     return 0;
 }
 
 static int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Record *record) {
-    size_t path_length = strlen(record->path);
-    size_t text_length = strlen(record->text);
-    size_t extra_length = strlen(record->extra);
-    int reuse_path = chunk->last_source_path == record->path ||
-                     (chunk->last_path && strcmp(chunk->last_path, record->path) == 0);
+    size_t path_length = record->path_length;
+    size_t text_length = record->text_length;
+    size_t extra_length = record->extra_length;
+    if (path_length == SIZE_MAX) return -1;
+    int reuse_path;
+    char *interned_path;
+    uint64_t path_id, hash = 0;
+    size_t path_slot;
     size_t need = 0;
-    if (!reuse_path) {
-        if (path_length == SIZE_MAX) return -1;
-        need = path_length + 1;
-    }
-    if (text_length) {
-        if (text_length >= SIZE_MAX - need) return -1;
-        need += text_length + 1;
-    }
-    if (extra_length) {
-        if (extra_length >= SIZE_MAX - need) return -1;
-        need += extra_length + 1;
-    }
-    if (chunk->count == chunk->capacity || need > chunk->arena_size - chunk->arena_used) {
-        if (flush_chunk(chunk, runs, tmpdir) != 0) return -1;
+    for (;;) {
+        PathEntry *entry = NULL;
         reuse_path = 0;
-        need = path_length + 1;
+        interned_path = NULL;
+        path_id = 0;
+        path_slot = SIZE_MAX;
+        if (chunk->last_source_path == record->path) {
+            reuse_path = 1;
+            interned_path = chunk->last_path;
+            path_id = chunk->last_path_id;
+        } else if (chunk->last_path && path_length == chunk->last_path_length &&
+                   memcmp(chunk->last_path, record->path, path_length) == 0) {
+            reuse_path = 1;
+            interned_path = chunk->last_path;
+            path_id = chunk->last_path_id;
+        } else {
+            hash = path_hash(record->path, path_length);
+            entry = chunk_path_lookup(chunk, record->path, path_length, hash, &path_slot);
+            if (entry) {
+                reuse_path = 1;
+                interned_path = entry->path;
+                path_id = entry->id;
+            }
+        }
+        need = reuse_path ? 0 : path_length + 1;
         if (text_length) {
             if (text_length >= SIZE_MAX - need) return -1;
             need += text_length + 1;
@@ -698,12 +773,32 @@ static int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Reco
             if (extra_length >= SIZE_MAX - need) return -1;
             need += extra_length + 1;
         }
+        if (chunk->count != chunk->capacity &&
+            need <= chunk->arena_size - chunk->arena_used) break;
+        if (chunk->count == 0) return -2;
+        if (flush_chunk(chunk, runs, tmpdir) != 0) return -1;
     }
     if (chunk->count == chunk->capacity || need > chunk->arena_size) return -2;
     Record *stored = &chunk->rows[chunk->count];
     *stored = *record;
-    stored->path = reuse_path ? chunk->last_path : arena_copy(chunk, record->path, path_length);
-    if (!reuse_path) chunk->last_path = stored->path;
+    if (!reuse_path) {
+        interned_path = arena_copy(chunk, record->path, path_length);
+        if (!interned_path) return -2;
+        if (path_slot != SIZE_MAX && chunk->next_path_id != UINT64_MAX) {
+            path_id = ++chunk->next_path_id;
+            PathEntry *entry = &chunk->path_table[path_slot];
+            entry->path = interned_path;
+            entry->hash = hash;
+            entry->id = path_id;
+            entry->length = (uint32_t)path_length;
+            ++chunk->path_table_count;
+        }
+    }
+    stored->path = interned_path;
+    stored->path_id = path_id;
+    chunk->last_path = interned_path;
+    chunk->last_path_id = path_id;
+    chunk->last_path_length = (uint32_t)path_length;
     stored->text = text_length ? arena_copy(chunk, record->text, text_length) : "";
     stored->extra = extra_length ? arena_copy(chunk, record->extra, extra_length) : "";
     if (!stored->path || !stored->text || !stored->extra) return -2;
@@ -722,14 +817,20 @@ static int chunk_init(Chunk *chunk, size_t budget) {
     chunk->capacity = row_budget / sizeof(Record);
     if (chunk->capacity < 128) chunk->capacity = 128;
     if (chunk->capacity > SIZE_MAX / sizeof(Record)) return -1;
-    chunk->arena_size = budget - chunk->capacity * sizeof(Record);
+    size_t row_bytes = chunk->capacity * sizeof(*chunk->rows);
+    size_t path_table_bytes = PATH_TABLE_CAP * sizeof(*chunk->path_table);
+    if (row_bytes > budget || path_table_bytes > budget - row_bytes) return -1;
+    chunk->arena_size = budget - row_bytes - path_table_bytes;
     size_t arena_cap = budget - budget / 3;
     if (chunk->arena_size > arena_cap) chunk->arena_size = arena_cap;
     chunk->rows = malloc(chunk->capacity * sizeof(*chunk->rows));
     chunk->arena = malloc(chunk->arena_size);
-    if (!chunk->rows || !chunk->arena) {
+    chunk->path_table_capacity = PATH_TABLE_CAP;
+    chunk->path_table = calloc(chunk->path_table_capacity, sizeof(*chunk->path_table));
+    if (!chunk->rows || !chunk->arena || !chunk->path_table) {
         free(chunk->rows);
         free(chunk->arena);
+        free(chunk->path_table);
         memset(chunk, 0, sizeof(*chunk));
         return -1;
     }
@@ -741,6 +842,7 @@ static int chunk_init(Chunk *chunk, size_t budget) {
 static void chunk_destroy(Chunk *chunk) {
     free(chunk->rows);
     free(chunk->arena);
+    free(chunk->path_table);
     memset(chunk, 0, sizeof(*chunk));
 }
 
@@ -861,10 +963,20 @@ static int add_row(Worker *worker, Chunk *chunk, const char *source_path, uint8_
                    const char *text, const char *extra, uint64_t a, uint64_t b,
                    uint64_t c, uint64_t value, uint8_t flags,
                    uint32_t input_id, uint64_t input_line) {
+    const char *row_text = text ? text : "";
+    const char *row_extra = extra ? extra : "";
+    size_t path_length = strlen(source_path);
+    size_t text_length = strlen(row_text);
+    size_t extra_length = strlen(row_extra);
+    if (path_length > UINT32_MAX || text_length > UINT32_MAX || extra_length > UINT32_MAX)
+        return worker_error(worker, 2, worker->current_file, input_line, "record string exceeds supported size");
     Record record;
     record.path = (char *)source_path;
-    record.text = (char *)(text ? text : "");
-    record.extra = (char *)(extra ? extra : "");
+    record.text = (char *)row_text;
+    record.extra = (char *)row_extra;
+    record.path_length = (uint32_t)path_length;
+    record.text_length = (uint32_t)text_length;
+    record.extra_length = (uint32_t)extra_length;
     record.a = a;
     record.b = b;
     record.c = c;
@@ -1466,7 +1578,7 @@ static int run_reader_fill(RunReader *reader, void *destination, size_t length) 
 }
 
 static int run_reader_set_path_id(RunReader *reader, size_t reader_index,
-                                  size_t reader_count, uint16_t protected_path_id,
+                                  size_t reader_count, uint64_t *next_path_id,
                                   RunReader *readers) {
     for (size_t i = 0; i < reader_count; ++i) {
         if (i != reader_index && readers[i].has_row &&
@@ -1475,29 +1587,53 @@ static int run_reader_set_path_id(RunReader *reader, size_t reader_index,
             return 0;
         }
     }
-    for (uint32_t candidate = 1; candidate <= reader_count + 1; ++candidate) {
-        int used = (uint16_t)candidate == protected_path_id;
-        for (size_t i = 0; i < reader_count; ++i) {
-            if (i != reader_index && readers[i].has_row &&
-                readers[i].row.path_id == (uint16_t)candidate) {
-                used = 1;
-                break;
-            }
-        }
-        if (!used) {
-            reader->path_id = (uint16_t)candidate;
-            return 0;
+    if (*next_path_id == UINT64_MAX) reader->path_id = 0;
+    else reader->path_id = ++*next_path_id;
+    return 0;
+}
+
+static void run_readers_assign_path_ranks(size_t reader_count, RunReader *readers) {
+    uint64_t ids[RUN_FANIN_MAX];
+    const char *paths[RUN_FANIN_MAX];
+    size_t unique_count = 0;
+    for (size_t i = 0; i < reader_count; ++i) {
+        if (!readers[i].has_row) continue;
+        size_t rank = 0;
+        while (rank < unique_count && ids[rank] != readers[i].path_id) ++rank;
+        if (rank == unique_count) {
+            ids[unique_count] = readers[i].path_id;
+            paths[unique_count] = readers[i].path_storage;
+            ++unique_count;
         }
     }
-    return -1;
+    for (size_t i = 1; i < unique_count; ++i) {
+        size_t j = i;
+        while (j != 0 && string_compare(paths[j], paths[j - 1]) < 0) {
+            const char *path = paths[j];
+            paths[j] = paths[j - 1];
+            paths[j - 1] = path;
+            uint64_t id = ids[j];
+            ids[j] = ids[j - 1];
+            ids[j - 1] = id;
+            --j;
+        }
+    }
+    for (size_t i = 0; i < reader_count; ++i) {
+        if (!readers[i].has_row) continue;
+        size_t rank = 0;
+        while (rank < unique_count && ids[rank] != readers[i].path_id) ++rank;
+        readers[i].path_rank = (uint8_t)rank;
+    }
 }
 
 static int run_reader_next(RunReader *reader, size_t reader_index,
-                           size_t reader_count, uint16_t protected_path_id,
+                           size_t reader_count, uint64_t *next_path_id,
                            RunReader *readers) {
+    reader->has_row = 0;
     DiskRecord disk;
     int got = run_reader_fill(reader, &disk, sizeof(disk));
     if (got <= 0) { reader->has_row = 0; return got; }
+    int path_changed = disk.path_length != 0;
     size_t path_length = disk.path_length;
     size_t text_length = disk.text_length;
     size_t extra_length = disk.extra_length;
@@ -1513,8 +1649,9 @@ static int run_reader_next(RunReader *reader, size_t reader_index,
         if (run_reader_fill(reader, reader->path_storage, path_length) != 1) return -1;
         reader->path_storage[path_length] = '\0';
         reader->have_path = 1;
+        reader->path_length = (uint32_t)path_length;
         if (run_reader_set_path_id(reader, reader_index, reader_count,
-                                   protected_path_id, readers) != 0) return -1;
+                                   next_path_id, readers) != 0) return -1;
     } else if (!reader->have_path) return -1;
     size_t required = text_length + extra_length + 2;
     if (required > reader->storage_capacity) {
@@ -1531,6 +1668,9 @@ static int run_reader_next(RunReader *reader, size_t reader_index,
     reader->row.path = reader->path_storage;
     reader->row.text = (char *)reader->storage;
     reader->row.extra = (char *)reader->storage + text_length + 1;
+    reader->row.path_length = reader->path_length;
+    reader->row.text_length = (uint32_t)text_length;
+    reader->row.extra_length = (uint32_t)extra_length;
     reader->row.type = disk.type;
     reader->row.flags = disk.flags;
     reader->row.a = disk.a;
@@ -1541,10 +1681,13 @@ static int run_reader_next(RunReader *reader, size_t reader_index,
     reader->row.input_id = disk.input_id;
     reader->row.path_id = reader->path_id;
     reader->has_row = 1;
-    return 1;
+    if (path_changed) run_readers_assign_path_ranks(reader_count, readers);
+    return path_changed ? 2 : 1;
 }
 
 static int heap_less(size_t left, size_t right, RunReader *readers) {
+    if (readers[left].path_rank != readers[right].path_rank)
+        return readers[left].path_rank < readers[right].path_rank;
     return record_total_compare(&readers[left].row, &readers[right].row) < 0;
 }
 
@@ -1559,10 +1702,8 @@ static void heap_push(size_t *heap, size_t *count, size_t value, RunReader *read
     heap[index] = value;
 }
 
-static void heap_sift_down_root(size_t *heap, size_t count, RunReader *readers) {
-    if (count == 0) return;
-    size_t value = heap[0];
-    size_t index = 0;
+static void heap_sift_down(size_t *heap, size_t count, size_t index, RunReader *readers) {
+    size_t value = heap[index];
     while (index < count / 2) {
         size_t child = index * 2 + 1;
         if (child + 1 < count && heap_less(heap[child + 1], heap[child], readers)) ++child;
@@ -1571,6 +1712,15 @@ static void heap_sift_down_root(size_t *heap, size_t count, RunReader *readers) 
         index = child;
     }
     heap[index] = value;
+}
+
+static void heap_sift_down_root(size_t *heap, size_t count, RunReader *readers) {
+    if (count != 0) heap_sift_down(heap, count, 0, readers);
+}
+
+static void heap_rebuild(size_t *heap, size_t count, RunReader *readers) {
+    for (size_t start = count / 2; start != 0; --start)
+        heap_sift_down(heap, count, start - 1, readers);
 }
 
 static int ensure_source_record(OutputState *output) {
@@ -1628,7 +1778,10 @@ static int add_function_hit(OutputState *output, const Record *record) {
 }
 
 static int output_record(OutputState *output, const Record *record) {
-    if (output->active && strcmp(output->path, record->path) != 0 && output_finish_file(output) != 0) return -1;
+    /* TN/SF markers delimit paths, so coverpoint rows need no repeated path compare. */
+    int begins_source_section = record->type == REC_TN || record->type == REC_SECTION;
+    if (begins_source_section && output->active && strcmp(output->path, record->path) != 0 &&
+        output_finish_file(output) != 0) return -1;
     if (start_output_file(output, record->path) != 0) return -1;
     if (record->type == REC_TN) {
         return writer_text(&output->writer, "TN:") == 0 &&
@@ -1760,15 +1913,18 @@ static int output_finish_file(OutputState *output) {
 }
 
 static void aggregate_copy(Record *destination, const Record *source, char *storage) {
-    size_t path_length = strlen(source->path);
-    size_t text_length = strlen(source->text);
-    size_t extra_length = strlen(source->extra);
+    size_t path_length = source->path_length;
+    size_t text_length = source->text_length;
+    size_t extra_length = source->extra_length;
     destination->path = storage;
     memcpy(destination->path, source->path, path_length + 1);
     destination->text = destination->path + path_length + 1;
     memcpy(destination->text, source->text, text_length + 1);
     destination->extra = destination->text + text_length + 1;
     memcpy(destination->extra, source->extra, extra_length + 1);
+    destination->path_length = source->path_length;
+    destination->text_length = source->text_length;
+    destination->extra_length = source->extra_length;
     destination->a = source->a;
     destination->b = source->b;
     destination->c = source->c;
@@ -1793,8 +1949,9 @@ static int merge_aggregate(Record *aggregate, const Record *next, const Options 
                     input_name_for(options, next->input_id), next->origin_line,
                     next->path, next->a, next->b, next->c);
             if (strcmp(next->text, aggregate->text) < 0) {
-                size_t length = strlen(next->text);
+                size_t length = next->text_length;
                 memcpy(aggregate->text, next->text, length + 1);
+                aggregate->text_length = next->text_length;
             }
         }
     } else if (next->type == REC_BRDA) {
@@ -1817,8 +1974,9 @@ static int merge_aggregate(Record *aggregate, const Record *next, const Options 
                     input_name_for(options, next->input_id), next->origin_line, next->path, next->a);
         }
         if (!aggregate->extra[0] || (next->extra[0] && strcmp(next->extra, aggregate->extra) < 0)) {
-            size_t length = strlen(next->extra);
+            size_t length = next->extra_length;
             memcpy(aggregate->extra, next->extra, length + 1);
+            aggregate->extra_length = next->extra_length;
         }
     }
     return 0;
@@ -1849,6 +2007,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
         have_run_writer = 1;
     }
     int status = 0;
+    uint64_t next_path_id = 0;
     for (size_t i = 0; i < count; ++i) {
         readers[i].handle = LM_INVALID_HANDLE;
         readers[i].path = paths[i];
@@ -1859,13 +2018,16 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
             status = 3;
             break;
         }
-        int got = run_reader_next(&readers[i], i, count, 0, readers);
+        int got = run_reader_next(&readers[i], i, count, &next_path_id, readers);
         if (got < 0) {
             fprintf(stderr, "lcovmerge: %s:0: corrupt temporary run\n", paths[i]);
             status = 3;
             break;
         }
-        if (got > 0) heap_push(heap, &heap_count, i, readers);
+    }
+    if (status == 0) {
+        for (size_t i = 0; i < count; ++i)
+            if (readers[i].has_row) heap_push(heap, &heap_count, i, readers);
     }
     Record aggregate;
     int have_aggregate = 0;
@@ -1882,15 +2044,17 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
             aggregate_copy(&aggregate, row, aggregate_storage);
             have_aggregate = 1;
         }
-        uint16_t protected_path_id = final_output && have_aggregate ? aggregate.path_id : 0;
         int got = run_reader_next(&readers[reader_index], reader_index, count,
-                                  protected_path_id, readers);
+                                  &next_path_id, readers);
         if (got < 0) {
             fprintf(stderr, "lcovmerge: %s:0: corrupt temporary run\n", readers[reader_index].path);
             status = 3;
             break;
         }
-        if (got > 0) heap_sift_down_root(heap, heap_count, readers);
+        if (got > 0) {
+            if (got == 2) heap_rebuild(heap, heap_count, readers);
+            else heap_sift_down_root(heap, heap_count, readers);
+        }
         else {
             --heap_count;
             if (heap_count != 0) {
