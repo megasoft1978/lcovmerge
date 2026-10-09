@@ -492,6 +492,8 @@ static int record_qsort_compare(const void *left, const void *right) {
 }
 
 static int same_key(const Record *left, const Record *right) {
+    /* Unknown extensions have no defined merge operator; preserve every row. */
+    if (left->type == REC_EXT || right->type == REC_EXT) return 0;
     return record_key_compare(left, right) == 0;
 }
 
@@ -618,8 +620,9 @@ static int chunk_init(Chunk *chunk, size_t budget) {
     if (chunk->capacity < 128) chunk->capacity = 128;
     if (chunk->capacity > SIZE_MAX / sizeof(Record)) return -1;
     chunk->arena_size = budget - chunk->capacity * sizeof(Record);
-    if (chunk->arena_size > budget * 2 / 3) chunk->arena_size = budget * 2 / 3;
-    chunk->rows = calloc(chunk->capacity, sizeof(*chunk->rows));
+    size_t arena_cap = budget - budget / 3;
+    if (chunk->arena_size > arena_cap) chunk->arena_size = arena_cap;
+    chunk->rows = malloc(chunk->capacity * sizeof(*chunk->rows));
     chunk->arena = malloc(chunk->arena_size);
     if (!chunk->rows || !chunk->arena) {
         free(chunk->rows);
@@ -1338,8 +1341,15 @@ static int run_reader_next(RunReader *reader) {
     size_t text_length = disk.text_length;
     size_t extra_length = disk.extra_length;
     if (path_length > MAX_LINE || text_length > MAX_LINE || extra_length > MAX_LINE ||
-        path_length > SIZE_MAX - text_length - extra_length - 3 ||
-        path_length + text_length + extra_length + 3 > reader->storage_capacity) return -1;
+        text_length > SIZE_MAX - extra_length - 3 ||
+        path_length > SIZE_MAX - text_length - extra_length - 3) return -1;
+    size_t required = path_length + text_length + extra_length + 3;
+    if (required > reader->storage_capacity) {
+        unsigned char *grown = realloc(reader->storage, required);
+        if (!grown) return -1;
+        reader->storage = grown;
+        reader->storage_capacity = required;
+    }
     size_t total = path_length + text_length + extra_length;
     if (run_reader_fill(reader, reader->storage, total) != 1) return -1;
     /* Shift fields from right to left to make room for one NUL per field. */
@@ -1653,7 +1663,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     for (size_t i = 0; i < count; ++i) {
         readers[i].handle = LM_INVALID_HANDLE;
         readers[i].path = paths[i];
-        readers[i].storage_capacity = 2 * MAX_LINE + 3;
+        readers[i].storage_capacity = 4096;
         readers[i].storage = malloc(readers[i].storage_capacity);
         if (!readers[i].storage || lm_open_read(paths[i], &readers[i].handle) != 0) {
             fprintf(stderr, "lcovmerge: %s:0: cannot read temporary run\n", paths[i]);
