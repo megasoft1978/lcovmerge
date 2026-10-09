@@ -1,6 +1,4 @@
-$ make BIN=/tmp/lcovmerge-make-win.exe OS=Windows_NT CC="zig cc -target x86_64-windows-gnu" LDFLAGS="-static -municode -Wl,-s"
-zig cc -target x86_64-windows-gnu ... src/lcovmerge.c src/platform_win32.c -static -municode -Wl,-s -o /tmp/lcovmerge-make-win.exe
-$ file /tmp/lcovmerge-make-win.exe
-/tmp/lcovmerge-make-win.exe: PE32+ executable (console) x86-64, for MS Windows
-make_windows_cross=PASS PE32+ x86_64 stripped_size=137728
-The Makefile Windows source-selection branch was cross-built from macOS; Windows runtime was not executed (Wine unavailable).
+Windows cross-build validation
+Date: 2026-10-09
+Source commit: 374e245db05c
+The Makefile Windows source-selection branch was cross-built from macOS with Zig 0.17.0 for x86_64-windows-gnu. PE32+ header and x86_64 machine type validation passed. The executable passed the Wine suite in [wine.txt](wine.txt). Native Windows CI is still required before documenting Windows runtime as CI-verified.

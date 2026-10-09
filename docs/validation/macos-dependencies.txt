@@ -1,7 +1,7 @@
 lcovmerge-1.0.0-macos-arm64:
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64:
+$REPO/dist/lcovmerge-1.0.0-macos-arm64:
 	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)
 
 lcovmerge-1.0.0-macos-x86_64:
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64:
+$REPO/dist/lcovmerge-1.0.0-macos-x86_64:
 	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.0.0)

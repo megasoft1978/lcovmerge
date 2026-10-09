@@ -1,46 +1,7 @@
-sh scripts/build-all.sh
-lcovmerge-1.0.0-linux-aarch64: OK
-lcovmerge-1.0.0-linux-aarch64.tar.gz: OK
-lcovmerge-1.0.0-linux-aarch64.zip: OK
-lcovmerge-1.0.0-linux-x86_64: OK
-lcovmerge-1.0.0-linux-x86_64.tar.gz: OK
-lcovmerge-1.0.0-linux-x86_64.zip: OK
-lcovmerge-1.0.0-macos-arm64: OK
-lcovmerge-1.0.0-macos-arm64.tar.gz: OK
-lcovmerge-1.0.0-macos-arm64.zip: OK
-lcovmerge-1.0.0-macos-x86_64: OK
-lcovmerge-1.0.0-macos-x86_64.tar.gz: OK
-lcovmerge-1.0.0-macos-x86_64.zip: OK
-lcovmerge-1.0.0-windows-x86_64.exe: OK
-lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: OK
-lcovmerge-1.0.0-windows-x86_64.exe.zip: OK
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64:             ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.tar.gz:      gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.zip:         Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64:              ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64:               Mach-O 64-bit executable arm64
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.tar.gz:        gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.zip:           Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64:              Mach-O 64-bit executable x86_64
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 61440
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe:        PE32+ executable (console) x86-64, for MS Windows
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 143360
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.zip:    Zip archive data, at least v2.0 to extract, compression method=deflate
-windows_pe=x86_64 PASS
-reproducible=PASS source_date_epoch=1791547014 git=e026eaccf6a9 version=1.0.0
-sh scripts/test-docker.sh
-debconf: delaying package configuration, since apt-utils is not installed
-cc (Debian 12.2.0-14+deb12u1) 12.2.0
-cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"unknown\" -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -o /tmp/lcovmerge-native
-python3 tests/run_tests.py --binary /tmp/lcovmerge-native
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
-debconf: delaying package configuration, since apt-utils is not installed
-cc (Debian 12.2.0-14+deb12u1) 12.2.0
-cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"unknown\" -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -o /tmp/lcovmerge-native
-python3 tests/run_tests.py --binary /tmp/lcovmerge-native
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
+Docker validation
+Date: 2026-10-09
+Docker: 28.1.1, build 4eba377327
+
+`make test-docker` passed on linux/amd64 and linux/arm64. Each Debian 12 container built and tested the native binary, ran the 20-option documentation check, then ran the same suite against the matching static release binary. Both reported 56 golden, 14 malformed, 246 oracle, 4 determinism, 5 I/O, and 1 many-path case passing.
+
+The release Dockerfile was built with `docker buildx build --load` using the real packaged Linux binaries for both architectures. Each image printed version 1.0.0 (build commit 374e245db05c) and merged out-of-order stdin sample rows through the external-sort temp-file path, producing sorted `DA:1,1` and `DA:2,1` rows. The scratch image includes a writable `/tmp` for this fallback path.

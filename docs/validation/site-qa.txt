@@ -1,0 +1,14 @@
+Website QA
+Date: 2026-10-09
+Server mapping: /lcovmerge/ -> docs/site/ (local Python HTTP server)
+
+Subpath fetches: index.html, docs.html, benchmarks.html, site.css, site.js, and data/benchmarks.json returned HTTP 200.
+Missing nested route: returned HTTP 404 with the custom 404 page.
+Chromium 106.0.5219.0 with a virtual-time budget loaded the benchmark table and its canonical JSON values: M input size 1,118,686,233 bytes, 337.4 MB/s, ERROR_1, TIMEOUT, and NOT MEASURED statuses. It also displayed the distinction between lcovmerge job-count runs and one run per comparison tool.
+
+Lighthouse 13.5.0 using Chromium against local /lcovmerge/ routes:
+  index.html: performance 100, accessibility 100, best-practices 100, SEO 100
+  docs.html: performance 100, accessibility 100, best-practices 100, SEO 100
+  benchmarks.html: performance 100, accessibility 100, best-practices 100, SEO 100
+
+Pages workflow upload path: docs/site.

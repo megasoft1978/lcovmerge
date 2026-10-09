@@ -1,33 +1,17 @@
-sh scripts/build-all.sh
-lcovmerge-1.0.0-linux-aarch64: OK
-lcovmerge-1.0.0-linux-aarch64.tar.gz: OK
-lcovmerge-1.0.0-linux-aarch64.zip: OK
-lcovmerge-1.0.0-linux-x86_64: OK
-lcovmerge-1.0.0-linux-x86_64.tar.gz: OK
-lcovmerge-1.0.0-linux-x86_64.zip: OK
-lcovmerge-1.0.0-macos-arm64: OK
-lcovmerge-1.0.0-macos-arm64.tar.gz: OK
-lcovmerge-1.0.0-macos-arm64.zip: OK
-lcovmerge-1.0.0-macos-x86_64: OK
-lcovmerge-1.0.0-macos-x86_64.tar.gz: OK
-lcovmerge-1.0.0-macos-x86_64.zip: OK
-lcovmerge-1.0.0-windows-x86_64.exe: OK
-lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: OK
-lcovmerge-1.0.0-windows-x86_64.exe.zip: OK
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64:             ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, stripped
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.tar.gz:      gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-aarch64.zip:         Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64:              ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-linux-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64:               Mach-O 64-bit executable arm64
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.tar.gz:        gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 92160
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-arm64.zip:           Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64:              Mach-O 64-bit executable x86_64
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.tar.gz:       gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 61440
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-macos-x86_64.zip:          Zip archive data, at least v2.0 to extract, compression method=deflate
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe:        PE32+ executable (console) x86-64, for MS Windows
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.tar.gz: gzip compressed data, last modified: Fri Oct  9 11:56:54 2026, max compression, original size modulo 2^32 143360
-/Users/megasoft78/Desktop/Freelance/lcovmerge/dist/lcovmerge-1.0.0-windows-x86_64.exe.zip:    Zip archive data, at least v2.0 to extract, compression method=deflate
-windows_pe=x86_64 PASS
-reproducible=PASS source_date_epoch=1791547014 git=e026eaccf6a9 version=1.0.0
+Release build validation
+Date: 2026-10-09
+Command: scripts/build-all.sh
+Version: 1.0.0
+Build commit: 374e245db05c
+Reproducibility: PASS; two complete builds matched under SOURCE_DATE_EPOCH=1791556878.
+Checksums: PASS for five executables and all ten generated archives (15 SHA-256 entries).
+Windows PE check: PASS; PE32+ x86_64.
+
+Target file types:
+  linux-x86_64: ELF 64-bit x86-64, statically linked, stripped (musl)
+  linux-aarch64: ELF 64-bit ARM aarch64, statically linked, stripped (musl)
+  macos-arm64: Mach-O 64-bit arm64; links /usr/lib/libSystem.B.dylib
+  macos-x86_64: Mach-O 64-bit x86_64; links /usr/lib/libSystem.B.dylib
+  windows-x86_64.exe: PE32+ executable, console x86-64
+
+All target executables are below the 150,000-byte release limit; exact sizes are in [binary-sizes.txt](binary-sizes.txt). `scripts/package-release.sh 1.0.0` separately produced four platform `.tar.gz` assets and one Windows `.zip`, SHA256SUMS, CycloneDX 1.6 SBOM, and CHANGELOG-derived release notes.

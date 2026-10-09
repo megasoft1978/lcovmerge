@@ -1,8 +1,19 @@
-lcov: lcov: LCOV version 2.6-0
-zig: 0.17.0
-python: Python 3.12.8
-clang: Apple clang version 21.0.0 (clang-2100.3.34.2)
-docker: Docker version 28.1.1, build 4eba377327
-PowerShell: PowerShell 7.2.5
-wine: unavailable
-Docker build image: debian:bookworm-slim (GCC 12.2.0, recorded in Docker logs)
+measurement_date=2026-10-09
+host=Apple M5 Max; macOS 27.0; arm64; 18 cores; 64 GiB RAM
+clang=Apple clang version 21.0.0 (clang-2100.3.34.2)
+python=3.12.8
+node=v24.14.0
+npm=11.9.0
+lcov=LCOV version 2.6-0
+lcov-result-merger=6.0.0
+docker=Docker version 28.1.1, build 4eba377327
+container_build_image=debian:bookworm-slim; GCC 12.2.0
+wine=8.0 in Debian 12 linux/amd64 Docker container; not installed on host
+actionlint=1.7.12
+shellcheck=0.11.0
+markdownlint-cli2=0.23.3 (markdownlint 0.41.1)
+lighthouse=13.5.0
+chromium=106.0.5219.0
+mandoc=mandoc -Tlint available; version option not provided by installed build
+PowerShell=7.2.5
+benchmark_cache_state=uncontrolled; each result is a single run

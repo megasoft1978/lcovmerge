@@ -1,9 +1,11 @@
-$ make install DESTDIR=/var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5 PREFIX=/usr
-install -d /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1
-install -m 0755 bin/lcovmerge /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin/lcovmerge
-install -m 0644 man/lcovmerge.1 /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1/lcovmerge.1
+Release packaging and local install checks
+Date: 2026-10-09
+Build commit: 374e245db05c
 
-$ make uninstall DESTDIR=/var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5 PREFIX=/usr
-rm -f /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin/lcovmerge /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1/lcovmerge.1
+`scripts/package-release.sh 1.0.0` passed size checks for all five binaries, generated four platform `.tar.gz` archives and one Windows `.zip`, verified SHA256SUMS, wrote a CycloneDX 1.6 SBOM with five binary components, and extracted the 1.0.0 notes from CHANGELOG.md. The release upload script selects those five archives, SHA256SUMS, and the SBOM as assets; the release notes file is passed as notes, not uploaded as an asset. A signature bundle is attached only when present.
 
-result=PASS installed binary and man page; uninstall removed both
+Positive installer test: a local HTTP server served the real `dist/release` assets; `packaging/install.sh` verified the macOS arm64 checksum, installed the binary under a temporary prefix, and `--version` printed `lcovmerge 1.0.0 (git 374e245db05c)`.
+
+Negative installer test: the served archive payload was corrupted while the original SHA256SUMS remained unchanged. The installer exited 1 with a SHA-256 verification error and did not install the binary.
+
+GitHub Action entrypoint test: the local entrypoint downloaded and verified the same release asset over the local HTTP server, expanded `tests/fuzz-corpus/basic.info`, applied `--mem-limit 16M` and `--branch-coverage off`, wrote an output tracefile and step summary, and reported `LF=1 LH=1 FNF=1 FNH=1 BRF=0 BRH=0`.

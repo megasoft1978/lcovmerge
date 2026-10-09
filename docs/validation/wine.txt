@@ -1,1 +1,9 @@
-wine=unavailable
+Windows executable run under Wine (supplemental evidence)
+Date: 2026-10-09
+Environment: Debian 12 bookworm, linux/amd64 Docker container, Wine 8.0; host was Apple M5 Max macOS.
+Binary: dist/lcovmerge-1.0.0-windows-x86_64.exe (PE32+ x86-64).
+
+The executable printed its version and passed tests/run_tests.py through a Wine wrapper:
+  golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
+
+The lcov differential category was skipped in this container; it passed separately in the native macOS suite. Wine startup reported that wine32 was missing and could not open a SysWOW64 rundll32 helper; these warnings did not prevent the 64-bit lcovmerge executable or its test suite from passing. This is Wine evidence, not a native Windows run. Windows runtime verification remains pending a passing Windows CI run.

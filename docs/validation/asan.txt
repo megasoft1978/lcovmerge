@@ -1,5 +1,12 @@
-cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"e026eaccf6a9\" -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-		-fsanitize=address,undefined -fno-omit-frame-pointer src/lcovmerge.c src/platform_posix.c src/platform_entry.c  -pthread -o bin/lcovmerge-asan
-ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-		python3 tests/run_tests.py --binary bin/lcovmerge-asan --no-lcov
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
+Native macOS ASan/UBSan validation
+Date: 2026-10-09
+Source commit: 374e245db05c
+Command: `make asan`
+Result: PASS; ASAN_OPTIONS=halt_on_error=1 and UBSAN_OPTIONS=halt_on_error=1
+  golden_cases=56
+  malformed_cases=14
+  oracle_cases=246
+  determinism_runs=4
+  io_cases=5
+  many_paths_cases=1
+  lcov_cases=0 (the sanitizer target intentionally uses --no-lcov)

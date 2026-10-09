@@ -3,4 +3,6 @@ cc (Debian 12.2.0-14+deb12u1) 12.2.0
 cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"unknown\" -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -o /tmp/lcovmerge-native
 python3 tests/run_tests.py --binary /tmp/lcovmerge-native
 golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0
+sh tests/doc-consistency.sh /tmp/lcovmerge-native
+doc_option_lists=PASS options=20
 golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=0

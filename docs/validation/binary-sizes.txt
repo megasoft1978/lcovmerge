@@ -1,5 +1,7 @@
-lcovmerge-1.0.0-linux-x86_64: 89256 bytes
-lcovmerge-1.0.0-linux-aarch64: 85608 bytes
-lcovmerge-1.0.0-macos-arm64: 87608 bytes
-lcovmerge-1.0.0-macos-x86_64: 57517 bytes
-lcovmerge-1.0.0-windows-x86_64.exe: 137728 bytes
+Build commit: 374e245db05c
+lcovmerge-1.0.0-linux-x86_64: 99912 bytes
+lcovmerge-1.0.0-linux-aarch64: 95824 bytes
+lcovmerge-1.0.0-macos-arm64: 104680 bytes
+lcovmerge-1.0.0-macos-x86_64: 66165 bytes
+lcovmerge-1.0.0-windows-x86_64.exe: 145920 bytes
+Budget: 150000 bytes per stripped executable; PASS for all five targets.
