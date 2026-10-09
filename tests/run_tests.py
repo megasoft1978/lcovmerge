@@ -885,6 +885,8 @@ def interrupted_staged_output_tests(binary: Path) -> int:
                         process.send_signal(signal.SIGSTOP)
                         time.sleep(0.02)
                         if process.poll() is not None or not staged.exists() or output.read_text(encoding="utf-8") != original:
+                            if process.poll() is None:
+                                process.kill()
                             stdout, stderr = process.communicate()
                             raise _RaceLost(
                                 f"{name} output completed before the staged file could be interrupted: "
