@@ -21,21 +21,22 @@ endif
 
 SOURCES = src/lcovmerge.c $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h
+BIN ?= bin/lcovmerge
 
 .PHONY: all test test-docker asan fuzz bench dist clean install uninstall check-format
 
-all: bin/lcovmerge
+all: $(BIN)
 
-bin/lcovmerge: $(SOURCES) $(HEADERS) | bin
+$(BIN): $(SOURCES) $(HEADERS) | bin
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o $@
 
 bin:
 	mkdir -p $@
 
-test: bin/lcovmerge
-	$(PYTHON) tests/run_tests.py --binary bin/lcovmerge
+test: $(BIN)
+	$(PYTHON) tests/run_tests.py --binary $(BIN)
 
-test-docker:
+test-docker: dist
 	sh scripts/test-docker.sh
 
 asan: | bin
