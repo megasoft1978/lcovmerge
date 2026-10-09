@@ -713,6 +713,7 @@ static char *arena_copy(Chunk *chunk, const char *value, size_t length) {
 }
 
 static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
+    if (interrupted) return -1;
     if (chunk->count == 0) return 0;
     if (!chunk->sorted) qsort(chunk->rows, chunk->count, sizeof(*chunk->rows), record_qsort_compare);
     uint64_t path_id = 0;
@@ -723,9 +724,16 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
         }
         chunk->rows[i].path_id = path_id;
     }
+    if (interrupted) return -1;
     char *path = NULL;
     lm_handle handle = LM_INVALID_HANDLE;
     if (lm_create_temp(tmpdir, &path, &handle) != 0) return -1;
+    if (interrupted) {
+        (void)lm_close(handle);
+        (void)lm_remove(path);
+        free(path);
+        return -1;
+    }
     Writer writer;
     if (writer_init(&writer, handle) != 0) {
         (void)lm_close(handle);
@@ -740,11 +748,18 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     if (result == 0 && writer_flush(&writer) != 0) result = -1;
     writer_destroy(&writer);
     if (lm_close(handle) != 0) result = -1;
-    if (result != 0 || run_list_add(runs, path) != 0) {
+    if (interrupted) result = -1;
+    if (result != 0) {
         (void)lm_remove(path);
         free(path);
         return -1;
     }
+    if (run_list_add(runs, path) != 0) {
+        (void)lm_remove(path);
+        free(path);
+        return -1;
+    }
+    if (interrupted) return -1;
     chunk->count = 0;
     chunk->arena_used = 0;
     chunk->have_last_row = 0;
@@ -1061,7 +1076,9 @@ static int add_row(Worker *worker, Chunk *chunk, const char *source_path, uint8_
     }
     int result = chunk_add(chunk, &worker->runs, worker->options->tmpdir, &record);
     if (result == -2) return worker_error(worker, 2, worker->current_file, input_line, "record exceeds the configured memory limit");
-    if (result != 0) return worker_error(worker, 3, worker->current_file, input_line, "cannot write temporary run");
+    if (result != 0)
+        return worker_error(worker, 3, worker->current_file, input_line,
+                            interrupted ? "interrupted" : "cannot write temporary run");
     ++worker->records;
     return 0;
 }
@@ -1658,12 +1675,18 @@ static void *worker_main(void *raw) {
         const char *filename = worker->options->inputs.items[i];
         if (parse_input_file(worker, &chunk, filename, (uint32_t)i) != 0) break;
         if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0) {
-            (void)worker_error(worker, 3, filename, 0, "cannot write temporary run");
+            (void)worker_error(worker, 3, filename, 0,
+                               interrupted ? "interrupted" : "cannot write temporary run");
             break;
         }
     }
-    if (worker->error_code == 0 && flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0)
-        (void)worker_error(worker, 3, worker->current_file, 0, "cannot write temporary run");
+    if (worker->error_code == 0) {
+        if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0)
+            (void)worker_error(worker, 3, worker->current_file, 0,
+                               interrupted ? "interrupted" : "cannot write temporary run");
+        else if (interrupted)
+            (void)worker_error(worker, 3, worker->current_file, 0, "interrupted");
+    }
     chunk_destroy(&chunk);
     return NULL;
 }
@@ -2547,6 +2570,10 @@ static int run_direct_merge(const Options *options) {
     }
     if (!fallback && close_failed && status == 0) status = 3;
     if (file.owns_handle && lm_close(file.handle) != 0 && status == 0) status = 3;
+    if (!fallback && status == 0 && interrupted) {
+        (void)worker_error(&inputs[0].worker, 3, NULL, 0, "interrupted");
+        status = 3;
+    }
     if (!fallback && status == 0 && file.owns_handle && lm_rename(file.path, options->output) != 0) {
         fprintf(stderr, "lcovmerge: %s:0: cannot replace output\n", options->output);
         status = 3;
@@ -2617,6 +2644,8 @@ static int run_merge(const Options *options) {
     }
     int status = 0;
     for (unsigned i = 0; i < job_count; ++i) {
+        if (interrupted && workers[i].error_code == 0)
+            (void)worker_error(&workers[i], 3, workers[i].current_file, 0, "interrupted");
         if (workers[i].error_code != 0) {
             print_worker_error(&workers[i]);
             if (status == 0 || workers[i].error_code == 2) status = workers[i].error_code;
@@ -2675,6 +2704,10 @@ static int run_merge(const Options *options) {
     free(output.path);
     if (file.owns_handle && lm_close(file.handle) != 0 && status == 0) status = 3;
     if (file.owns_handle) {
+        if (status == 0 && interrupted) {
+            fprintf(stderr, "lcovmerge: interrupted\n");
+            status = 3;
+        }
         if (status == 0) {
             if (lm_rename(file.path, options->output) != 0) {
                 fprintf(stderr, "lcovmerge: %s:0: cannot replace output\n", options->output);

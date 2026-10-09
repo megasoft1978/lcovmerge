@@ -366,7 +366,7 @@ def signal_cleanup_tests(binary: Path) -> int:
 
     signals = [(name, getattr(signal, name)) for name in ("SIGHUP", "SIGTERM", "SIGINT")
                if hasattr(signal, name)]
-    cache_root = ROOT / ".cache" / "luna-1009-1853"
+    cache_root = ROOT / ".luna-tmp"
     cache_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="signal-cleanup-", dir=cache_root) as work_dir:
         work = Path(work_dir)
@@ -422,6 +422,97 @@ def signal_cleanup_tests(binary: Path) -> int:
                     f"remaining={remaining!r}, stdout={stdout!r}, stderr={stderr!r}"
                 )
     return len(signals)
+
+
+def interrupted_staged_output_tests(binary: Path) -> int:
+    if os.name == "nt" or not hasattr(signal, "SIGSTOP") or not hasattr(signal, "SIGCONT"):
+        return 0
+
+    cache_root = ROOT / ".luna-tmp"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    line_count = 500_000
+    summary = (
+        "FNF:0\nFNH:0\nBRF:0\nBRH:0\nMCF:0\nMCH:0\n"
+        f"LF:{line_count}\nLH:{line_count}\n"
+    ).encode()
+    with tempfile.TemporaryDirectory(prefix="cancel-final-", dir=cache_root) as work_dir:
+        work = Path(work_dir)
+        for name, numbers in (("direct", range(1, line_count + 1)),
+                              ("fallback", range(line_count, 0, -1))):
+            case_dir = work / name
+            case_dir.mkdir()
+            run_dir = case_dir / "runs"
+            run_dir.mkdir()
+            source = case_dir / "input.info"
+            with source.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.write("SF:/cancel.c\n")
+                for line_number in numbers:
+                    stream.write(f"DA:{line_number},1\n")
+                stream.write("end_of_record\n")
+            output = case_dir / "output.info"
+            original = "preexisting output\n"
+            output.write_text(original, encoding="utf-8")
+            expected_size = source.stat().st_size + len(summary)
+            target_size = expected_size - (512 * 1024)
+            process = subprocess.Popen(
+                [str(binary), "--mem-limit", "8M", "--jobs", "1", "--tmpdir", str(run_dir),
+                 str(source), "-o", str(output)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            try:
+                deadline = time.monotonic() + 60
+                staged = None
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        raise AssertionError(
+                            f"{name} interruption test exited before staged output reached its final phase: "
+                            f"status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                        )
+                    for candidate in case_dir.glob("lcovmerge-*"):
+                        try:
+                            if candidate.stat().st_size >= target_size:
+                                staged = candidate
+                                break
+                        except FileNotFoundError:
+                            continue
+                    if staged is not None:
+                        break
+                    time.sleep(0.001)
+                if staged is None:
+                    stdout, stderr = process.communicate(timeout=5)
+                    raise AssertionError(
+                        f"{name} interruption test did not observe nearly complete staged output: "
+                        f"status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                    )
+
+                process.send_signal(signal.SIGSTOP)
+                time.sleep(0.02)
+                if process.poll() is not None or not staged.exists() or output.read_text(encoding="utf-8") != original:
+                    stdout, stderr = process.communicate()
+                    raise AssertionError(
+                        f"{name} output completed before the staged file could be interrupted: "
+                        f"status={process.returncode}, stdout={stdout!r}, stderr={stderr!r}"
+                    )
+                process.send_signal(signal.SIGTERM)
+                process.send_signal(signal.SIGCONT)
+                stdout, stderr = process.communicate(timeout=30)
+            except BaseException:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()
+                raise
+
+            remaining_output_temps = list(case_dir.glob("lcovmerge-*"))
+            remaining_runs = list(run_dir.iterdir())
+            if (process.returncode != 3 or output.read_text(encoding="utf-8") != original or
+                    remaining_output_temps or remaining_runs):
+                raise AssertionError(
+                    f"{name} interruption published output or left temporary files: "
+                    f"status={process.returncode}, remaining_output_temps={remaining_output_temps!r}, "
+                    f"remaining_runs={remaining_runs!r}, stdout={stdout!r}, stderr={stderr!r}"
+                )
+    return 2
 
 
 def many_paths_test(binary: Path, temporary: Path) -> int:
@@ -524,11 +615,12 @@ def main() -> int:
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
         signal_cases = signal_cleanup_tests(binary)
+        staged_signal_cases = interrupted_staged_output_tests(binary)
         many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
           f"determinism_runs={deterministic} io_cases={io_cases} signal_cleanup_cases={signal_cases} "
-          f"many_paths_cases={many_paths_cases} "
+          f"interrupted_staged_output_cases={staged_signal_cases} many_paths_cases={many_paths_cases} "
           f"lcov_cases={lcov_cases}")
     return 0
 
