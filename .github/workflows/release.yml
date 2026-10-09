@@ -58,13 +58,25 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign SHA256SUMS with keyless cosign
-        continue-on-error: true
         run: cosign sign-blob --yes --bundle dist/release/SHA256SUMS.sigstore.json dist/release/SHA256SUMS
 
-      - name: Create GitHub Release
+      - name: Verify checksum signature before publication
+        run: |
+          cosign verify-blob dist/release/SHA256SUMS \
+            --bundle dist/release/SHA256SUMS.sigstore.json \
+            --certificate-identity "https://github.com/megasoft1978/lcovmerge/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+      - name: Verify artifact attestations before publication
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/create-github-release.sh
+        run: |
+          for artifact in dist/release/lcovmerge-*.tar.gz dist/release/lcovmerge-*.zip dist/release/SHA256SUMS dist/release/sbom.cdx.json; do
+            gh attestation verify "$artifact" \
+              --repo megasoft1978/lcovmerge \
+              --signer-workflow megasoft1978/lcovmerge/.github/workflows/release.yml \
+              --source-ref "refs/tags/${GITHUB_REF_NAME}"
+          done
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -87,12 +99,24 @@ jobs:
             ghcr.io/megasoft1978/lcovmerge:${{ github.ref_name }}
             ghcr.io/megasoft1978/lcovmerge:latest
 
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/create-github-release.sh
+
       - name: Open package update PR when TAP_TOKEN is configured
         env:
           GH_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "TAP_TOKEN is not configured; skipping tap and Scoop update."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          branch="lcovmerge-release-$version"
+          existing_pr=$(gh pr list --repo megasoft1978/homebrew-tap --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing_pr" ]; then
+            echo "Package update PR #$existing_pr is already open; skipping duplicate creation."
             exit 0
           fi
           scripts/publish-package-updates.sh "${GITHUB_REF_NAME#v}"

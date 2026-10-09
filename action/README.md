@@ -25,3 +25,5 @@ Use `megasoft1978/lcovmerge@v1` to merge LCOV tracefiles in a workflow. The acti
 See the [CLI usage reference](../docs/USAGE.md) for exact prefix rules, branch defaults, filter order, checksum handling, and exit statuses.
 
 The action selects binaries for GitHub-hosted Linux and macOS runners on x86_64/arm64, and Windows x86_64. Windows runtime verification is pending a passing Windows CI run; local checks cover the PE format and cross-build, and a Wine run is recorded separately. The merge summary comes from `lcovmerge --stats`.
+
+The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. It uses the repository action with the published v1.0.0 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. Treat hosted runtime verification as complete only after those workflow jobs pass.
