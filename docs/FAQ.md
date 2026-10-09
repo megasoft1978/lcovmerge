@@ -2,51 +2,68 @@
 
 ## Does lcovmerge collect coverage?
 
-No. It combines LCOV tracefiles that another tool has already created. Use gcov/lcov, grcov, Jest/Istanbul,
-pytest-cov, or another collector to produce `.info` files, then merge them with lcovmerge.
+No. It merges LCOV tracefiles that another tool has already produced. Use gcov/lcov, grcov, Jest/Istanbul,
+pytest-cov, or another collector to create `.info` files, then merge those files with lcovmerge.
 
 ## Does it replace lcov?
 
-No. lcov includes capture, tracefile operations, summaries, filtering, and related report tooling. lcovmerge
-focuses on bounded-memory merging of existing LCOV files. Use `genhtml` or another report tool after merging.
-The [comparison](COMPARISON.md) explains the scope difference.
+No. lcov includes capture, filtering, extraction, summaries, and report workflows. lcovmerge focuses on
+merging existing LCOV tracefiles. Keep `genhtml` or another report tool after the merge. See the
+[comparison](COMPARISON.md).
 
-## Does it support branch coverage?
+## Is the output identical to `lcov -a`?
 
-It can preserve and merge LCOV `BRDA` rows when branch coverage is enabled. The CLI option is
-`--branch-coverage on|off`. It does not implement MC/DC semantics.
+No. lcovmerge writes canonicalized LCOV output and has documented differences in record ordering, summary
+recalculation, checksum conflicts, function aliases, branches, MC/DC-shaped records, and unknown records.
+The output is not guaranteed to be byte-identical to lcov's output. Keep `lcov -a` when you depend on lcov's
+specific behavior, testcase semantics, configuration, or MC/DC handling. See
+[limitations and intentional differences](LIMITATIONS.md).
 
-## What happens to function data?
+## Is output deterministic?
 
-Function rows are merged by the tracefile merger. Use `--no-function-data` when you want line and optional
-branch data without function records. LCOV 2.x enhanced function records have fixture-specific compatibility
-limits; see [benchmarks](BENCHMARKS.md).
+With the same inputs, options, and build, lcovmerge emits byte-identical output regardless of input order or
+the selected `-j` value. This makes it easier to compare and cache the output of repeatable CI runs.
 
-## Can I merge several CI shards?
+## Is total memory capped by `--mem-limit`?
 
-Yes. Upload each shard's `.info` file as a workflow artifact, download all of them in one aggregation job, and
-run `lcovmerge artifacts/**/*.info -o merged.info`. See [integrations](INTEGRATIONS.md).
+No. `--mem-limit` caps the record arena. Process overhead, parser and I/O buffers, merge bookkeeping, thread
+stacks, and allocator state add to total RSS. External sorting also needs temporary disk space proportional
+to input and intermediate runs; select a `--tmpdir` with enough free space.
+
+## Can I merge CI shards?
+
+Yes. Upload each shard's `.info` file as a CI artifact, then merge those artifacts in a final job. The
+[integrations guide](INTEGRATIONS.md) includes GitHub Actions, GitLab, Bazel, and CMake examples. The
+[reusable GitHub Action](../action/README.md) can download and verify the release binary for you.
+
+## Can I send the result to genhtml, Codecov, Coveralls, or SonarQube?
+
+lcovmerge writes an LCOV tracefile. Pass it to `genhtml`, Codecov, or a Coveralls integration that accepts
+LCOV. SonarQube accepts LCOV for some analyzers, including JavaScript/TypeScript, Dart, and Rust. Its C/C++
+analyzer uses gcov or llvm-cov reports, so an LCOV file is not a replacement for those inputs. See the
+[uploader notes](INTEGRATIONS.md#coverage-report-consumers).
+
+## Does `--jobs` parallelize one large input file?
+
+No. `--jobs` controls concurrent external-sort run generation across input files. Already-sorted regular
+files use a single-threaded stream merge, and one input file cannot be parsed by multiple workers. The merge
+stage is single-threaded.
 
 ## How do I handle different checkout roots?
 
-Use one `--rebase OLD=NEW` mapping per old root. If the paths share a prefix that should be removed, use
-`--prefix-strip`. Review the resulting `SF:` names before publishing the merged file.
+Pass one `--rebase OLD=NEW` mapping per old root. Use `--prefix-strip` when a common leading path should be
+removed. Review the resulting `SF:` names before generating or publishing a report.
 
-## Is memory strictly bounded by `--mem-limit`?
+## When should I not use lcovmerge?
 
-The limit applies to the record arena. Process overhead, buffers, and temporary sort files add to total
-resource use. Ensure `--tmpdir` has enough free disk space for the spill files.
+Keep your current tool when you need raw coverage collection, MC/DC semantic accounting, exact `lcov -a`
+behavior, testcase-aware reporting, or a merge job that cannot spare temporary disk space. See
+[all documented limitations](LIMITATIONS.md).
 
-## Does `--jobs` run multiple workers?
-
-`--jobs` controls concurrent external-sort run generation and accepts 1 through 32. For regular files whose
-rewritten records are already in canonical order, lcovmerge uses the single-threaded stream merge and ignores
-the job count. Out-of-order inputs and unsupported stream types use the external-sort workers.
-
-## What do exit codes mean?
+## What do the exit codes mean?
 
 `0` means success, `1` means command-line usage error, `2` means input or LCOV format error, and `3` means an
-I/O error. See [USAGE](USAGE.md#exit-status).
+I/O or allocation error. See [the CLI reference](USAGE.md#exit-status).
 
 ## How do I report a security issue?
 

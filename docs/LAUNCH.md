@@ -1,58 +1,56 @@
 # Launch drafts
 
-These drafts are not posted. Publish them only after the source repository, release assets, checksum file, and
-benchmark page are public and the links resolve. The Bazel and Mozilla messages offer lcovmerge as an optional
-downstream tool; neither claims that it changes those projects' implementations.
+These drafts are not posted. Before publishing, confirm that the source repository, release assets, package
+manifests, benchmark page, checksums, and links are public and match the current release. The Bazel and Mozilla
+messages describe lcovmerge as an optional downstream tool; neither says it changes those projects' code or
+would have fixed a reported incident.
 
 ## Bazel issue #26383 comment
 
-> I came across this issue while working on a small C11 tool called lcovmerge. It merges already-generated
-> LCOV tracefiles using bounded record memory and temporary-file sorting, so it may be worth evaluating as an
-> optional post-processing step when LCOV files are available. It does not replace Bazel's
-> `CoverageOutputGenerator` or fix its internal memory use. The benchmark page documents the synthetic inputs,
-> one-host methodology, and limitations; the Bazel merger itself was not benchmarked. If useful, the source
-> and release are here: [repository](https://github.com/megasoft1978/lcovmerge) ·
-> [benchmarks](https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md).
+> I came across this issue while working on lcovmerge, a C11 command-line tool for merging LCOV tracefiles
+> after coverage collection. It streams records, caps the record arena, and spills sorting work to temporary
+> files. It may be useful as an optional post-processing step when separate LCOV files need to be combined.
+> It does not replace or change Bazel's `CoverageOutputGenerator`. Its own benchmarks use generated inputs;
+> the workload in this issue was not measured. Source and benchmark details: [repository](https://github.com/megasoft1978/lcovmerge)
+> · [Bazel issue](https://github.com/bazelbuild/bazel/issues/26383).
 
 ## Mozilla Bug 2070106 comment
 
-> I saw that this bug was resolved by increasing the coverage worker's memory. I maintain lcovmerge, a small
-> tool for merging LCOV files after collection has completed. It does not replace grcov or process raw profile
-> data, and I am not suggesting it would have fixed this worker issue. If it is useful to compare a file-only
-> aggregation step on another pipeline, the benchmark page lists the synthetic fixtures and caveats:
-> [repository](https://github.com/megasoft1978/lcovmerge) ·
-> [benchmarks](https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md).
+> I saw this bug was resolved by increasing the coverage worker's memory. I maintain lcovmerge, a tool for
+> merging existing LCOV files after collection. It does not replace grcov or process raw profile data, and I
+> am not suggesting it would have changed the outcome here. If a separate LCOV merge stage is useful in
+> another pipeline, the source and benchmark methodology are here: [repository](https://github.com/megasoft1978/lcovmerge)
+> · [benchmark report](https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md).
 
 ## Show HN
 
-**Title:** Show HN: lcovmerge – a bounded-memory LCOV tracefile merger in C
+**Title:** Show HN: lcovmerge – a bounded-memory LCOV merger for sharded CI
 
 **Text:**
 
-I built lcovmerge for pipelines where combining LCOV files consumes too much time or memory. It is a small C11
-CLI that streams tracefiles, spills sorting work to temporary files, and writes a normal `.info` file for
-existing tools such as `genhtml`.
+I built lcovmerge for the final merge step in coverage pipelines: test shards already produce `.info` files,
+but combining them can turn into a memory-heavy or slow CI job. It's a small C11 CLI that streams LCOV
+records, spills sorting work to temporary files, and emits canonical output. With the same inputs and options,
+the output is byte-identical regardless of input order or job count.
 
-It only merges existing LCOV data; it does not collect coverage, create HTML reports, or implement MC/DC
-semantics. The performance comparison uses generated inputs measured on macOS; run counts are recorded per
-workload and the operating-system cache was not controlled. Linux performance was not measured, and Windows
-runtime verification is pending a passing Windows CI run. No project-derived REAL capture was available. The
-benchmark page includes errored cases and marks unavailable inputs.
+It fits monorepos and Bazel, CMake, or Gradle C++ builds when their coverage steps already emit LCOV. It writes
+an `.info` file for tools such as `genhtml`, Codecov, and Coveralls; SonarQube support depends on the language
+analyzer. It is only a merger: no raw-data collection, HTML reporting, or MC/DC semantic guarantee. The
+benchmarks use generated inputs on one host, with workload-specific run counts and uncontrolled cache state;
+the report includes failed and timed-out cases and marks unavailable data.
 
-Source and usage: [repository](https://github.com/megasoft1978/lcovmerge)
+Source, install options, and benchmark methodology: [lcovmerge on GitHub](https://github.com/megasoft1978/lcovmerge).
 
-## Short r/programming-style post
+## Short post
 
-I wrote lcovmerge, a C11 command-line merger for large LCOV tracefiles. It uses bounded record memory and
-temporary-file sorting, then emits an ordinary `.info` file that existing report tools can read. It is not a
-coverage collector or HTML reporter, and it does not implement MC/DC semantics. The benchmark page documents
-macOS measurements on generated inputs, with workload-specific run counts and uncontrolled cache state, and
-includes errored or unavailable cases:
-[benchmark page](https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md)
+lcovmerge is a C11 CLI for merging already-generated LCOV tracefiles in sharded CI. It uses bounded record
+memory, temporary-file sorting, and canonical output that is independent of input order and job count. It
+does not collect raw coverage or replace lcov's broader workflow. The benchmark page documents the generated
+fixtures, methodology, failed runs, and limitations:
+[lcovmerge on GitHub](https://github.com/megasoft1978/lcovmerge).
 
-## Tweet-length blurb
+## Short blurb
 
-lcovmerge is a small C11 CLI for merging LCOV tracefiles with bounded record memory. It writes standard
-`.info` output; it does not collect coverage or implement MC/DC. Benchmarks are macOS measurements on generated
-inputs with workload-specific run counts. Cache state was uncontrolled and REAL was unavailable:
-[https://github.com/megasoft1978/lcovmerge](https://github.com/megasoft1978/lcovmerge)
+Merge LCOV shards with bounded record memory. lcovmerge writes canonical `.info` output for your existing
+report or upload step. It is a focused merger, not a coverage collector; benchmarks and limits are published
+with the source: [lcovmerge on GitHub](https://github.com/megasoft1978/lcovmerge).

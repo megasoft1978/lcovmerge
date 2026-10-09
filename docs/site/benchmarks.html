@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f9f7">
+  <meta name="theme-color" content="#f6f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#09130f" media="(prefers-color-scheme: dark)">
   <meta name="description" content="Synthetic benchmark results, methodology, comparison caveats, and reproduction steps for lcovmerge.">
   <meta name="robots" content="index,follow">
   <title>Benchmarks — lcovmerge</title>
@@ -34,16 +35,16 @@
     <header class="page-intro">
       <p class="eyebrow">Measured results</p>
       <h1>Benchmark data, with its limits in view.</h1>
-      <p>These results compare generated LCOV input shapes on one machine. They are a data point, not a promise about every report, tool version, or system.</p>
+      <p>These results compare generated LCOV inputs on one machine. They are a data point, not a promise about every report, tool version, or system.</p>
     </header>
     <div class="page-body">
       <div class="callout">
-        <p><strong>Method summary:</strong> Host, cache state, lcovmerge run counts, and comparison-tool run counts come from <code>data/benchmarks.json</code>. Inputs are generated benchmark data. Performance measurements were collected on macOS; Windows runtime verification is pending a passing Windows CI run.</p>
+        <p><strong>Method summary:</strong> Host, cache state, run counts, input descriptions, and measurement status come from <code>data/benchmarks.json</code>. Read those details alongside each result; this page does not imply cross-platform performance.</p>
       </div>
 
       <section aria-labelledby="charts-title">
         <h2 class="charts-title" id="charts-title">Visual comparison</h2>
-        <p data-chart-status>Charts and measured results load from <code>data/benchmarks.json</code>.</p>
+        <p data-chart-status role="status">Charts and measured results load from <code>data/benchmarks.json</code>.</p>
         <div class="dataset-heading"><h3>Dataset M</h3><span>sharded LCOV input</span></div>
         <div class="dataset-charts">
           <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="medium"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
@@ -54,7 +55,7 @@
           <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="large"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
           <div class="chart-card"><h3>Peak RSS</h3><p>Lower is less resident memory · MiB</p><div data-chart="rss" data-dataset="large"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
         </div>
-        <div class="dataset-heading"><h3>Bazel-shaped single file</h3><span>large input in one tracefile</span></div>
+        <div class="dataset-heading"><h3>XL-single · generated input</h3><span>one large tracefile; not a reproduction of Bazel issue #26383</span></div>
         <div class="dataset-charts">
           <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="single_file"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
           <div class="chart-card"><h3>Peak RSS</h3><p>Lower is less resident memory · MiB</p><div data-chart="rss" data-dataset="single_file"></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:#68a833"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#4c79b8"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:#a66ac3"></i>lcov-result-merger</span></div></div>
@@ -77,17 +78,17 @@
         <h2 id="method-title">Methodology</h2>
         <ul>
           <li id="benchmark-method">Machine, cache state and per-tool run counts are loaded from the benchmark data file.</li>
-          <li>Inputs: generated LCOV benchmark data for S, M, L, XL-single and PATH-HEAVY. REAL was not measured because no project-derived captures were present.</li>
+          <li id="benchmark-inputs">Dataset names, input sizes, shard counts, and descriptions load from the benchmark data file.</li>
           <li>Measurements: elapsed wall time and peak resident memory.</li>
-          <li>Tools: lcovmerge 1.0.0, lcov 2.6, and lcov-result-merger 6.0.0.</li>
+          <li id="benchmark-tools">Compared tools load from the benchmark data file.</li>
         </ul>
       </section>
 
       <section aria-labelledby="reproduce-title">
         <h2 id="reproduce-title">Reproduction steps</h2>
         <ol>
-          <li>Prepare the same synthetic LCOV fixtures and tool versions shown in the results table. Use the same input paths for each implementation.</li>
-          <li>Generate each fixture immediately before measurements; the operating-system cache was not explicitly controlled. lcovmerge has multiple M job-count runs; each comparison tool ran once per dataset. Keep machine load and output destination consistent.</li>
+          <li>Prepare the input type and tool versions shown in the results table. Use the same input paths for each implementation.</li>
+          <li>Match the recorded host, cache state, and run counts in the benchmark data file. Keep machine load and output destination consistent.</li>
           <li>For lcovmerge, put the input paths in a list file and run:</li>
         </ol>
         <pre class="code-block"><code>lcovmerge @paths.txt -o merged.info</code></pre>
@@ -103,12 +104,13 @@
         <h2 id="caveats-title">Caveats</h2>
         <ul>
           <li>Synthetic fixtures do not cover every real project’s path patterns, record mix, checksums or shard layout.</li>
-          <li>A single run with uncontrolled cache state is not a median, confidence interval or cross-platform comparison.</li>
+          <li>Run counts and cache state vary by dataset. Check the recorded method before treating a result as representative; these measurements are not a confidence interval or cross-platform comparison.</li>
           <li>The tools do different things. lcov has a broader capture, filtering and reporting workflow; lcovmerge focuses on merging existing LCOV tracefiles. Versions, feature settings and command lines affect the result.</li>
-          <li>No project-derived REAL capture was available in the repository, so REAL is listed as not measured.</li>
-          <li>Performance numbers are specific to the recorded macOS host. Windows runtime verification is pending a passing Windows CI run.</li>
+          <li>Rows marked unavailable, timed out, or not measured are not successful timing comparisons.</li>
+          <li>Performance results apply to the host recorded in the data file. Runtime support and performance on other platforms require separate verification.</li>
         </ul>
       </section>
+      <p class="small-note">For a Markdown report without JavaScript, see <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md">docs/BENCHMARKS.md ↗</a>. The canonical measurement source is <a href="https://github.com/megasoft1978/lcovmerge/blob/main/data/benchmarks.json">data/benchmarks.json ↗</a>.</p>
     </div>
   </main>
   <footer class="site-footer"><div class="shell footer-row"><p>lcovmerge 1.0.0 · MIT License</p><div class="footer-links"><a href="index.html">Home</a><a href="docs.html">Docs</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a></div></div></footer>

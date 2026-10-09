@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render benchmark tables and site data from the canonical benchmark JSON."""
 
+import argparse
 import json
 import textwrap
 from pathlib import Path
@@ -160,6 +161,7 @@ def site_benchmarks():
         site_dataset = {
             "id": ids.get(source["name"], source["name"].lower().replace("-", "_")),
             "name": source["name"],
+            "description": source.get("description", ""),
             "input_size": (f'{source["input_bytes"]:,} bytes'
                            if source.get("input_bytes") is not None else "unavailable"),
             "shards": source.get("shards", "unknown shard count"),
@@ -170,12 +172,11 @@ def site_benchmarks():
         "version": DATA["version"],
         "machine": DATA["host"]["cpu"],
         "measured_on": DATA["measured_on"],
-        "runs": 1,
         "repeat_counts": DATA["method"]["repeat_counts"],
         "comparison_runs_per_tool": DATA["method"]["comparison_runs_per_tool"],
         "cache": DATA["host"]["cache"],
         "source": "data/benchmarks.json",
-        "data_kind": "synthetic",
+        "data_kind": DATA.get("data_kind", "generated"),
         "environment": DATA["environment"],
     }
     return {**metadata, "datasets": datasets}
@@ -198,14 +199,29 @@ def replace_named_section(path, start, end, content):
     path.write_text(before + start + "\n" + content + "\n" + end + after)
 
 
-replace_section(ROOT / "README.md", readme_table())
-replace_section(ROOT / "docs/BENCHMARKS.md", full_table())
-replace_named_section(ROOT / "README.md", "<!-- BENCH-CONTEXT:START -->", "<!-- BENCH-CONTEXT:END -->", context())
-replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- BENCH-METHOD:START -->", "<!-- BENCH-METHOD:END -->", context())
-replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- BENCH-CAVEATS:START -->", "<!-- BENCH-CAVEATS:END -->", caveats())
-replace_named_section(ROOT / "README.md", "<!-- BAZEL-EVIDENCE:START -->", "<!-- BAZEL-EVIDENCE:END -->", textwrap.fill(bazel_evidence(), width=110, break_long_words=False, break_on_hyphens=False))
-replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- SCALING:START -->", "<!-- SCALING:END -->", scaling_table())
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--readme-site-only",
+        action="store_true",
+        help="update README and site data without changing docs/BENCHMARKS.md",
+    )
+    args = parser.parse_args()
 
-site_data = site_benchmarks()
-(ROOT / "docs/site/data/benchmarks.json").write_text(
-    json.dumps(site_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    replace_section(ROOT / "README.md", readme_table())
+    replace_named_section(ROOT / "README.md", "<!-- BENCH-CONTEXT:START -->", "<!-- BENCH-CONTEXT:END -->", context())
+    replace_named_section(ROOT / "README.md", "<!-- BAZEL-EVIDENCE:START -->", "<!-- BAZEL-EVIDENCE:END -->", textwrap.fill(bazel_evidence(), width=110, break_long_words=False, break_on_hyphens=False))
+
+    if not args.readme_site_only:
+        replace_section(ROOT / "docs/BENCHMARKS.md", full_table())
+        replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- BENCH-METHOD:START -->", "<!-- BENCH-METHOD:END -->", context())
+        replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- BENCH-CAVEATS:START -->", "<!-- BENCH-CAVEATS:END -->", caveats())
+        replace_named_section(ROOT / "docs/BENCHMARKS.md", "<!-- SCALING:START -->", "<!-- SCALING:END -->", scaling_table())
+
+    site_data = site_benchmarks()
+    (ROOT / "docs/site/data/benchmarks.json").write_text(
+        json.dumps(site_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

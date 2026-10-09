@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f9f7">
-  <meta name="description" content="lcovmerge command-line usage, options, exit codes, and examples for CI, Bazel, Jenkins, and source path rebasing.">
+  <meta name="description" content="Install lcovmerge and merge LCOV artifacts in GitHub Actions, GitLab CI, Bazel, and CMake workflows.">
   <meta name="robots" content="index,follow">
   <title>Usage and options — lcovmerge</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/docs.html">
@@ -15,7 +15,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
   <meta property="og:title" content="Usage and options — lcovmerge">
-  <meta property="og:description" content="Command-line reference and pipeline examples for the bounded-memory LCOV merger.">
+  <meta property="og:description" content="Command-line reference and verified CI recipes for merging LCOV tracefiles.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/docs.html">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -109,7 +109,7 @@ lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
 
       <section id="github-actions" aria-labelledby="actions-title">
         <h2 id="actions-title">GitHub Actions with sharded tests</h2>
-        <p>Upload each shard’s LCOV file as an artifact, then download those artifacts in a final merge job. Install or extract lcovmerge in that job before invoking it.</p>
+        <p>Upload each shard’s LCOV file as an artifact, then download those artifacts in a final merge job. The reusable action downloads and verifies the selected release binary.</p>
         <pre class="code-block"><code>jobs:
   tests:
     runs-on: ubuntu-latest
@@ -134,9 +134,41 @@ lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
           pattern: coverage-*
           path: coverage-shards
           merge-multiple: true
-      # Extract lcovmerge from its release archive in this job.
-      - run: lcovmerge coverage-shards/*.info -o coverage/merged.info</code></pre>
+      - uses: megasoft1978/lcovmerge@v1
+        with:
+          files: coverage-shards/*.info
+          output: coverage/merged.info
+          mem-limit: 256M
+      - run: genhtml coverage/merged.info --output-directory coverage/html</code></pre>
         <p>This example uses current GitHub artifact actions. Keep each shard tracefile name unique so a flat artifact merge cannot overwrite a file with the same name.</p>
+      </section>
+
+      <section id="gitlab-ci" aria-labelledby="gitlab-title">
+        <h2 id="gitlab-title">GitLab CI</h2>
+        <p>Have each test job publish a distinct LCOV artifact. In the merge job, download those artifacts, install the release archive for the runner, and keep the merged file as the handoff to your report step.</p>
+        <pre class="code-block"><code>mkdir -p coverage
+./lcovmerge coverage/*.info -o coverage/merged.info
+genhtml coverage/merged.info --output-directory coverage/html</code></pre>
+        <p>Verify the archive with <code>SHA256SUMS</code> before installation. GitLab’s built-in coverage visualization accepts Cobertura or JaCoCo, not LCOV; retain the merged <code>.info</code> for an LCOV-aware uploader or convert it separately. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#gitlab-ci">full GitLab example ↗</a>.</p>
+      </section>
+
+      <section id="cmake" aria-labelledby="cmake-title">
+        <h2 id="cmake-title">CMake and gcov</h2>
+        <p>Compile and run tests with gcov instrumentation, capture LCOV, then merge the files produced by independent shards.</p>
+        <pre class="code-block"><code>cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage
+cmake --build build
+ctest --test-dir build --output-on-failure
+mkdir -p coverage
+lcov --capture --directory build --output-file coverage/shard-1.info
+# Repeat in each CI shard with a distinct output path
+lcovmerge coverage/shard-*.info -o coverage/merged.info</code></pre>
+        <p>See <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#cmake-and-gcov">the full CMake recipe ↗</a> for gcovr and build-tree notes.</p>
+      </section>
+
+      <section id="report-consumers" aria-labelledby="consumers-title">
+        <h2 id="consumers-title">Report and upload consumers</h2>
+        <p>The merged file remains LCOV. Pass it to <code>genhtml</code>, Codecov, or a Coveralls integration that accepts LCOV. SonarQube accepts LCOV for analyzers including JavaScript/TypeScript, Dart, and Rust; its C/C++ analyzer imports gcov or llvm-cov reports instead. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#coverage-report-consumers">consumer notes and references ↗</a>.</p>
       </section>
 
       <section id="jenkins" aria-labelledby="jenkins-title">

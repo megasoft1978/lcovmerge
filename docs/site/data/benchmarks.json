@@ -2,7 +2,6 @@
   "version": "1.0.0",
   "machine": "Apple M5 Max",
   "measured_on": "2026-10-09",
-  "runs": 1,
   "repeat_counts": {
     "S": 1,
     "M": 5,
@@ -14,7 +13,7 @@
   "comparison_runs_per_tool": 1,
   "cache": "uncontrolled; fixtures generated immediately before measurements",
   "source": "data/benchmarks.json",
-  "data_kind": "synthetic",
+  "data_kind": "generated",
   "environment": {
     "os": "macOS 27.0 (build 26A425)",
     "architecture": "arm64",
@@ -32,6 +31,7 @@
     {
       "id": "medium",
       "name": "M",
+      "description": "Generated sharded LCOV input.",
       "input_size": "1,118,686,233 bytes",
       "shards": "32 shards",
       "results": [
@@ -70,6 +70,7 @@
     {
       "id": "large",
       "name": "L",
+      "description": "Generated sharded LCOV input.",
       "input_size": "4,853,340,843 bytes",
       "shards": "64 shards",
       "results": [
@@ -108,6 +109,7 @@
     {
       "id": "single_file",
       "name": "XL-single",
+      "description": "Generated single tracefile.",
       "input_size": "744,992,058 bytes",
       "shards": "1 file",
       "results": [
@@ -146,6 +148,7 @@
     {
       "id": "s",
       "name": "S",
+      "description": "Generated sharded LCOV input.",
       "input_size": "99,996,906 bytes",
       "shards": "8 shards",
       "results": [
@@ -184,6 +187,7 @@
     {
       "id": "path_heavy",
       "name": "PATH-HEAVY",
+      "description": "Generated input with two million distinct source paths.",
       "input_size": "130,000,000 bytes",
       "shards": "1 file",
       "results": [
@@ -222,6 +226,7 @@
     {
       "id": "real",
       "name": "REAL",
+      "description": "No project-derived LCOV capture was available.",
       "input_size": "unavailable",
       "shards": "not supplied",
       "results": [
