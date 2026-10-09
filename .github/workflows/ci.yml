@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build and test (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+            shell: bash
+          - runner: ubuntu-24.04-arm
+            target: linux-aarch64
+            shell: bash
+          - runner: macos-15
+            target: macos-arm64
+            shell: bash
+          - runner: macos-15-intel
+            target: macos-x86_64
+            shell: bash
+          - runner: windows-latest
+            target: windows-x86_64
+            shell: msys2
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up MSYS2 and MinGW toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc
+
+      - name: Build and test (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: make test
+
+      - name: Build and test (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: make test
+
+  sanitizers:
+    name: ASan and UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and test with sanitizers
+        run: make asan
+
+  fuzz-smoke:
+    name: Five-minute fuzz smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and run fuzz smoke
+        run: make fuzz
+
+  differential-lcov:
+    name: Differential check against lcov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install lcov
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lcov
+      - name: Compare basic line-count merge behavior
+        run: scripts/ci-differential-lcov.sh
+
+  reproducible-build:
+    name: Reproducible build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build twice and compare binary hashes
+        run: scripts/reproducible-build.sh
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run ShellCheck over shell scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          find scripts packaging action -type f -name '*.sh' -print0 | xargs -0 shellcheck
