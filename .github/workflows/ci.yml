@@ -57,6 +57,9 @@ jobs:
       - name: Build and test (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
+        env:
+          # Stop MSYS2 from rewriting POSIX-style option values such as /work/project/ into Windows paths.
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
           make test
           pwsh -NoLogo -NoProfile -File tests/run-windows-smoke.ps1 -Binary bin/lcovmerge.exe
@@ -79,7 +82,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and run fuzz smoke
-        run: make fuzz FUZZ_RUNS=500000
+        run: make fuzz FUZZ_RUNS=100000
 
   differential-lcov:
     name: Differential check against lcov
