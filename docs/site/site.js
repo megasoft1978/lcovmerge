@@ -92,7 +92,7 @@
           }
           const toolCell = document.createElement("th");
           toolCell.scope = "row";
-          if (result.tool === "lcovmerge") toolCell.className = "tool-primary";
+          if (result.tool.startsWith("lcovmerge")) toolCell.className = "tool-primary";
           toolCell.textContent = result.tool;
           row.append(toolCell);
           const elapsedCell = document.createElement("td");
@@ -115,19 +115,24 @@
       });
       body.replaceChildren(...rows);
     });
-    const singleFile = data.datasets.find((item) => item.id === "single_file");
-    const note = document.querySelector("#single-file-note");
-    const caption = document.querySelector("#single-file-caption");
-    if (singleFile && note) note.firstChild.textContent = `Input size: ${singleFile.input_size}. `;
-    if (singleFile && caption) caption.textContent = `${singleFile.name} (${singleFile.input_size}); RSS is peak resident memory.`;
+    const medium = data.datasets.find((item) => item.id === "medium");
+    const note = document.querySelector("#medium-note");
+    const caption = document.querySelector("#medium-caption");
+    const inputLabel = document.querySelector("#sharded-input-label");
+    if (medium && note) note.firstChild.textContent = `${medium.name}: ${medium.input_size}; ${medium.shards}. `;
+    if (medium && caption) caption.textContent = `${medium.name} (${medium.input_size}; ${medium.shards}); RSS is peak resident memory.`;
+    if (medium && inputLabel) inputLabel.textContent = `${medium.name} (${medium.shards})`;
   }
 
   function updateBenchmarkMethod(data) {
     const method = document.querySelector("#benchmark-method");
     const caption = document.querySelector("#benchmark-caption");
+    const inputSummary = document.querySelector("#benchmark-inputs");
+    const toolSummary = document.querySelector("#benchmark-tools");
     const heroContext = document.querySelector("#hero-benchmark-context");
-    const singleFile = data.datasets.find((item) => item.id === "single_file");
-    const singleFileLabel = document.querySelector("#single-file-rss-label");
+    const medium = data.datasets.find((item) => item.id === "medium");
+    const inputLabels = data.datasets.map((item) => `${item.name}: ${item.input_size}, ${item.shards}`);
+    const toolLabels = [...new Set(data.datasets.flatMap((item) => item.results.map((result) => result.tool)))];
     if (method && data.measured_on) {
       const runCounts = Object.entries(data.repeat_counts || {})
         .map(([name, count]) => `${name}: ${count}`)
@@ -137,14 +142,18 @@
     if (caption && data.measured_on) {
       caption.textContent = `Elapsed time and peak resident memory from ${data.machine}; measured ${data.measured_on}.`;
     }
-    if (heroContext && data.measured_on) {
-      const runCounts = Object.entries(data.repeat_counts || {})
-        .map(([name, count]) => `${name}: ${count}`)
-        .join(", ");
-      heroContext.textContent = `lcovmerge runs by dataset: ${runCounts}; each comparison tool ran ${data.comparison_runs_per_tool} time(s) per dataset; cache state: ${data.cache}; ${data.machine} (${data.environment.os}).`;
+    if (inputSummary) {
+      inputSummary.textContent = `Datasets and inputs: ${inputLabels.join("; ")}.`;
     }
-    if (singleFile && singleFileLabel) {
-      singleFileLabel.textContent = `peak RSS on ${singleFile.name} (${singleFile.input_size})`;
+    if (toolSummary) {
+      toolSummary.textContent = `Tools in the current data: ${toolLabels.join(", ")}.`;
+    }
+    if (heroContext && data.measured_on) {
+      heroContext.textContent = `Measured ${data.measured_on} on ${data.machine}; run counts and cache state are listed with the results.`;
+    }
+    if (medium && data.measured_on) {
+      const homeCaption = document.querySelector("#home-benchmark-caption");
+      if (homeCaption) homeCaption.textContent = `${medium.name} · ${medium.input_size} · ${medium.shards}; measurements from ${data.machine} on ${data.measured_on}.`;
     }
   }
 
@@ -164,6 +173,7 @@
   }
 
   function toolColor(tool) {
+    if (tool.startsWith("lcovmerge")) return colors.lcovmerge;
     if (tool.startsWith("lcov-result-merger")) return colors["lcov-result-merger"];
     if (tool.startsWith("lcov ")) return colors.lcov;
     return colors[tool] || "#75867d";
