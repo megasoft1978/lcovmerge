@@ -17,8 +17,10 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 
 - Maximum input line: 1 MiB. Maximum @listfile nesting: 8. Maximum workers: 32, with an 8 MiB minimum arena budget per worker.
 - --mem-limit bounds worker record arenas, not total process RSS. Up to 24 MiB of the setting is reserved for parser lines, I/O buffers, merge bookkeeping, thread stacks, allocator metadata, and runtime/library state, while preserving at least 8 MiB per worker.
-- External sorting consumes temporary disk space proportional to input plus intermediate runs. A named run file is necessary because the merge performs bounded-fan-in passes and reopens runs. --tmpdir selects their directory. Files are created privately on POSIX and removed during handled exit/error paths.
-- A signal during a long read is checked at line boundaries; cleanup starts after the current read call returns. Sudden process termination such as SIGKILL or power loss can leave named run files behind.
+- External sorting consumes temporary disk space proportional to input plus intermediate runs. A named run file is necessary because the merge performs bounded-fan-in passes and reopens runs. --tmpdir selects their directory. Files are created privately on POSIX and removed on success, handled errors, and caught POSIX interruptions (SIGINT, SIGTERM, and SIGHUP). SIGKILL or power loss can leave named run files behind.
+- On POSIX, lcovmerge ignores SIGPIPE so a write to a closed pipe reports EPIPE and follows the normal I/O-failure cleanup path. This returns status 3.
+- Output sent to stdout with `-o -` cannot be rolled back. A later caught signal or write failure can leave partial output in the stream, even though temporary files are cleaned up.
+- The Windows implementation uses synchronous ReadFile/WriteFile calls and blocking worker-thread joins, with no cancellation path for them. A blocked operation may delay interruption and cleanup; the interruption and cleanup guarantee above applies to POSIX only.
 - Parallel parsing is across input files. -j gives no parser scaling when the workload contains only one input file. The merge stage itself is single-threaded.
 - The CLI does not expand glob patterns itself. The caller's shell should expand them; use @listfile for explicit lists. Listfile paths are interpreted relative to the process working directory.
 - A directory path containing unsupported native Windows path length forms may fail in the Win32 temp helper, which uses GetTempFileNameW and its MAX_PATH buffer.

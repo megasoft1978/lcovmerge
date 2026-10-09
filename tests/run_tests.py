@@ -424,6 +424,49 @@ def signal_cleanup_tests(binary: Path) -> int:
     return len(signals)
 
 
+def interruption_documentation_tests() -> int:
+    claims = {
+        "docs/LIMITATIONS.md": [
+            ("POSIX handled interruption", ("posix", "sigint", "sigterm", "sighup", "caught")),
+            ("SIGPIPE cleanup", ("sigpipe", "epipe", "cleanup")),
+            ("stdout rollback limit", ("stdout", "cannot be rolled back", "partial output")),
+            ("Windows cancellation limit", ("windows", "readfile", "writefile", "blocking", "posix only")),
+        ],
+        "docs/USAGE.md": [
+            ("POSIX handled interruption", ("posix", "sigint", "sigterm", "sighup", "caught")),
+            ("SIGPIPE cleanup", ("sigpipe", "epipe", "normal cleanup")),
+            ("stdout rollback limit", ("stdout", "cannot be rolled back", "partial")),
+            ("Windows cancellation limit", ("windows", "readfile", "writefile", "worker-thread joins", "posix-only")),
+        ],
+        "man/lcovmerge.1": [
+            ("POSIX handled interruption", ("posix", "sigint", "sigterm", "sighup", "caught")),
+            ("SIGPIPE cleanup", ("sigpipe", "epipe", "normal cleanup")),
+            ("stdout rollback limit", ("stdout", "cannot be rolled back", "partial")),
+            ("Windows cancellation limit", ("windows", "readfile", "writefile", "blocking worker", "posix-only")),
+        ],
+        "docs/ARCHITECTURE.md": [
+            ("POSIX handled interruption", ("posix", "sigint", "sigterm", "sighup", "caught")),
+            ("SIGPIPE cleanup", ("sigpipe", "epipe", "i/o-failure cleanup")),
+            ("stdout rollback limit", ("stdout", "cannot be rolled back")),
+            ("Windows cancellation limit", ("windows", "readfile", "writefile", "blocking worker joins", "posix-only")),
+        ],
+        "CHANGELOG.md": [
+            ("POSIX handled interruption", ("posix", "sigint", "sigterm", "sighup", "caught interruption")),
+            ("SIGPIPE cleanup", ("sigpipe", "epipe", "failure cleanup")),
+            ("platform and stdout limits", ("windows", "stdout", "cannot be rolled back")),
+        ],
+    }
+    for relative_path, document_claims in claims.items():
+        text = re.sub(r"\s+", " ", (ROOT / relative_path).read_text(encoding="utf-8")).casefold()
+        for claim_name, terms in document_claims:
+            missing = [term for term in terms if term not in text]
+            if missing:
+                raise AssertionError(
+                    f"{relative_path} is missing {claim_name}: {', '.join(missing)}"
+                )
+    return sum(len(document_claims) for document_claims in claims.values())
+
+
 def many_paths_test(binary: Path, temporary: Path) -> int:
     base = temporary / "many-paths"
     base.mkdir()
@@ -524,11 +567,12 @@ def main() -> int:
         deterministic = determinism_test(binary, temporary)
         io_cases = list_and_stdio_tests(binary, temporary)
         signal_cases = signal_cleanup_tests(binary)
+        interruption_doc_cases = interruption_documentation_tests()
         many_paths_cases = many_paths_test(binary, temporary)
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"golden_cases={goldens} malformed_cases={malformed} oracle_cases={differential} "
           f"determinism_runs={deterministic} io_cases={io_cases} signal_cleanup_cases={signal_cases} "
-          f"many_paths_cases={many_paths_cases} "
+          f"interruption_doc_cases={interruption_doc_cases} many_paths_cases={many_paths_cases} "
           f"lcov_cases={lcov_cases}")
     return 0
 
