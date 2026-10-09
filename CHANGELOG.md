@@ -8,8 +8,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Remove temporary sort runs when the process receives a terminal hangup (SIGHUP) on platforms
-  that support it.
+- On POSIX, handle SIGINT, SIGTERM, and SIGHUP cooperatively and remove temporary sort runs on
+  caught interruption. On POSIX, lcovmerge ignores SIGPIPE so a closed pipe is reported as EPIPE
+  and follows normal failure cleanup. Windows has no equivalent interruption guarantee, and
+  stdout output cannot be rolled back after a later signal or write failure.
 
 ## [1.0.0] - 2026-10-09
 

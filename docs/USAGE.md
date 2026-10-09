@@ -15,7 +15,8 @@ lcovmerge does not.
 ### `-o FILE`, `--output FILE`
 
 Write the merged tracefile to `FILE`. The output file is replaced only after a successful merge. Use `-` for
-standard output.
+standard output. File output is staged before it replaces the destination. Bytes already written when using
+`-o -` cannot be rolled back; a later signal or write failure may leave partial stdout output.
 
 ### `--mem-limit SIZE`
 
@@ -105,6 +106,20 @@ Print the built-in usage summary.
 | `1` | Invalid or incomplete command-line options. |
 | `2` | Input or tracefile format error, including strict checksum disagreement. |
 | `3` | Input/output or temporary-file I/O failure, allocation failure, or interruption. |
+
+## Interruption and cleanup
+
+On POSIX, SIGINT, SIGTERM, and SIGHUP request cooperative interruption. A caught interruption returns status
+3 and removes temporary sort runs and any unpublished staged output. Runs are also removed after success and
+handled failures. SIGKILL and machine failure cannot run cleanup.
+
+On POSIX, lcovmerge ignores SIGPIPE, so writing to a closed pipe reports EPIPE as an I/O failure and
+follows normal cleanup. Bytes already written to stdout remain visible if a later signal or write
+failure occurs.
+
+Windows uses synchronous ReadFile/WriteFile calls and blocking worker-thread joins without a cancellation path.
+A blocked operation can prevent interruption from completing, so the interruption and cleanup guarantee is
+POSIX-only.
 
 ## Input records
 

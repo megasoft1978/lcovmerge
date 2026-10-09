@@ -22,7 +22,9 @@ standard input; output \fB-\fR writes standard output.
 .TP
 .BI -o " FILE" ", " --output " FILE"
 Write the result to FILE. The destination is replaced only after a successful
-file merge. Use \fB-\fR for standard output.
+file merge. Use \fB-\fR for standard output. Bytes already written to stdout
+cannot be rolled back; a later signal or write failure may leave partial
+output in the stream.
 .TP
 .BI --mem-limit " SIZE"
 Set the record-arena limit. SIZE is bytes or an integer with optional K, M,
@@ -32,8 +34,8 @@ bookkeeping, thread stacks, and temporary files are outside this cap.
 .TP
 .BI --tmpdir " DIR"
 Place sorted run files under DIR. The default is the system temporary
-directory. Run files are removed on completion, input errors, I/O errors,
-SIGINT, and SIGTERM.
+directory. Run files are removed on success and handled errors. On POSIX they
+are also removed after caught SIGINT, SIGTERM, and SIGHUP.
 .TP
 .BI -j " N" ", " --jobs " N"
 Generate sorted runs from N input files concurrently. N must be from 1
@@ -135,5 +137,18 @@ Input or tracefile format error, including strict checksum disagreement.
 .B 3
 Input/output or temporary-file I/O failure, allocation failure, or
 interruption.
+.SH INTERRUPTION AND CLEANUP
+On POSIX, SIGINT, SIGTERM, and SIGHUP request cooperative interruption.
+A caught interruption returns status 3 and removes temporary sort runs and
+any unpublished staged output. SIGKILL and machine failure cannot run cleanup.
+.PP
+On POSIX, lcovmerge ignores SIGPIPE, so writing to a closed pipe reports
+EPIPE as an I/O failure and follows normal cleanup. Bytes already written to
+stdout remain visible if a later signal or write failure occurs.
+.PP
+Windows uses synchronous ReadFile and WriteFile calls and blocking worker
+thread joins without a cancellation path. A blocked operation can prevent
+interruption from completing; the interruption and cleanup guarantee is
+POSIX-only.
 .SH SEE ALSO
 lcov(1), geninfo(1), genhtml(1)
