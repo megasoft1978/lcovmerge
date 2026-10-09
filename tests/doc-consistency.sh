@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# pwd -W yields a native path under MSYS2 so the Windows Python can open files; plain pwd elsewhere.
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && { pwd -W 2>/dev/null || pwd; })
 binary=${1:-$root/bin/lcovmerge}
 exec python3 - "$root" "$binary" <<'PY'
 import re
