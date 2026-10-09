@@ -13,7 +13,8 @@ tables with `python3 tools/render_benchmarks.py`.
 - [ ] Review benchmark caveats and ensure no values outside the JSON were copied into documentation without a
 `<!-- BENCH -->` marker.
 - [ ] Run parser tests, sanitizer/fuzz checks, and the documented regression suite in the code repository.
-- [ ] Verify runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64.
+- [ ] Verify runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
+  confirm the release-target size budget job passes on the final commit.
 - [ ] Verify Linux binaries are static musl builds and macOS/Windows artifacts match their target
 architecture.
 - [ ] Confirm the release binary size meets the project's stated limit and that archives contain only intended

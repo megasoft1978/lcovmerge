@@ -39,7 +39,7 @@ build_set() {
         "$MINGW_CC" "$@" -static src/lcovmerge.c src/platform_win32.c -municode \
             -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     else
-        "$zig_bin" cc -target x86_64-windows-gnu "$@" -static src/lcovmerge.c src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+        "$zig_bin" cc -target x86_64-windows-gnu "$@" -Oz -static src/lcovmerge.c src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     fi
     python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$epoch"
 }
@@ -48,6 +48,12 @@ mkdir -p "$dist"
 build_set
 cp "$dist/SHA256SUMS" "$work/SHA256SUMS.first"
 build_set
+scripts/check-binary-size.sh \
+    "$dist/lcovmerge-$version-linux-x86_64" \
+    "$dist/lcovmerge-$version-linux-aarch64" \
+    "$dist/lcovmerge-$version-macos-arm64" \
+    "$dist/lcovmerge-$version-macos-x86_64" \
+    "$dist/lcovmerge-$version-windows-x86_64.exe"
 cmp "$work/SHA256SUMS.first" "$dist/SHA256SUMS"
 (cd "$dist" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi)
 if command -v file >/dev/null 2>&1; then file "$dist"/lcovmerge-"$version"-*; fi

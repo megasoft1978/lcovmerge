@@ -68,6 +68,29 @@ jobs:
         shell: pwsh
         run: ./tests/run-windows-smoke.ps1 -Binary bin/lcovmerge.exe
 
+  release-size:
+    name: Release target size budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Zig 0.17.0 (checksum verified)
+        run: |
+          set -eu
+          archive="$RUNNER_TEMP/zig.tar.xz"
+          curl -fsSL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$archive"
+          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $archive" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      - name: Build all release targets and enforce size budgets
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: scripts/build-all.sh
+
   sanitizers:
     name: ASan and UBSan
     runs-on: ubuntu-24.04

@@ -1,7 +1,25 @@
-Build commit: 374e245db05c
-lcovmerge-1.0.0-linux-x86_64: 99912 bytes
-lcovmerge-1.0.0-linux-aarch64: 95824 bytes
-lcovmerge-1.0.0-macos-arm64: 104680 bytes
-lcovmerge-1.0.0-macos-x86_64: 66165 bytes
-lcovmerge-1.0.0-windows-x86_64.exe: 145920 bytes
-Budget: 150000 bytes per stripped executable; PASS for all five targets.
+Build commit: 273bb7515d27
+Compiler: Zig 0.17.0
+Budget: 150000 bytes per stripped executable
+
+| Target | Before (`-O2`) | After | Change |
+| --- | ---: | ---: | ---: |
+| linux-x86_64 | 100136 bytes | 100136 bytes | 0 bytes |
+| linux-aarch64 | 96360 bytes | 96360 bytes | 0 bytes |
+| macos-arm64 | 105000 bytes | 105000 bytes | 0 bytes |
+| macos-x86_64 | 66436 bytes | 66436 bytes | 0 bytes |
+| windows-x86_64.exe | 148992 bytes | 120832 bytes (`-Oz`) | -28160 bytes |
+
+After sizes were measured from two identical `scripts/build-all.sh` builds. All five passed the size
+check; `scripts/build-all.sh` now enforces the limit directly. The Windows size reduction is 18.9%.
+A separate clean-cache build also passed its repeat-build check; its Mach-O outputs were 105016 bytes
+(arm64) and 66451 bytes (x86-64), while Linux and Windows sizes matched the table. `otool -l` showed
+the Mach-O size difference in `__LINKEDIT` data. The table records the paired same-cache build results.
+
+Performance check on macOS 27 arm64, 1,118,686,233 input bytes, used `bench/run.py` with
+`--workload M --skip-lcov --hyperfine-runs 5`, `--binary` set to each build artifact, and reports under
+`.luna-tmp`.
+The `-O2` release binary measured 280.5 MB/s before and 287.0 MB/s after; the two macOS binaries have
+identical SHA-256, so the 2.3% difference is run variation. A separate macOS arm64 `-Oz` trial measured
+295.2 MB/s (+5.2% against the first `-O2` median). The final build applies `-Oz` only to the Zig Windows
+target; native Windows throughput was not measured.
