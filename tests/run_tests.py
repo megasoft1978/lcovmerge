@@ -577,6 +577,8 @@ def interrupted_staged_output_tests(binary: Path) -> int:
                     f"remaining_runs={remaining_runs!r}, stdout={stdout!r}, stderr={stderr!r}"
                 )
     return 2
+
+
 def interruption_documentation_tests() -> int:
     claims = {
         "docs/LIMITATIONS.md": [
