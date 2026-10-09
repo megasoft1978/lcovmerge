@@ -62,7 +62,11 @@ jobs:
           MSYS2_ARG_CONV_EXCL: "*"
         run: |
           make test
-          pwsh -NoLogo -NoProfile -File tests/run-windows-smoke.ps1 -Binary bin/lcovmerge.exe
+
+      - name: Windows smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/run-windows-smoke.ps1 -Binary bin/lcovmerge.exe
 
   sanitizers:
     name: ASan and UBSan
