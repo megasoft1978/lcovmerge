@@ -39,9 +39,9 @@
         {
           "tool": "lcovmerge 1.0.0",
           "seconds": 3.488279,
-          "seconds_display": "3.488 s",
+          "seconds_display": "3.488279 s",
           "peak_rss_mib": 5.125,
-          "rss_display": "5.12 MiB",
+          "rss_display": "5,373,952 B",
           "throughput_mbs": 320.7,
           "throughput_display": "320.7 MB/s",
           "status": "OK"
@@ -51,7 +51,7 @@
           "seconds": 50.542,
           "seconds_display": "50.542 s",
           "peak_rss_mib": 610.203125,
-          "rss_display": "610.20 MiB",
+          "rss_display": "639,844,352 B",
           "throughput_mbs": 22.1,
           "throughput_display": "22.1 MB/s",
           "status": "OK"
@@ -61,7 +61,7 @@
           "seconds": 145.171,
           "seconds_display": "145.171 s",
           "peak_rss_mib": 2381.96875,
-          "rss_display": "2,381.97 MiB",
+          "rss_display": "2,497,675,264 B",
           "throughput_mbs": 7.7,
           "throughput_display": "7.7 MB/s",
           "status": "OK"
@@ -78,9 +78,9 @@
         {
           "tool": "lcovmerge 1.0.0",
           "seconds": 27.723422,
-          "seconds_display": "27.723 s",
+          "seconds_display": "27.723422 s",
           "peak_rss_mib": 25.0625,
-          "rss_display": "25.06 MiB",
+          "rss_display": "26,279,936 B",
           "throughput_mbs": 175.1,
           "throughput_display": "175.1 MB/s",
           "status": "OK"
@@ -90,7 +90,7 @@
           "seconds": 203.235,
           "seconds_display": "203.235 s",
           "peak_rss_mib": 1430.234375,
-          "rss_display": "1,430.23 MiB",
+          "rss_display": "1,499,709,440 B",
           "throughput_mbs": 23.9,
           "throughput_display": "23.9 MB/s",
           "status": "OK"
@@ -98,9 +98,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 604.28,
-          "seconds_display": "604.280 s",
+          "seconds_display": "604.28 s",
           "peak_rss_mib": 3106.125,
-          "rss_display": "3,106.12 MiB",
+          "rss_display": "3,257,008,128 B",
           "throughput_mbs": 8.0,
           "throughput_display": "8.0 MB/s",
           "status": "OK"
@@ -117,9 +117,9 @@
         {
           "tool": "lcovmerge 1.0.0",
           "seconds": 1.455709,
-          "seconds_display": "1.456 s",
+          "seconds_display": "1.455709 s",
           "peak_rss_mib": 2.28125,
-          "rss_display": "2.28 MiB",
+          "rss_display": "2,392,064 B",
           "throughput_mbs": 511.8,
           "throughput_display": "511.8 MB/s",
           "status": "OK"
@@ -129,7 +129,7 @@
           "seconds": 37.803,
           "seconds_display": "37.803 s",
           "peak_rss_mib": 3577.375,
-          "rss_display": "3,577.38 MiB",
+          "rss_display": "3,751,149,568 B",
           "throughput_mbs": 19.7,
           "throughput_display": "19.7 MB/s",
           "status": "OK"
@@ -137,9 +137,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 0.17,
-          "seconds_display": "0.170 s",
+          "seconds_display": "0.17 s",
           "peak_rss_mib": 607.671875,
-          "rss_display": "607.67 MiB",
+          "rss_display": "637,190,144 B",
           "throughput_mbs": null,
           "throughput_display": "—",
           "status": "ERROR_1"
@@ -156,9 +156,9 @@
         {
           "tool": "lcovmerge 1.0.0",
           "seconds": 0.259979,
-          "seconds_display": "0.260 s",
+          "seconds_display": "0.259979 s",
           "peak_rss_mib": 2.953125,
-          "rss_display": "2.95 MiB",
+          "rss_display": "3,096,576 B",
           "throughput_mbs": 384.6,
           "throughput_display": "384.6 MB/s",
           "status": "OK"
@@ -168,7 +168,7 @@
           "seconds": 5.317,
           "seconds_display": "5.317 s",
           "peak_rss_mib": 229.78125,
-          "rss_display": "229.78 MiB",
+          "rss_display": "240,943,104 B",
           "throughput_mbs": 18.8,
           "throughput_display": "18.8 MB/s",
           "status": "OK"
@@ -178,7 +178,7 @@
           "seconds": 17.521,
           "seconds_display": "17.521 s",
           "peak_rss_mib": 437.703125,
-          "rss_display": "437.70 MiB",
+          "rss_display": "458,964,992 B",
           "throughput_mbs": 5.7,
           "throughput_display": "5.7 MB/s",
           "status": "OK"
@@ -195,9 +195,9 @@
         {
           "tool": "lcovmerge 1.0.0",
           "seconds": 2.121826,
-          "seconds_display": "2.122 s",
+          "seconds_display": "2.121826 s",
           "peak_rss_mib": 20.234375,
-          "rss_display": "20.23 MiB",
+          "rss_display": "21,217,280 B",
           "throughput_mbs": 61.3,
           "throughput_display": "61.3 MB/s",
           "status": "OK"
@@ -215,7 +215,7 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 1800.002,
-          "seconds_display": "1,800.002 s",
+          "seconds_display": "1800.002 s",
           "peak_rss_mib": null,
           "rss_display": "842 MiB sampled in final 308 s; full-run peak unavailable",
           "throughput_mbs": null,
