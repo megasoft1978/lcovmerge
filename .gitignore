@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/build/
+/tests/tmp/
+/tests/fuzz-artifacts/
+*.profraw
+*.dSYM/
