@@ -157,7 +157,7 @@ update pull request when `TAP_TOKEN` is configured. Install from the tap only af
 published in the [Homebrew/Scoop tap](https://github.com/megasoft1978/homebrew-tap):
 
 ```sh
-brew install megasoft1978/homebrew-tap/lcovmerge
+brew install megasoft1978/tap/lcovmerge
 scoop bucket add lcovmerge https://github.com/megasoft1978/homebrew-tap
 scoop install lcovmerge
 ```
