@@ -42,7 +42,7 @@ static wchar_t *long_path(wchar_t *path) {
     if (!((path_length >= 3u && path[1] == L':' && path[2] == L'\\') ||
           (path_length >= 2u && path[0] == L'\\' && path[1] == L'\\'))) {
         DWORD capacity = GetFullPathNameW(path, 0, NULL, NULL);
-        if (capacity == 0 || (unsigned long long)capacity > SIZE_MAX / sizeof(*path)) {
+        if (capacity == 0 || (size_t)capacity * sizeof(*path) / sizeof(*path) != (size_t)capacity) {
             free(path);
             return NULL;
         }

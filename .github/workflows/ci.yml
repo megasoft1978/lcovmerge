@@ -79,7 +79,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and run fuzz smoke
-        run: make fuzz
+        run: make fuzz FUZZ_RUNS=500000
 
   differential-lcov:
     name: Differential check against lcov
