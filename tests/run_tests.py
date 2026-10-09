@@ -105,6 +105,7 @@ def golden_cases() -> list[dict]:
         mk_case("comments-and-blanks", ["# comment\n\nSF:/comment.c\n# another\n\nDA:1,1\nend_of_record\n"], rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1)),
         mk_case("drive-and-backslash-source", ["SF:C:\\repo\\src\\a.c\nDA:1,1\nend_of_record\n"], path="C:\\repo\\src\\a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1)),
         mk_case("drive-path-rebase", ["SF:C:\\repo\\src\\a.c\nDA:1,1\nend_of_record\n"], path="D:\\new\\src\\a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1), options=("--rebase", "C:\\repo=D:\\new")),
+        mk_case("unix-path-rebase-to-drive", ["SF:/old/tree/src/a.c\nDA:1,1\nend_of_record\n"], path="C:\\new\\src\\a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1), options=("--rebase", "/old/tree=C:\\new")),
         mk_case("branch-count-saturation", [f"SF:/brsat.c\nBRDA:1,0,0,{MAX_U64}\nend_of_record\n", "SF:/brsat.c\nBRDA:1,0,0,2\nend_of_record\n"], rows=f"BRDA:1,0,0,{MAX_U64}\n", summary=(0,0,1,1,0,0,0,0)),
         mk_case("fnl-summary-groups", ["SF:/groups.c\nFNL:0,1\nFNA:0,0,a\nFNA:0,1,b\nFNL:1,1\nFNA:1,0,c\nend_of_record\n"], rows="FNL:0,1\nFNA:0,0,a\nFNA:0,1,b\nFNL:1,1\nFNA:1,0,c\n", summary=(2,1,0,0,0,0,0,0)),
         mk_case("include-exclude-precedence", ["SF:/src/keep.c\nDA:1,1\nend_of_record\n"], expected="", options=("--include", "*", "--exclude", "*/keep.c")),
@@ -181,13 +182,20 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
     no_args = run([str(binary)])
     if no_args.returncode != 1:
         raise AssertionError("missing arguments did not return status 1")
+    empty_path_dir = temporary / "empty-rewritten-path"
+    empty_path_dir.mkdir()
+    empty_source = empty_path_dir / "source.info"
+    empty_source.write_text("SF:/root\nDA:1,1\nend_of_record\n", encoding="utf-8")
+    empty_rewrite = run([str(binary), str(empty_source), "--prefix-strip", "/root", "-o", str(empty_path_dir / "out.info")])
+    if empty_rewrite.returncode != 2 or b"becomes empty" not in empty_rewrite.stderr:
+        raise AssertionError("path rewriting accepted an empty SF path")
     version = run([str(binary), "--version"])
     help_result = run([str(binary), "--help"])
     if version.returncode != 0 or not re.search(rb"^lcovmerge 1\.0\.0 \(git [^)]+\)$", version.stdout):
         raise AssertionError("version string did not include v1.0.0 and build commit")
     if help_result.returncode != 0 or b"--warn-unknown" not in help_result.stdout:
         raise AssertionError("help output is missing an option")
-    return len(examples) + 6
+    return len(examples) + 7
 
 
 def random_trace(rng: random.Random, case_index: int, input_index: int) -> str:

@@ -693,6 +693,9 @@ static char *rewrite_path(const Options *options, const char *path) {
             size_t rest = strlen(current + matched);
             size_t old_length = strlen(options->rebases[i].old_prefix);
             char separator = current[old_length] == '\\' ? '\\' : '/';
+            const char *new_prefix = options->rebases[i].new_prefix;
+            if (strchr(new_prefix, '\\') && !strchr(new_prefix, '/')) separator = '\\';
+            else if (strchr(new_prefix, '/') && !strchr(new_prefix, '\\')) separator = '/';
             int add_separator = rest != 0 && new_length != 0 &&
                 options->rebases[i].new_prefix[new_length - 1] != '/' &&
                 options->rebases[i].new_prefix[new_length - 1] != '\\';
@@ -702,7 +705,11 @@ static char *rewrite_path(const Options *options, const char *path) {
             memcpy(next, options->rebases[i].new_prefix, new_length);
             size_t cursor = new_length;
             if (add_separator) next[cursor++] = separator;
-            memcpy(next + cursor, current + matched, rest + 1);
+            for (size_t character = 0; character < rest; ++character) {
+                char value = current[matched + character];
+                next[cursor + character] = value == '/' || value == '\\' ? separator : value;
+            }
+            next[cursor + rest] = '\0';
             free(current);
             current = next;
         }
@@ -835,6 +842,10 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         if (line[3] == '\0') return worker_error(worker, 2, filename, line_no, "empty SF path");
         char *rewritten = rewrite_path(worker->options, line + 3);
         if (!rewritten) return worker_error(worker, 2, filename, line_no, "source path is too long or cannot be rewritten");
+        if (!*rewritten) {
+            free(rewritten);
+            return worker_error(worker, 2, filename, line_no, "source path becomes empty after rewriting");
+        }
         free(*path);
         *path = rewritten;
         *keep_path = path_selected(worker->options, *path);
