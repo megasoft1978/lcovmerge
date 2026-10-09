@@ -1,4 +1,4 @@
-.TH LCOVMERGE 1 "October 2026" "lcovmerge 1.0.0" "User Commands"
+.TH LCOVMERGE 1 "2026-10-09" "lcovmerge 1.0.0" "User Commands"
 .SH NAME
 lcovmerge \- bounded-memory LCOV tracefile merger
 .SH SYNOPSIS
@@ -6,43 +6,74 @@ lcovmerge \- bounded-memory LCOV tracefile merger
 [\fIoptions\fR] \fIa.info\fR \fIb.info\fR ... \fB-o\fR \fIout.info\fR
 .SH DESCRIPTION
 .B lcovmerge
-merges LCOV tracefiles with a bounded record arena and temporary sorted runs. Output source files and coverage rows are sorted deterministically. Summary rows are recalculated from merged coverpoints.
+merges LCOV tracefiles with a bounded record arena and temporary sorted
+runs. Output source files and coverage rows are sorted deterministically.
+Summary rows are recalculated from merged coverpoints.
 .PP
-The shell expands wildcard arguments before execution. Use \fB@listfile\fR to read additional input paths, one per line. A single \fB-\fR input reads standard input; output \fB-\fR writes standard output.
+The output option is required. List-file paths are read relative to the
+current working directory; empty lines and lines beginning with # are
+ignored. Nested list files are limited to eight levels. Prefix an argument
+with @@ to name a literal input path beginning with @.
+.PP
+The shell expands wildcard arguments before execution. Use \fB@listfile\fR to
+read additional input paths, one per line. A single \fB-\fR input reads
+standard input; output \fB-\fR writes standard output.
 .SH OPTIONS
 .TP
 .BI -o " FILE" ", " --output " FILE"
-Write the result to FILE. The destination is replaced only after a successful file merge. Use \fB-\fR for standard output.
+Write the result to FILE. The destination is replaced only after a successful
+file merge. Use \fB-\fR for standard output.
 .TP
 .BI --mem-limit " SIZE"
-Set the record-arena limit. SIZE is an integer with optional K, M, or G binary suffix. The default is 64M; the minimum is 8M per job.
+Set the record-arena limit. SIZE is bytes or an integer with optional K, M,
+or G binary suffix (multiples of 1024; suffix matching is case-insensitive).
+The default is 64M; the minimum is 8M per job. Parser buffers, merge
+bookkeeping, thread stacks, and temporary files are outside this cap.
 .TP
 .BI --tmpdir " DIR"
-Place sorted run files under DIR. The default is the system temporary directory. Run files are removed on completion, input errors, I/O errors, SIGINT, and SIGTERM.
+Place sorted run files under DIR. The default is the system temporary
+directory. Run files are removed on completion, input errors, I/O errors,
+SIGINT, and SIGTERM.
 .TP
 .BI -j " N" ", " --jobs " N"
-Generate sorted runs from up to N input files concurrently. The default is the lesser of four and the detected processor count. N is limited to 32 and constrained by the memory limit.
+Generate sorted runs from N input files concurrently. N must be from 1
+through 32. The default is the lesser of four and the detected processor
+count, further reduced when needed to fit the memory limit. An explicit
+count must fit the minimum 8M per job. When all inputs are regular files and
+rewritten records are already in canonical order, the streaming merge uses
+one job and ignores this value. An out-of-order row, unsupported stream type,
+or streaming-path memory limit causes the attempt to be discarded and uses
+the external-sort path with this job count.
 .TP
 .BI --prefix-strip " PREFIX"
-Remove PREFIX from matching SF paths.
+Remove a matching leading prefix from each SF path. A match must end at a
+path boundary; following separators are removed.
 .TP
 .BI --rebase " OLD=NEW"
-Replace a matching SF path prefix. May be repeated. Directory separators are preserved for drive-style paths.
+Replace a matching SF path prefix. May be repeated. Directory separators are
+preserved from the input where possible.
 .TP
 .BI --include " GLOB"
-Keep SF paths matching GLOB. May be repeated; when present, a path must match at least one include.
+Keep SF paths matching GLOB. May be repeated; when present, a path must
+match at least one include.
 .TP
 .BI --exclude " GLOB"
-Drop SF paths matching GLOB. Exclusions take precedence over includes. Matching supports \fB*\fR, \fB?\fR, and bracket ranges.
+Drop SF paths matching GLOB. Exclusions take precedence over includes.
+Matching supports \fB*\fR, \fB?\fR, and bracket ranges.
+.PP
+Path rewriting runs in this order: rebasing, prefix stripping, then include
+and exclude filtering. Rewritten paths that become identical are merged.
 .TP
 .BI --branch-coverage " on|off"
-Keep BRDA records (default) or omit them.
+Keep BRDA records (default on) or omit them.
 .TP
 .B --no-function-data
 Omit FN, FNDA, FNL, and FNA records.
 .TP
 .B --strict-checksum
-Return input/format error status 2 when checksums for the same source line differ. The default warns and selects the lexicographically smallest non-empty checksum.
+Return input/format error status 2 when non-empty checksums for the same
+source line disagree. The default warns and selects the lexicographically
+smallest non-empty checksum.
 .TP
 .B --warn-unknown
 Print a diagnostic for every preserved unknown record.
@@ -51,7 +82,8 @@ Print a diagnostic for every preserved unknown record.
 Suppress verbose progress output.
 .TP
 .B -v
-Print parsed byte/record totals, selected worker count, and merged summary totals to standard error.
+Print parsed byte/record totals, selected worker count, and merged summary
+totals to standard error.
 .TP
 .B --stats
 Print merged LF/LH/FNF/FNH/BRF/BRH totals to standard error.
@@ -59,10 +91,36 @@ Print merged LF/LH/FNF/FNH/BRF/BRH totals to standard error.
 .B --version
 Print the version and build's git commit identifier.
 .TP
-.B --help
+.BI -h ", " --help
 Print usage.
+.SH EXAMPLES
+Merge LCOV files from test shards:
+.PP
+.nf
+lcovmerge coverage/shard-*.info -o coverage/merged.info
+.fi
+.PP
+Read paths from a list file and choose a temporary directory:
+.PP
+.nf
+lcovmerge --mem-limit 128M --tmpdir /scratch/lcovmerge \\
+  @coverage-inputs.txt -o merged.info
+.fi
+.PP
+Rebase paths from two workers, then filter source files:
+.PP
+.nf
+lcovmerge --rebase /build/worker-a/project=/workspace/project \\
+  --rebase /build/worker-b/project=/workspace/project \\
+  --include '*/src/*' --exclude '*/src/generated/*' \\
+  shards/*.info -o merged.info
+.fi
 .SH INPUT RECORDS
-Recognized rows include TN, SF/KF, legacy FN/FNDA, LCOV 2.x FNL/FNA, DA with optional checksum, BRDA, MCDC, and summary rows. Summary rows in inputs are ignored and generated from the merged coverpoints. Unknown colon-delimited rows inside a source section are preserved in sorted order; exact duplicate unknown rows are preserved too.
+Recognized rows include TN, SF/KF, legacy FN/FNDA, LCOV 2.x FNL/FNA, DA
+with optional checksum, BRDA, MCDC, and summary rows. Summary rows in inputs
+are ignored and generated from the merged coverpoints. Unknown colon-delimited
+rows inside a source section are preserved in sorted order; exact duplicate
+unknown rows are preserved too.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -75,6 +133,7 @@ Invalid or incomplete command-line options.
 Input or tracefile format error, including strict checksum disagreement.
 .TP
 .B 3
-Input/output or temporary-file I/O failure, allocation failure, or interruption.
+Input/output or temporary-file I/O failure, allocation failure, or
+interruption.
 .SH SEE ALSO
 lcov(1), geninfo(1), genhtml(1)

@@ -13,16 +13,16 @@ LDFLAGS ?=
 ifeq ($(OS),Windows_NT)
 PLATFORM_SRC = src/platform_win32.c
 ENTRY_SRC =
+BIN ?= bin/lcovmerge.exe
 else
 PLATFORM_SRC = src/platform_posix.c
 ENTRY_SRC = src/platform_entry.c
 LDFLAGS += -pthread
+BIN ?= bin/lcovmerge
 endif
 
 SOURCES = src/lcovmerge.c $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h
-BIN ?= bin/lcovmerge
-
 .PHONY: all test test-docker asan fuzz bench dist clean install uninstall check-format
 
 all: $(BIN)
@@ -35,6 +35,7 @@ bin:
 
 test: $(BIN)
 	$(PYTHON) tests/run_tests.py --binary $(BIN)
+	sh tests/doc-consistency.sh $(BIN)
 
 test-docker: dist
 	sh scripts/test-docker.sh
