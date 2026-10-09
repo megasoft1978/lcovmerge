@@ -1,0 +1,261 @@
+{
+  "version": "1.0.0",
+  "machine": "Apple M5 Max",
+  "measured_on": "2026-10-09",
+  "runs": 1,
+  "repeat_counts": {
+    "S": 1,
+    "M": 5,
+    "L": 1,
+    "XL-single": 1,
+    "PATH-HEAVY": 1,
+    "REAL": 0
+  },
+  "comparison_runs_per_tool": 1,
+  "cache": "uncontrolled; fixtures generated immediately before measurements",
+  "source": "data/benchmarks.json",
+  "data_kind": "synthetic",
+  "environment": {
+    "os": "macOS 27.0 (build 26A425)",
+    "architecture": "arm64",
+    "cpu": "Apple M5 Max",
+    "cores": 18,
+    "memory_bytes": 68719476736,
+    "compiler": "Apple clang 21.0.0",
+    "python": "3.12.8",
+    "node": "v24.14.0",
+    "npm": "11.9.0",
+    "lcov": "2.6-0",
+    "lcov-result-merger": "6.0.0"
+  },
+  "datasets": [
+    {
+      "id": "medium",
+      "name": "M",
+      "input_size": "1,118,686,233 bytes",
+      "shards": "32 shards",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": 3.316,
+          "seconds_display": "3.316 s",
+          "peak_rss_mib": 5.125,
+          "rss_display": "5.12 MiB",
+          "throughput_mbs": 337.4,
+          "throughput_display": "337.4 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": 43.352,
+          "seconds_display": "43.352 s",
+          "peak_rss_mib": 610.203125,
+          "rss_display": "610.20 MiB",
+          "throughput_mbs": 25.8,
+          "throughput_display": "25.8 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": 145.171,
+          "seconds_display": "145.171 s",
+          "peak_rss_mib": 2381.96875,
+          "rss_display": "2,381.97 MiB",
+          "throughput_mbs": 7.7,
+          "throughput_display": "7.7 MB/s",
+          "status": "OK"
+        }
+      ]
+    },
+    {
+      "id": "large",
+      "name": "L",
+      "input_size": "4,853,340,843 bytes",
+      "shards": "64 shards",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": 27.657,
+          "seconds_display": "27.657 s",
+          "peak_rss_mib": 25.671875,
+          "rss_display": "25.67 MiB",
+          "throughput_mbs": 175.5,
+          "throughput_display": "175.5 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": 195.144,
+          "seconds_display": "195.144 s",
+          "peak_rss_mib": 1430.234375,
+          "rss_display": "1,430.23 MiB",
+          "throughput_mbs": 24.9,
+          "throughput_display": "24.9 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": 604.28,
+          "seconds_display": "604.280 s",
+          "peak_rss_mib": 3106.125,
+          "rss_display": "3,106.12 MiB",
+          "throughput_mbs": 8.0,
+          "throughput_display": "8.0 MB/s",
+          "status": "OK"
+        }
+      ]
+    },
+    {
+      "id": "single_file",
+      "name": "XL-single",
+      "input_size": "744,992,058 bytes",
+      "shards": "1 file",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": 1.37,
+          "seconds_display": "1.370 s",
+          "peak_rss_mib": 2.265625,
+          "rss_display": "2.27 MiB",
+          "throughput_mbs": 543.7,
+          "throughput_display": "543.7 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": 35.378,
+          "seconds_display": "35.378 s",
+          "peak_rss_mib": 3577.375,
+          "rss_display": "3,577.38 MiB",
+          "throughput_mbs": 21.1,
+          "throughput_display": "21.1 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": 0.17,
+          "seconds_display": "0.170 s",
+          "peak_rss_mib": 607.671875,
+          "rss_display": "607.67 MiB",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "ERROR_1"
+        }
+      ]
+    },
+    {
+      "id": "s",
+      "name": "S",
+      "input_size": "99,996,906 bytes",
+      "shards": "8 shards",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": 0.237,
+          "seconds_display": "0.237 s",
+          "peak_rss_mib": 2.9375,
+          "rss_display": "2.94 MiB",
+          "throughput_mbs": 422.0,
+          "throughput_display": "422.0 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": 4.365,
+          "seconds_display": "4.365 s",
+          "peak_rss_mib": 229.78125,
+          "rss_display": "229.78 MiB",
+          "throughput_mbs": 22.9,
+          "throughput_display": "22.9 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": 17.521,
+          "seconds_display": "17.521 s",
+          "peak_rss_mib": 437.703125,
+          "rss_display": "437.70 MiB",
+          "throughput_mbs": 5.7,
+          "throughput_display": "5.7 MB/s",
+          "status": "OK"
+        }
+      ]
+    },
+    {
+      "id": "path_heavy",
+      "name": "PATH-HEAVY",
+      "input_size": "130,000,000 bytes",
+      "shards": "1 file",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": 1.912,
+          "seconds_display": "1.912 s",
+          "peak_rss_mib": 19.6875,
+          "rss_display": "19.69 MiB",
+          "throughput_mbs": 68.0,
+          "throughput_display": "68.0 MB/s",
+          "status": "OK"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": 89.383,
+          "seconds_display": "89.383 s",
+          "peak_rss_mib": 6711.171875,
+          "rss_display": "6,711.17 MiB",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "ERROR_1"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": 1800.002,
+          "seconds_display": "1,800.002 s",
+          "peak_rss_mib": null,
+          "rss_display": "842 MiB sampled in final 308 s; full-run peak unavailable",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "TIMEOUT"
+        }
+      ]
+    },
+    {
+      "id": "real",
+      "name": "REAL",
+      "input_size": "unavailable",
+      "shards": "not supplied",
+      "results": [
+        {
+          "tool": "lcovmerge 1.0.0",
+          "seconds": null,
+          "seconds_display": "NOT MEASURED",
+          "peak_rss_mib": null,
+          "rss_display": "NOT MEASURED",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "NOT MEASURED"
+        },
+        {
+          "tool": "lcov 2.6",
+          "seconds": null,
+          "seconds_display": "NOT MEASURED",
+          "peak_rss_mib": null,
+          "rss_display": "NOT MEASURED",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "NOT MEASURED"
+        },
+        {
+          "tool": "lcov-result-merger 6.0.0",
+          "seconds": null,
+          "seconds_display": "NOT MEASURED",
+          "peak_rss_mib": null,
+          "rss_display": "NOT MEASURED",
+          "throughput_mbs": null,
+          "throughput_display": "—",
+          "status": "NOT MEASURED"
+        }
+      ]
+    }
+  ]
+}

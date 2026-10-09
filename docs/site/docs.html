@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f9f7">
+  <meta name="description" content="lcovmerge command-line usage, options, exit codes, and examples for CI, Bazel, Jenkins, and source path rebasing.">
+  <meta name="robots" content="index,follow">
+  <title>Usage and options — lcovmerge</title>
+  <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/docs.html">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="site.css">
+  <script src="site.js" defer></script>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="lcovmerge">
+  <meta property="og:title" content="Usage and options — lcovmerge">
+  <meta property="og:description" content="Command-line reference and pipeline examples for the bounded-memory LCOV merger.">
+  <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/docs.html">
+  <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="shell header-row">
+      <a class="brand" href="index.html" aria-label="lcovmerge home"><span class="brand-mark" aria-hidden="true">LC</span><span class="brand-word">lcov<span>merge</span></span></a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="docs.html" aria-current="page">Docs</a><a href="benchmarks.html">Benchmarks</a><a class="nav-github" href="https://github.com/megasoft1978/lcovmerge">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="shell">
+    <header class="page-intro">
+      <p class="eyebrow">Command-line reference</p>
+      <h1>Usage and options</h1>
+      <p>Merge LCOV tracefiles from local builds, test shards or another coverage pipeline. Run <code>lcovmerge --help</code> against the binary you installed for the complete release-specific help text.</p>
+    </header>
+    <div class="page-body">
+      <section aria-labelledby="syntax-title">
+        <h2 id="syntax-title">Basic syntax</h2>
+        <pre class="code-block"><code>lcovmerge [options] a.info b.info ... -o out.info</code></pre>
+        <p>The <code>-o</code> or <code>--output</code> option is required. Use <code>-</code> once as an input path to read standard input, or as the output path to write standard output. Prefix an input list with <code>@</code> to read paths from a list file.</p>
+        <pre class="code-block"><code>lcovmerge shard-a.info shard-b.info -o merged.info
+lcovmerge --mem-limit SIZE --tmpdir "$RUNNER_TEMP" @coverage-files.txt -o merged.info
+cat coverage.info | lcovmerge - -o - &gt; normalized.info</code></pre>
+        <p>List files contain one path per line; blank lines and lines beginning with <code>#</code> are ignored. Nested list files are limited to eight levels, paths are relative to the current working directory, and <code>@@name</code> names a literal path beginning with <code>@</code>. The shell expands globs; lcovmerge does not.</p>
+      </section>
+
+      <section aria-labelledby="options-title">
+        <h2 id="options-title">Options</h2>
+        <div class="table-wrap">
+          <table>
+            <caption>CLI options in lcovmerge 1.0.0</caption>
+            <thead><tr><th scope="col">Option</th><th scope="col">Purpose</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><code>-o</code>, <code>--output</code> FILE</th><td>Required. Write to FILE, replacing it only after a successful merge. Use <code>-</code> for standard output.</td></tr>
+              <tr><th scope="row"><code>--mem-limit</code> SIZE</th><td>Set the record-arena cap; default <code>64M</code>, minimum <code>8M</code> per job. Bare values are bytes; case-insensitive K, M, and G suffixes are binary multiples of 1024.</td></tr>
+              <tr><th scope="row"><code>--tmpdir</code> DIR</th><td>Place temporary sorted runs in DIR. The default is the system temporary directory.</td></tr>
+              <tr><th scope="row"><code>-j</code>, <code>--jobs</code> N</th><td>Use 1–32 external-sort jobs. The default is <code>min(4, detected cores)</code>, reduced if needed to fit the memory limit; explicit jobs require at least <code>8M</code> per job. Sorted regular files use a single-threaded stream merge; out-of-order, non-regular, or stream-memory-limited inputs use the configured jobs.</td></tr>
+              <tr><th scope="row"><code>--prefix-strip</code> PREFIX</th><td>Remove a matching leading <code>SF:</code> path prefix at a path boundary, including separators immediately after the prefix.</td></tr>
+              <tr><th scope="row"><code>--rebase</code> OLD=NEW</th><td>Rewrite a matching leading <code>SF:</code> path prefix. Repeatable; path-boundary matching applies, and directory separator style is preserved where possible.</td></tr>
+              <tr><th scope="row"><code>--include</code> GLOB</th><td>Keep a path matching at least one include pattern. Repeatable; supports <code>*</code>, <code>?</code>, and bracket ranges.</td></tr>
+              <tr><th scope="row"><code>--exclude</code> GLOB</th><td>Drop matching paths. Repeatable; exclusions take precedence over includes.</td></tr>
+              <tr><th scope="row"><code>--branch-coverage</code> on|off</th><td>Keep or drop <code>BRDA:</code> rows. The default is <code>on</code>; this does not create absent branch data.</td></tr>
+              <tr><th scope="row"><code>--no-function-data</code></th><td>Drop <code>FN</code>, <code>FNDA</code>, <code>FNL</code>, and <code>FNA</code> records.</td></tr>
+              <tr><th scope="row"><code>--strict-checksum</code></th><td>Return status 2 when non-empty checksums for the same source line differ. By default, warn and emit the lexicographically smallest non-empty checksum.</td></tr>
+              <tr><th scope="row"><code>--warn-unknown</code></th><td>Print a diagnostic for every preserved unknown colon-delimited row inside a source section.</td></tr>
+              <tr><th scope="row"><code>-q</code></th><td>Suppress routine progress output; errors remain visible.</td></tr>
+              <tr><th scope="row"><code>-v</code></th><td>Print parsed byte and record totals, selected worker count, and merged summary totals to standard error.</td></tr>
+              <tr><th scope="row"><code>--stats</code></th><td>Print merged <code>LF</code>, <code>LH</code>, <code>FNF</code>, <code>FNH</code>, <code>BRF</code>, and <code>BRH</code> totals to standard error.</td></tr>
+              <tr><th scope="row"><code>--version</code></th><td>Print the version and build's Git commit identifier.</td></tr>
+              <tr><th scope="row"><code>-h</code>, <code>--help</code></th><td>Print the built-in usage summary.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Path rewriting runs in this order: <code>--rebase</code>, <code>--prefix-strip</code>, then include and exclude filtering. Rewritten paths that become identical are merged.</p>
+      </section>
+
+      <section aria-labelledby="exit-title">
+        <h2 id="exit-title">Exit codes</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><code>0</code></th><td>Success.</td></tr>
+              <tr><th scope="row"><code>1</code></th><td>Invalid or incomplete command-line options.</td></tr>
+              <tr><th scope="row"><code>2</code></th><td>Input or tracefile format error, including strict checksum disagreement.</td></tr>
+              <tr><th scope="row"><code>3</code></th><td>Input/output or temporary-file I/O failure, allocation failure, or interruption.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="rebase-title">
+        <h2 id="rebase-title">Rebase source paths</h2>
+        <p>Use a path rebase when reports contain build-agent paths but your checkout uses a different root. The rewrite applies to source file paths carried by <code>SF:</code> records.</p>
+        <pre class="code-block"><code>lcovmerge --rebase /build/worker/project=/workspace/project shard-a.info shard-b.info -o merged.info</code></pre>
+        <p>For example, a source path below <code>/build/worker/project</code> is rewritten below <code>/workspace/project</code>. Verify the output paths against the source tree used by your report generator.</p>
+      </section>
+
+      <section id="bazel" aria-labelledby="bazel-title">
+        <h2 id="bazel-title">Bazel pipelines</h2>
+        <p>Bazel’s coverage tooling can produce or combine LCOV data as part of its own workflow. lcovmerge is a separate tracefile-merging step for pipelines that collect LCOV shard files; it is not a drop-in implementation of Bazel’s <code>CoverageOutputGenerator</code>.</p>
+        <pre class="code-block"><code># After a workflow has collected per-target or per-job LCOV files:
+lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
+        <p>Point your report generator at <code>coverage/merged.info</code>. The Bazel project has documented memory pressure in its coverage output generator; see <a href="https://github.com/bazelbuild/bazel/issues/26383">issue #26383 ↗</a>.</p>
+      </section>
+
+      <section id="github-actions" aria-labelledby="actions-title">
+        <h2 id="actions-title">GitHub Actions with sharded tests</h2>
+        <p>Upload each shard’s LCOV file as an artifact, then download those artifacts in a final merge job. Install or extract lcovmerge in that job before invoking it.</p>
+        <pre class="code-block"><code>jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [a, b]
+    steps:
+      # Replace this with your sharded test command.
+      - run: ./run-coverage-tests.sh "${{ matrix.shard }}"
+      - run: mv coverage.info "coverage-${{ matrix.shard }}.info"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: coverage-${{ matrix.shard }}.info
+
+  merge:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-*
+          path: coverage-shards
+          merge-multiple: true
+      # Extract lcovmerge from its release archive in this job.
+      - run: lcovmerge coverage-shards/*.info -o coverage/merged.info</code></pre>
+        <p>This example uses current GitHub artifact actions. Keep each shard tracefile name unique so a flat artifact merge cannot overwrite a file with the same name.</p>
+      </section>
+
+      <section id="jenkins" aria-labelledby="jenkins-title">
+        <h2 id="jenkins-title">Jenkins</h2>
+        <p>Collect LCOV files from parallel stages and merge them after the test stage completes.</p>
+        <pre class="code-block"><code>find coverage -type f -name '*.info' -print | sort &gt; coverage-files.txt
+lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
+        <p>Keep the list file outside the searched output directory if your job runs the collection step more than once.</p>
+      </section>
+
+      <section aria-labelledby="lcov-title">
+        <h2 id="lcov-title">How it differs from lcov</h2>
+        <p>lcov is a broader Perl coverage tool. It can capture coverage from compiler data, combine tracefiles with <code>--add-tracefile</code>, and filter, extract, summarize and report coverage. lcovmerge focuses on merging existing LCOV tracefiles under a configured memory budget; it does not replace the broader capture and reporting workflow. Recent lcov versions also expose memory and parallel-processing controls, so compare the versions and settings that match your pipeline.</p>
+        <p>See the <a href="https://manpages.debian.org/trixie/lcov/lcov.1.en.html">lcov manual ↗</a> and <a href="https://github.com/linux-test-project/lcov/blob/master/docs/man/geninfo.rst">LCOV tracefile documentation ↗</a>. lcovmerge does not claim MC/DC semantic accounting.</p>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="shell footer-row"><p>lcovmerge 1.0.0 · MIT License</p><div class="footer-links"><a href="index.html">Home</a><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a></div></div></footer>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">lcovmerge</title>
+  <rect x="2" y="2" width="44" height="44" rx="13" fill="#10221c"/>
+  <path d="M12 15v20h12" fill="none" stroke="#b9ed78" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M26 20h9M30.5 15.5v9" fill="none" stroke="#b9ed78" stroke-linecap="round" stroke-width="3.4"/>
+</svg>

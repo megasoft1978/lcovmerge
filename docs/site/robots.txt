@@ -1,0 +1,2 @@
+User-agent: *
+Sitemap: https://megasoft1978.github.io/lcovmerge/sitemap.xml

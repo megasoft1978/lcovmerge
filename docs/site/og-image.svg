@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">lcovmerge</title>
+  <desc id="desc">Merge huge LCOV tracefiles with bounded memory. Streaming C11 tool.</desc>
+  <rect width="1200" height="630" fill="#09130f"/>
+  <path d="M820 0h380v630H710c123-137 220-357 110-630Z" fill="#101d18"/>
+  <path d="M895 88v453M895 132h188M895 265h240M895 398h188M895 531h240" fill="none" stroke="#344a3e" stroke-width="2"/>
+  <circle cx="895" cy="132" r="9" fill="#b9ed78"/><circle cx="895" cy="265" r="9" fill="#b9ed78"/><circle cx="895" cy="398" r="9" fill="#b9ed78"/><circle cx="895" cy="531" r="9" fill="#b9ed78"/>
+  <rect x="78" y="73" width="80" height="80" rx="20" fill="#172821" stroke="#b9ed78" stroke-width="2"/>
+  <path d="M101 99v34h20M128 108h17M136.5 99.5v17" fill="none" stroke="#b9ed78" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <text x="180" y="132" fill="#edf5f0" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="34" font-weight="750" letter-spacing="-1">lcov<tspan fill="#b9ed78">merge</tspan></text>
+  <text x="78" y="273" fill="#edf5f0" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="64" font-weight="760" letter-spacing="-3">Merge huge coverage</text>
+  <text x="78" y="346" fill="#edf5f0" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="64" font-weight="760" letter-spacing="-3">reports. Keep memory</text>
+  <text x="78" y="419" fill="#b9ed78" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="64" font-weight="760" letter-spacing="-3">in check.</text>
+  <text x="82" y="501" fill="#b2c3ba" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="24" font-weight="500">Streaming LCOV merger · C11 · MIT</text>
+  <rect x="78" y="548" width="310" height="6" rx="3" fill="#b9ed78"/>
+</svg>
