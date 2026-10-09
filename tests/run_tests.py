@@ -266,6 +266,21 @@ def differential_tests(binary: Path, temporary: Path, count: int = 220) -> int:
         "not a trace\n",
         "SF:/bad.c\nend_of_record\nend_of_record\n",
     ]
+    for _ in range(20):
+        line_no = rng.randrange(1, 10000)
+        token = rng.randrange(1 << 20)
+        defect = rng.randrange(5)
+        if defect == 0:
+            row = f"DA:{line_no},invalid-{token},abcd\n"
+        elif defect == 1:
+            row = f"BRDA:{line_no},0,0,-{token}\n"
+        elif defect == 2:
+            row = f"FNDA:invalid-{token},generated\n"
+        elif defect == 3:
+            row = f"MCDC:{line_no},1,z,{token},0,term-{token}\n"
+        else:
+            row = f"FNDA:{token}\n"
+        malformed.append(f"SF:/generated/malformed-{token}.c\n{row}end_of_record\n")
     for case_index, text in enumerate(malformed):
         case_dir = temporary / f"diff-malformed-{case_index}"
         case_dir.mkdir()
