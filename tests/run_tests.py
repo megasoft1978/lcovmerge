@@ -197,7 +197,7 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
         raise AssertionError("path rewriting accepted an empty SF path")
     version = run([str(binary), "--version"])
     help_result = run([str(binary), "--help"])
-    if version.returncode != 0 or not re.search(rb"^lcovmerge 1\.0\.0 \(git [^)]+\)$", version.stdout):
+    if version.returncode != 0 or not re.search(rb"^lcovmerge 1\.0\.0 \(git [^)]+\)\r?\n?$", version.stdout):
         raise AssertionError("version string did not include v1.0.0 and build commit")
     if help_result.returncode != 0 or b"--warn-unknown" not in help_result.stdout:
         raise AssertionError("help output is missing an option")

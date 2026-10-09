@@ -25,13 +25,13 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 
 ## Performance and packaging limits
 
-- The Apple Silicon benchmark run did not meet the 250 MB/s target. S measured 276.8 MB/s; M measured 186.8 MB/s with default jobs, 155.6 MB/s at -j1, and 189.0 MB/s at -j4; XL-single measured 244.7 MB/s; PATH-HEAVY measured 65.1 MB/s. The default M run was followed by runs over the same generated input, but these remain single-run timings rather than a statistical distribution. The default M peak RSS was 22,855,680 bytes (21.8 MiB), within the 32 MiB target. M at -j8 measured 196.2 MB/s and used 39,206,912 bytes (37.4 MiB), above that RSS target.
-- Parallel parsing scaled on this M sample: -j2 measured 174.7 MB/s, -j4 189.0 MB/s, and -j8 196.2 MB/s compared with -j1 at 155.6 MB/s. -j8 uses more than 32 MiB peak RSS. The option remains available; deterministic output was verified at -j1, -j2, -j8, and shuffled input order.
-- The macOS binaries depend on the OS-provided /usr/lib/libSystem.B.dylib. They have no third-party runtime dependencies, but are not fully static because the macOS system library is dynamically linked. The Linux binaries are statically linked musl executables.
-- Wine was unavailable in the validation environment. The Windows x86_64 binary passed PE checks, and the PowerShell test runner passed against the native macOS binary; Windows executable runtime behavior remains unverified here.
+- Dataset M measured 337.4 MB/s and 5,373,952 B peak RSS at default settings, exceeding the 300 MB/s target and remaining below the 32 MiB RSS limit. The earlier v1.0 baseline measured 186.8 MB/s and 22,855,680 B; the historical prototype was reported at 343.9 MB/s but was not rebuilt or remeasured for this validation. The final measurements and intermediate optimization steps are recorded in [the optimization log](validation/optimization-log.md).
+- On M, `-j1`, `-j2`, `-j4`, and `-j8` measured 330.2, 337.5, 338.8, and 333.3 MB/s, respectively. Already-sorted regular files use a single-threaded stream path, so these figures record run variation and do not demonstrate worker scaling. Determinism was checked across job settings and input order.
+- Linux release binaries are statically linked against musl. macOS binaries dynamically link Apple's `libSystem.B.dylib`. Windows is built with static linking, but still uses Windows system APIs; executable runtime behavior remains unverified until a Windows CI run passes.
+- Benchmark measurements cover one macOS host and generated inputs. `REAL` was not measured because no project-derived capture was available. The PATH-HEAVY npm run timed out; its recorded RSS is a partial sample, not a full-run peak.
 
 Benchmark and dependency evidence: [benchmark results](validation/benchmark.txt), [macOS dependencies](validation/macos-dependencies.txt), and [cross-build checks](validation/cross-build.txt).
 
 ## Verification status
 
-Platform-specific and performance claims are limited to the evidence recorded under validation. A successful Windows PE build does not establish Windows runtime behavior; the PowerShell suite still needs execution on a Windows runner or Wine.
+Platform-specific and performance claims are limited to the evidence recorded under validation. A successful Windows PE build does not establish Windows runtime behavior; a passing Windows CI run is still required.

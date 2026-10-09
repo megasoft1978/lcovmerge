@@ -49,6 +49,22 @@ int lm_open_read(const char *path, lm_handle *out) {
     return 0;
 }
 
+int lm_is_regular_file(const char *path) {
+    wchar_t *wide = wide_path(path);
+    if (!wide) return 0;
+    HANDLE handle = CreateFileW(wide, FILE_READ_ATTRIBUTES,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(wide);
+    if (handle == INVALID_HANDLE_VALUE) return 0;
+    BY_HANDLE_FILE_INFORMATION info;
+    int regular = GetFileType(handle) == FILE_TYPE_DISK &&
+                  GetFileInformationByHandle(handle, &info) &&
+                  (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    CloseHandle(handle);
+    return regular;
+}
+
 int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
     wchar_t *wide_dir = wide_path(directory);
     if (!wide_dir) return -1;

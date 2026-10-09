@@ -23,6 +23,11 @@ int lm_open_read(const char *path, lm_handle *out) {
     return 0;
 }
 
+int lm_is_regular_file(const char *path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
 int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
     const char *sep = directory[0] && directory[strlen(directory) - 1] == '/' ? "" : "/";
     size_t dlen = strlen(directory), slen = strlen(sep);
