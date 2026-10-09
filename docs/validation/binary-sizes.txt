@@ -1,5 +1,5 @@
-lcovmerge-1.0.0-linux-aarch64: 84168 bytes
-lcovmerge-1.0.0-linux-x86_64: 87704 bytes
-lcovmerge-1.0.0-macos-arm64: 87544 bytes
-lcovmerge-1.0.0-macos-x86_64: 57469 bytes
-lcovmerge-1.0.0-windows-x86_64.exe: 136704 bytes
+lcovmerge-1.0.0-linux-x86_64: 89256 bytes
+lcovmerge-1.0.0-linux-aarch64: 85608 bytes
+lcovmerge-1.0.0-macos-arm64: 87608 bytes
+lcovmerge-1.0.0-macos-x86_64: 57517 bytes
+lcovmerge-1.0.0-windows-x86_64.exe: 137728 bytes

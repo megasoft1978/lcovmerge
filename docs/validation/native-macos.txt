@@ -1,11 +1,22 @@
+$ uname -a
 Darwin Gabrieles-Mac-Studio.local 27.0.0 Darwin Kernel Version 27.0.0: Tue Aug 11 21:06:40 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T6050 arm64
+
+$ clang --version
 Apple clang version 21.0.0 (clang-2100.3.34.2)
-lcovmerge 1.0.0 (git 5298d7f59aad)
-git diff --check
-clang-format unavailable; checked whitespace with git diff --check
+Target: arm64-apple-darwin27.0.0
+Thread model: posix
+InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+
+$ make clean all test
 rm -rf bin dist
 mkdir -p bin
-cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"5298d7f59aad\" -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 src/lcovmerge.c src/platform_posix.c src/platform_entry.c  -pthread -o bin/lcovmerge
+cc -Iinclude -DLCOVMERGE_GIT_COMMIT=\"e026eaccf6a9\" -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 src/lcovmerge.c src/platform_posix.c src/platform_entry.c  -pthread -o bin/lcovmerge
 python3 tests/run_tests.py --binary bin/lcovmerge
-golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 lcov_cases=200
-wine=unavailable
+golden_cases=56 malformed_cases=14 oracle_cases=246 determinism_runs=4 io_cases=5 many_paths_cases=1 lcov_cases=200
+
+$ bin/lcovmerge --version
+lcovmerge 1.0.0 (git e026eaccf6a9)
+
+$ make check-format
+git diff --check
+clang-format unavailable; checked whitespace with git diff --check

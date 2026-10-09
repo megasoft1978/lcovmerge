@@ -1,4 +1,4 @@
-clang -Iinclude -DLCOVMERGE_GIT_COMMIT=\"554997886973\" -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+clang -Iinclude -DLCOVMERGE_GIT_COMMIT=\"e026eaccf6a9\" -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
 		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
 ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \

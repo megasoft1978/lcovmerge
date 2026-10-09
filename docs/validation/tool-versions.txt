@@ -1,4 +1,8 @@
-lcov: LCOV version 2.6-0
-0.17.0
-Python 3.12.8
-Apple clang version 21.0.0 (clang-2100.3.34.2)
+lcov: lcov: LCOV version 2.6-0
+zig: 0.17.0
+python: Python 3.12.8
+clang: Apple clang version 21.0.0 (clang-2100.3.34.2)
+docker: Docker version 28.1.1, build 4eba377327
+PowerShell: PowerShell 7.2.5
+wine: unavailable
+Docker build image: debian:bookworm-slim (GCC 12.2.0, recorded in Docker logs)

@@ -1,0 +1,9 @@
+$ make install DESTDIR=/var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5 PREFIX=/usr
+install -d /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1
+install -m 0755 bin/lcovmerge /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin/lcovmerge
+install -m 0644 man/lcovmerge.1 /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1/lcovmerge.1
+
+$ make uninstall DESTDIR=/var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5 PREFIX=/usr
+rm -f /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/bin/lcovmerge /var/folders/kr/jkdm_jq1749dlrtw5lbb8lb40000gn/T/lcovmerge-install-yyjz68h5/usr/share/man/man1/lcovmerge.1
+
+result=PASS installed binary and man page; uninstall removed both

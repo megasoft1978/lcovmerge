@@ -1,5 +1,8 @@
-    2099 src/lcovmerge.c
-      94 src/platform_posix.c
-     176 src/platform_win32.c
-       5 src/platform_entry.c
-    2374 total
+ 2197 src/lcovmerge.c
+    5 src/platform_entry.c
+   94 src/platform_posix.c
+  176 src/platform_win32.c
+   33 include/platform.h
+    6 include/version.h
+ 2511 total production C/header lines
+ 2197 core lcovmerge.c lines
