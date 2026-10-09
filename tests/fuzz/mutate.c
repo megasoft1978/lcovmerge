@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     static const char *const names[SEED_COUNT] = {
         "basic.info", "empty.info", "invalid.info", "mcdc.info",
         "u64-max.info", "branch-dash.info", "crlf-eof.info",
-        "truncated.info", "nul.info", "invalid-utf8.info", "unknown-checksum.info"
+        "truncated.info", "nul-byte.info", "invalid-utf8.info", "unknown-checksum.info"
     };
     uint8_t seeds[SEED_COUNT][MAX_INPUT];
     size_t lengths[SEED_COUNT];
