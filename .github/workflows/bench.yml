@@ -1,0 +1,57 @@
+name: Linux benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_path_heavy:
+        description: Run the 2,000,000-path workload as well
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark on ubuntu-24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install benchmark tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes hyperfine lcov time
+
+      - name: Build lcovmerge
+        run: make
+
+      - name: Run repeatable Linux benchmarks
+        env:
+          BENCH_RUNNER_LABEL: ubuntu-24.04
+          TMPDIR: ${{ github.workspace }}/.luna-tmp
+          INCLUDE_PATH_HEAVY: ${{ inputs.include_path_heavy }}
+        run: |
+          set -eu
+          mkdir -p "$TMPDIR"
+          set --
+          if [ "$INCLUDE_PATH_HEAVY" = "true" ]; then
+            set -- --include-path-heavy
+          fi
+          python3 -I bench/run-ci-linux.py \
+            --output-dir .luna-tmp/linux-benchmark-artifact \
+            "$@"
+
+      - name: Upload JSON and text results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .luna-tmp/linux-benchmark-artifact/benchmark.json
+            .luna-tmp/linux-benchmark-artifact/benchmark.txt
+          if-no-files-found: error
+          retention-days: 90

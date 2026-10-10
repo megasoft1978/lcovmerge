@@ -54,6 +54,35 @@
       "commit_date": "2025-03-15",
       "build": "CMake C++ test target",
       "test": "ctest"
+    },
+    {
+      "name": "sqlite",
+      "url": "https://github.com/sqlite/sqlite.git",
+      "tag": "version-3.50.4",
+      "commit": "8ed5e7365e6f12f427910188bbf6b254daad2ef6",
+      "commit_date": "2025-07-30",
+      "capture_runs": 1,
+      "build": "configure and build sqlite3 plus testfixture with coverage",
+      "test": "make test"
+    },
+    {
+      "name": "libarchive",
+      "url": "https://github.com/libarchive/libarchive.git",
+      "tag": "v3.8.1",
+      "commit": "9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf",
+      "commit_date": "2025-06-01",
+      "excluded_tests": [
+        {
+          "test": "libarchive_test_read_format_7zip_lzma2_riscv",
+          "reason": "observed archive_read_data error -30 and CRC mismatch on macOS arm64"
+        },
+        {
+          "test": "libarchive_test_write_disk_perms",
+          "reason": "observed setuid/setgid bits cleared on files created by the macOS test run"
+        }
+      ],
+      "build": "CMake with test targets enabled",
+      "test": "ctest"
     }
   ]
 }

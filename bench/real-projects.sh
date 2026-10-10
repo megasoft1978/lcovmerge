@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
 export TMPDIR=./.luna-tmp
 exec python3 -I - "$repo" "$repo/bench/real-projects-manifest.json" <<'PY'
@@ -19,9 +19,9 @@ import time
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
 MANIFEST = pathlib.Path(sys.argv[2])
-SCRATCH = ROOT / ".luna-tmp"
+SCRATCH = ROOT / ".luna-tmp" / "real-projects"
 RAW = SCRATCH / "raw"
-RUN = SCRATCH / "real-projects-run"
+RUN = SCRATCH / "run"
 BINARY = ROOT / "bin/lcovmerge"
 LCOV = shutil.which("lcov")
 GENHTML = shutil.which("genhtml")
@@ -45,9 +45,11 @@ class RunFailure(RuntimeError):
     pass
 
 
-def command(argv, label, *, timed=False, check=True, cwd=ROOT):
+def command(argv, label, *, timed=False, check=True, cwd=ROOT, extra_env=None):
     env = os.environ.copy()
     env["TMPDIR"] = "./.luna-tmp"
+    if extra_env:
+        env.update(extra_env)
     if pathlib.Path(cwd).resolve() != ROOT:
         env["TMPDIR"] = str(RUN / "tmp")
     target = [str(part) for part in argv]
@@ -115,6 +117,12 @@ def build_project(project, source):
                  "CFLAGS=-Wall -std=gnu99 -O2 -I../../ -fPIC -shared --coverage "
                  "-Wl,-undefined,dynamic_lookup"], f"{name}-test-modules")
         return source
+    if name == "sqlite":
+        command(["./configure", "--enable-all"], f"{name}-configure", cwd=source,
+                extra_env={"CC": "clang", "CFLAGS": "-O0 -g --coverage",
+                           "CPPFLAGS": "--coverage", "LDFLAGS": "--coverage"})
+        command(["make", "-j2", "sqlite3", "testfixture"], f"{name}-build", cwd=source)
+        return source
     options = {
         "zlib": ["-DZLIB_BUILD_EXAMPLES=ON"],
         "cjson": ["-DENABLE_CJSON_TEST=ON", "-DBUILD_SHARED_LIBS=OFF"],
@@ -122,6 +130,7 @@ def build_project(project, source):
                    "-DBUILD_STATIC_LIBS=ON"],
         "libyaml": ["-DBUILD_TESTING=ON", "-DBUILD_SHARED_LIBS=OFF"],
         "tinyxml2": ["-Dtinyxml2_BUILD_TESTING=ON", "-DBUILD_SHARED_LIBS=OFF"],
+        "libarchive": ["-DENABLE_TEST=ON"],
     }[name]
     command(cmake_args(source, build, cxx=(name == "tinyxml2"), options=options),
             f"{name}-configure")
@@ -133,6 +142,13 @@ def build_project(project, source):
 def test_command(project, source, build):
     if project["name"] == "lua":
         return [source / "lua", "-e", "_port=true", "-W", "all.lua"]
+    if project["name"] == "sqlite":
+        return ["make", "-C", source, "test"]
+    excluded = project.get("excluded_tests", [])
+    if excluded:
+        pattern = "|".join(re.escape(item["test"]) for item in excluded)
+        return ["ctest", "--test-dir", build, "--output-on-failure",
+                "-E", f"^({pattern})$"]
     return ["ctest", "--test-dir", build, "--output-on-failure"]
 
 
@@ -147,7 +163,7 @@ def capture(project, source, counter_dir, index):
     lcov_temp = RUN / "lcov-tmp"
     lcov_temp.mkdir(exist_ok=True)
     args = [LCOV, "--capture", "--branch-coverage", "--quiet"]
-    if project["name"] == "tinyxml2":
+    if project["name"] in ("tinyxml2", "sqlite", "libarchive"):
         args += ["--ignore-errors", "inconsistent"]
     args += ["--directory", counter_dir, "--base-directory", source,
              "--tempdir", lcov_temp, "--output-file", output]
@@ -256,6 +272,110 @@ def trace_size(path):
     return pathlib.Path(path).stat().st_size
 
 
+def make_rebased_copy(source_file, destination, project_name, source_root, prefix_index):
+    source_prefix = str(source_root).replace("\\", "/").rstrip("/")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    output = []
+    for line in pathlib.Path(source_file).read_text(
+            encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("SF:"):
+            value = line[3:].replace("\\", "/")
+            if value.startswith(source_prefix + "/"):
+                relative = value[len(source_prefix) + 1:]
+            elif value == source_prefix:
+                relative = "_root"
+            else:
+                relative = value.lstrip("/")
+            line = (f"SF:/real-scaled/prefix-{prefix_index:03d}/"
+                    f"{project_name}/{relative}")
+        output.append(line)
+    pathlib.Path(destination).write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
+def measure_real_derived(projects, sources, source_shards):
+    target_bytes = 50_000_000
+    real_input_bytes = sum(trace_size(path) for _, path in source_shards)
+    real_shards = len(source_shards)
+    prefix_count = max(1, (target_bytes + real_input_bytes - 1) // real_input_bytes,
+                       (34 + real_shards - 1) // real_shards)
+    scaled = prefix_count > 1
+    if real_input_bytes < target_bytes:
+        scaling_reason = "real captures were below 50 MB; re-rooted copies raise the measured input size"
+    elif real_shards <= 32:
+        scaling_reason = "real captures exceeded 50 MB but had at most 32 shards; re-rooted copies force external sort"
+    else:
+        scaling_reason = "real captures already exceed 50 MB and 32 shards; no expansion required"
+    if scaled:
+        inputs = []
+        scale_dir = RUN / "scaled-shards"
+        for prefix_index in range(prefix_count):
+            for project_name, source_file in source_shards:
+                destination = scale_dir / f"prefix-{prefix_index:03d}" / (
+                    f"{project_name}-{pathlib.Path(source_file).name}")
+                make_rebased_copy(source_file, destination, project_name,
+                                  sources[project_name], prefix_index)
+                inputs.append(destination)
+        label = "REAL-DERIVED SCALED"
+    else:
+        inputs = [path for _, path in source_shards]
+        label = "REAL actual shards"
+
+    input_bytes = sum(trace_size(path) for path in inputs)
+    prefix_count = prefix_count if scaled else 1
+    if len(inputs) <= 32:
+        raise RunFailure("real-derived external-sort workload needs more than 32 inputs")
+
+    normal_output = RUN / "merged" / "real-derived-scaled.info"
+    lcov_output = RUN / "lcov" / "real-derived-scaled.info"
+    normal_output.parent.mkdir(parents=True, exist_ok=True)
+    lcov_output.parent.mkdir(parents=True, exist_ok=True)
+    merge_result = merge_lcovmerge(inputs, normal_output,
+                                   label="real-derived-scaled-lcovmerge", timed=True)
+    lcov_result = merge_lcov(inputs, lcov_output,
+                             label="real-derived-scaled-lcov", timed=True,
+                             ignore_inconsistent=any(p["name"] in ("tinyxml2", "sqlite", "libarchive")
+                                                     for p in projects))
+    equal, detail = compare_traces(normal_output, lcov_output, [])
+
+    small_output = RUN / "merged" / "real-derived-scaled-mem8m.info"
+    merge_lcovmerge(inputs, small_output, label="real-derived-scaled-mem8m", timed=True,
+                    extra=("--mem-limit", "8M", "--jobs", "1"))
+    reverse_output = RUN / "determinism" / "real-derived-scaled-reverse.info"
+    jobs_output = RUN / "determinism" / "real-derived-scaled-j4.info"
+    reverse_output.parent.mkdir(parents=True, exist_ok=True)
+    merge_lcovmerge(list(reversed(inputs)), reverse_output,
+                    label="real-derived-scaled-reverse")
+    merge_lcovmerge(inputs, jobs_output, label="real-derived-scaled-j4",
+                    extra=("--jobs", "4"))
+    deterministic = all(path.read_bytes() == normal_output.read_bytes()
+                        for path in (small_output, reverse_output, jobs_output))
+    if not (equal and deterministic):
+        raise RunFailure("real-derived scaled comparison or determinism check failed: "
+                         f"lcov_equal={equal} detail={detail}; deterministic={deterministic}")
+
+    return {
+        "label": label,
+        "scaled": scaled,
+        "scaling_reason": scaling_reason,
+        "prefix_count": prefix_count,
+        "source_real_shards": real_shards,
+        "source_real_input_bytes": real_input_bytes,
+        "shards": len(inputs),
+        "input_bytes": input_bytes,
+        "output_bytes": trace_size(normal_output),
+        "lcovmerge": metric(merge_result),
+        "lcovmerge_throughput_mb_s": round(
+            input_bytes / merge_result["wall_seconds"] / 1_000_000, 1),
+        "lcov": metric(lcov_result),
+        "lcov_throughput_mb_s": round(
+            input_bytes / lcov_result["wall_seconds"] / 1_000_000, 1),
+        "lcov_comparison": "PASS" if equal else f"FAIL ({detail})",
+        "genhtml": "not run for synthetic SF prefixes; actual REAL composite was checked",
+        "external_sort": "PASS (8 MiB, --jobs 1, more than 32 inputs)",
+        "order_jobs_determinism": "PASS" if deterministic else "FAIL",
+    }
+
+
 def check_lcov_consistency_repro():
     repro = SCRATCH / "repros"
     source = repro / "src"
@@ -285,8 +405,8 @@ def main():
         raise RunFailure("lcov, genhtml, and /usr/bin/time are required")
     if not BINARY.is_file():
         raise RunFailure("build lcovmerge first with make")
-    if RUN.exists():
-        raise RunFailure(f"refusing to overwrite existing scratch run: {RUN}")
+    if SCRATCH.exists():
+        raise RunFailure(f"refusing to overwrite existing scratch run: {SCRATCH}")
     for project in projects:
         if (RAW / project["name"]).exists():
             raise RunFailure(f"refusing to overwrite existing source tree: {RAW / project['name']}")
@@ -309,6 +429,11 @@ def main():
                      project["url"], source], f"{name}-clone")
             command(["git", "-C", source, "checkout", "--detach", project["commit"]],
                     f"{name}-checkout")
+            if project.get("tag"):
+                tags = command(["git", "-C", source, "tag", "--points-at", "HEAD"],
+                               f"{name}-tag-check")["output"].splitlines()
+                if project["tag"] not in tags:
+                    raise RunFailure(f"{name} commit is not tagged {project['tag']}")
             date = command(["git", "-C", source, "show", "-s", "--format=%cs", "HEAD"],
                            f"{name}-commit-date")["output"].strip().splitlines()[-1]
             if date != project["commit_date"]:
@@ -321,8 +446,14 @@ def main():
             suite = test_command(project, source, build)
             counter_dir = source if name == "lua" else build
             shards = []
-            suite_cwd = source / "testes" if name == "lua" else ROOT
-            for index in (1, 2):
+            if name == "lua":
+                suite_cwd = source / "testes"
+            elif name == "sqlite":
+                suite_cwd = source
+            else:
+                suite_cwd = build
+            capture_runs = project.get("capture_runs", 2)
+            for index in range(1, capture_runs + 1):
                 clear_counters(counter_dir)
                 command(suite, f"{name}-test-group-{index}", cwd=suite_cwd)
                 shard = capture(project, source, counter_dir, index)
@@ -331,6 +462,10 @@ def main():
                     lowered = line.lower()
                     if "function begin/end line exclusions" in lowered:
                         warning_lines.append("Apple gcov lacks function begin/end line exclusion support.")
+                    elif "inconsistent" in lowered and name == "sqlite":
+                        warning_lines.append("LCOV inconsistent checks were bypassed for duplicate function metadata in SQLite's generated amalgamation.")
+                    elif "inconsistent" in lowered and name == "libarchive":
+                        warning_lines.append("LCOV inconsistent checks were bypassed for a DA record with no gcov branch data in libarchive.")
                     elif "inconsistent" in lowered:
                         warning_lines.append("LCOV consistency checks were bypassed for instrumented C++ metadata.")
                     elif "warning" in lowered or "unsupported" in lowered:
@@ -345,7 +480,7 @@ def main():
             lmerge = merge_lcovmerge(shards, project_output, label=f"{name}-lcovmerge",
                                      timed=True)
             lbase = merge_lcov(shards, project_lcov, label=f"{name}-lcov", timed=True,
-                               ignore_inconsistent=(name == "tinyxml2"))
+                               ignore_inconsistent=(name in ("tinyxml2", "sqlite", "libarchive")))
             equal, detail = compare_traces(project_output, project_lcov, roots,
                                            relative_project=name)
             verdict = "PASS" if equal else f"FAIL ({detail})"
@@ -385,12 +520,13 @@ def main():
                                  exclude_output.read_text(encoding="utf-8",
                                                           errors="replace").splitlines())
             if not (rebase_ok and strip_ok and exclude_ok):
+                failed = True
                 print(f"REWRITE DIAGNOSTIC {name}: rebase={rebase_detail}; "
                       f"strip={strip_detail}; exclude_empty={exclude_ok}", flush=True)
 
             html_dir = RUN / "html" / name
             html_args = [GENHTML, "--branch-coverage", "--quiet"]
-            if name == "tinyxml2":
+            if name in ("tinyxml2", "sqlite", "libarchive"):
                 html_args += ["--ignore-errors", "inconsistent,corrupt"]
             html_args += ["--output-directory", html_dir, project_output]
             html_result = command(html_args, f"{name}-genhtml", check=False)
@@ -403,7 +539,8 @@ def main():
             stress_inputs = []
             stress_dir = RUN / "stress" / name
             stress_dir.mkdir(parents=True, exist_ok=True)
-            for copy_index in range(17):
+            copies_per_shard = (34 + len(shards) - 1) // len(shards)
+            for copy_index in range(copies_per_shard):
                 for shard_index, shard in enumerate(shards):
                     copy = stress_dir / f"copy-{copy_index:02d}-shard-{shard_index:02d}.info"
                     shutil.copyfile(shard, copy)
@@ -429,15 +566,20 @@ def main():
                 failed = True
             stress_baseline = merge_lcov(stress_inputs, stress_lcov,
                                          label=f"{name}-stress-lcov", timed=True,
-                                         ignore_inconsistent=(name == "tinyxml2"))
+                                         ignore_inconsistent=(name in ("tinyxml2", "sqlite", "libarchive")))
             mem_equal, mem_detail = compare_traces(stress_output, stress_lcov, roots,
                                                    relative_project=name)
             if not mem_equal:
                 failed = True
 
             input_bytes = sum(trace_size(path) for path in shards)
+            test_status = (f"PASS x{capture_runs} (portable mode; upstream skips nonportable tests)"
+                           if name == "lua" else f"PASS x{capture_runs}")
+            if project.get("excluded_tests"):
+                test_status += f"; {len(project['excluded_tests'])} known platform/toolchain tests excluded"
             rows.append({
                 "project": name,
+                "tag": project.get("tag"),
                 "commit": project["commit"],
                 "commit_date": project["commit_date"],
                 "shards": len(shards),
@@ -446,8 +588,7 @@ def main():
                 "lcovmerge": metric(lmerge),
                 "lcov": metric(lbase),
                 "lcov_comparison": verdict,
-                "test_groups": ("PASS x2 (portable mode; upstream skips nonportable tests)"
-                                if name == "lua" else "PASS x2"),
+                "test_groups": test_status,
                 "genhtml": "PASS" if html_ok else "FAIL",
                 "order_jobs_determinism": "PASS" if deterministic else "FAIL",
                 "external_sort_order_jobs": "PASS" if external_deterministic else "FAIL",
@@ -462,14 +603,20 @@ def main():
                   f"mem8M={'PASS' if mem_equal else 'FAIL'}", flush=True)
 
         all_shards = [RUN / "captures" / project["name"] / f"shard-{index:02d}.info"
-                      for project in projects for index in (1, 2)]
+                      for project in projects
+                      for index in range(1, project.get("capture_runs", 2) + 1)]
+        source_shards = [(project["name"],
+                          RUN / "captures" / project["name"] / f"shard-{index:02d}.info")
+                         for project in projects
+                         for index in range(1, project.get("capture_runs", 2) + 1)]
+        real_derived = measure_real_derived(projects, sources, source_shards)
         composite = RUN / "merged" / "REAL.info"
         composite_lcov = RUN / "lcov" / "REAL.info"
         composite_lcovmerge = merge_lcovmerge(all_shards, composite,
                                               label="REAL-lcovmerge", timed=True)
         composite_lcov_result = merge_lcov(all_shards, composite_lcov,
                                           label="REAL-lcov", timed=True,
-                                          ignore_inconsistent=any(p["name"] == "tinyxml2"
+                                          ignore_inconsistent=any(p["name"] in ("tinyxml2", "sqlite", "libarchive")
                                                                   for p in projects))
         composite_equal, composite_detail = compare_traces(composite, composite_lcov, roots)
         if not composite_equal:
@@ -478,7 +625,7 @@ def main():
         merge_lcovmerge(list(reversed(all_shards)), composite_order, label="REAL-reverse")
         composite_determinism = composite_order.read_bytes() == composite.read_bytes()
         composite_html_args = [GENHTML, "--branch-coverage", "--quiet"]
-        if any(p["name"] == "tinyxml2" for p in projects):
+        if any(p["name"] in ("tinyxml2", "sqlite", "libarchive") for p in projects):
             composite_html_args += ["--ignore-errors", "inconsistent,corrupt"]
         composite_html_args += ["--output-directory", RUN / "html" / "REAL", composite]
         composite_html = command(composite_html_args, "REAL-genhtml", check=False)
@@ -491,7 +638,8 @@ def main():
         total_input = sum(trace_size(path) for path in all_shards)
         rows.append({
             "project": "REAL composite",
-            "commit": "six pinned commits",
+            "tag": None,
+            "commit": f"{len(projects)} pinned commits",
             "commit_date": None,
             "shards": len(all_shards),
             "input_mb": mb(total_input),
@@ -538,16 +686,32 @@ def main():
                 "ctest": "PASS x2",
                 "lcovmerge_comparison": "PASS with LCOV consistency override",
                 "genhtml": "not included; Apple gcov branch/line inconsistency",
-                "synthetic_repro": ".luna-tmp/repros/lcov-branch-line-inconsistent.info",
+                "synthetic_repro": "generated transiently under .luna-tmp and removed after validation",
                 "repro_status": "PASS" if lcov_repro else "NOT_REPRODUCED"
+            }, {
+                "project": "curl",
+                "tag": "curl-8_15_0",
+                "commit": "cfbfb65047e85e6b08af65fe9cdbcf68e9ad496a",
+                "commit_date": "2025-07-16",
+                "ctest": "returned 0 in 0.01 s",
+                "capture": "FAILED: no .gcda files found in the configured CMake build directory",
+                "reason": "excluded because this configuration produced no coverage counters"
             }],
             "method_notes": ["Lua used documented _port=true mode, which skips upstream nonportable tests.",
-                            "Each project used two independent full-suite captures as shards.",
+                            "Projects use the capture_runs count pinned in the manifest; SQLite's full test suite was captured once because one run took several minutes.",
+                            "LCOV capture and comparison runs use --ignore-errors inconsistent for SQLite and libarchive after the pinned Apple gcov toolchain emitted capture-consistency errors.",
                             "Only Apple Clang was available; gcc reports the same Apple Clang version.",
                             "External-sort stress uses 34 inputs, exceeding the 32-input direct-path limit.",
+                            "REAL-DERIVED SCALED re-roots the captured shards under distinct synthetic SF prefixes only when needed to reach 50 MB and exceed 32 inputs.",
                             "Output record presentation order may differ from LCOV by design (docs/LIMITATIONS.md); comparisons normalize SF paths and compare keyed semantic records."],
             "projects": rows,
-            "overall": "FAIL" if failed else "PASS",
+            "test_exclusions": [{"project": p["name"], "tag": p.get("tag"),
+                                 "commit": p["commit"], "tests": p["excluded_tests"]}
+                                for p in projects if p.get("excluded_tests")],
+            "real_derived_scaled": real_derived,
+            "overall": ("FAIL" if failed else
+                        "PASS WITH TEST EXCLUSIONS" if any(p.get("excluded_tests")
+                                                            for p in projects) else "PASS"),
         }
         json_path = ROOT / "data/real-projects.json"
         json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -556,9 +720,7 @@ def main():
               flush=True)
         return 1 if failed else 0
     finally:
-        shutil.rmtree(RUN, ignore_errors=True)
-        for project in projects:
-            shutil.rmtree(RAW / project["name"], ignore_errors=True)
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def write_report(report):
@@ -572,14 +734,15 @@ def write_report(report):
              f"{report['host']['lcov']} | {report['host']['genhtml']} | "
              f"`{report['measurement_method']}` |",
              "", "## Results", "",
-             "| Project | Commit | Shards | Input MB | Output MB | lcovmerge seconds / peak RSS MiB | lcov seconds / peak RSS MiB | lcov verdict | Tests | genhtml | Order / -j | Rewrites | 8 MiB sort |",
-             "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |"]
+             "| Project | Tag | Commit | Shards | Input MB | Output MB | lcovmerge seconds / peak RSS MiB | lcov seconds / peak RSS MiB | lcov verdict | Tests | genhtml | Order / -j | Rewrites | 8 MiB sort |",
+             "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |"]
     for row in rows:
         merge = row["lcovmerge"]
         lcov = row["lcov"]
         merge_metric = f"{merge['wall_seconds']:.3f} / {merge['peak_rss_mib']}"
         lcov_metric = f"{lcov['wall_seconds']:.3f} / {lcov['peak_rss_mib']}"
-        lines.append("| " + " | ".join((row["project"], row["commit"], str(row["shards"]),
+        lines.append("| " + " | ".join((row["project"], row.get("tag") or "—",
+                                       row["commit"], str(row["shards"]),
                                        f"{row['input_mb']:.3f}",
                                        f"{row['lcovmerge_output_mb']:.3f}", merge_metric,
                                        lcov_metric, row["lcov_comparison"], row["test_groups"],
@@ -588,6 +751,14 @@ def write_report(report):
     notices = []
     if any("inconsistent" in warning for warning in report["warnings"]):
         notices.append("tinyxml2 LCOV capture bypassed inconsistent function-boundary checks from Apple gcov.")
+    if any("SQLite's generated amalgamation" in warning for warning in report["warnings"]):
+        notices.append("SQLite capture used LCOV --ignore-errors inconsistent because gcov reported duplicate sqlite3OsFetch function metadata in the generated sqlite3.c amalgamation; its normalized merge comparison remained in the run.")
+    if any("libarchive" in warning for warning in report["warnings"]):
+        notices.append("libarchive capture used LCOV --ignore-errors inconsistent after gcov reported a DA line with no branch data in archive_write_set_format_shar.c; its normalized merge comparison remained in the run.")
+    if any(item.get("project") == "curl" for item in report["excluded_attempts"]):
+        notices.append("curl 8.15.0 was excluded: its CMake/CTest configuration returned success but emitted no .gcda counters, so it did not contribute coverage data.")
+    if report["test_exclusions"]:
+        notices.append("libarchive 3.8.1 ran with two named CTest exclusions after reproducible failures on this macOS arm64 toolchain; the exact failures and reproducer are recorded below.")
     if any("function begin/end" in warning for warning in report["warnings"]):
         notices.append("Apple gcov/lcov emitted non-fatal unsupported function-boundary notices during capture.")
     if any("Other non-fatal" in warning for warning in report["warnings"]):
@@ -599,7 +770,7 @@ def write_report(report):
     if any(row["project"] == "lua" for row in rows):
         notices.append("Lua ran with its documented `_port=true` mode; its upstream suite skips nonportable tests in this mode.")
     notices.append("Each project used two independent full-suite captures; external-sort checks used 34 inputs (above the 32-input direct-path limit), comparing 8 MiB -j1 with LCOV and reverse-order / 32 MiB -j4 outputs bytewise.")
-    notices.append("A separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; a synthetic path-scrubbed repro is retained under scratch.")
+    notices.append("The separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; its synthetic reproducer was generated under .luna-tmp and removed after validation.")
     if "blocked:" in report["measurement_method"]:
         notices.append("`/usr/bin/time -l` was blocked reading kern.clockrate; elapsed time and peak RSS came from an isolated Python resource sampler.")
     if not notices:
@@ -611,8 +782,37 @@ def write_report(report):
               "| Normalized records compared | Composite verdict | Overall verdict |",
               "| --- | --- | --- |",
               f"| `{report['comparison_method']}` | {rows[-1]['lcov_comparison']} | {report['overall']} |",
+              "", "## Real-derived workload", "",
+              f"The captured real shard set totals {report['real_derived_scaled']['source_real_input_bytes']:,} bytes. Scaling note: {report['real_derived_scaled']['scaling_reason']}. The measured set uses captured shards re-rooted under distinct `/real-scaled/` prefixes when expansion was required; this is synthetic scaling and is not presented as real project input.", "",
+              "| Label | Source bytes | Measured bytes | Prefixes | Shards | lcovmerge s / MiB RSS / MB/s | lcov s / MiB RSS / MB/s | Correctness | External sort | Order / -j |",
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
+              f"| {report['real_derived_scaled']['label']} | {report['real_derived_scaled']['source_real_input_bytes']:,} | {report['real_derived_scaled']['input_bytes']:,} | {report['real_derived_scaled']['prefix_count']} | {report['real_derived_scaled']['shards']} | {report['real_derived_scaled']['lcovmerge']['wall_seconds']:.3f} / {report['real_derived_scaled']['lcovmerge']['peak_rss_mib']} / {report['real_derived_scaled']['lcovmerge_throughput_mb_s']:.1f} | {report['real_derived_scaled']['lcov']['wall_seconds']:.3f} / {report['real_derived_scaled']['lcov']['peak_rss_mib']} / {report['real_derived_scaled']['lcov_throughput_mb_s']:.1f} | {report['real_derived_scaled']['lcov_comparison']} | {report['real_derived_scaled']['external_sort']} | {report['real_derived_scaled']['order_jobs_determinism']} |",
               "", "Output record presentation order may differ from LCOV by design, as described in `docs/LIMITATIONS.md`. Comparisons normalize SF paths and compare keyed DA, FN, FNDA, and BRDA records and counts.",
               ""]
+    if report["excluded_attempts"][0]["repro_status"] == "PASS":
+        lines += ["", "## Minimal compatibility reproducer", "",
+                  "On this Apple gcov and LCOV toolchain, genhtml rejects the trace because line 1 is marked unhit while a branch on that line is hit. The trace exercises a capture-consistency issue; no lcovmerge source change was made.", "",
+                  "From the repository root, recreate the source and trace under scratch and run genhtml:", "",
+                  "```sh", "mkdir -p .luna-tmp/branch-repro/src",
+                  "printf '%s\\n' 'int branch(int x) { if (x) return 1; return 0; }' > .luna-tmp/branch-repro/src/branch.c",
+                  "cat > .luna-tmp/branch-repro/input.info <<'EOF'",
+                  "TN:", "SF:src/branch.c", "DA:1,0", "BRDA:1,0,0,1", "BRF:1", "BRH:1", "LF:1", "LH:0", "end_of_record", "EOF",
+                  "genhtml --branch-coverage --quiet --source-directory .luna-tmp/branch-repro \\",
+                  "  --output-directory .luna-tmp/branch-repro-html .luna-tmp/branch-repro/input.info",
+                  "```", "",
+                  "```text", "TN:", "SF:src/branch.c", "DA:1,0", "BRDA:1,0,0,1",
+                  "BRF:1", "BRH:1", "LF:1", "LH:0", "end_of_record", "```", ""]
+    if report["test_exclusions"]:
+        excluded = report["test_exclusions"][0]
+        lines += ["", "## Excluded upstream tests", "",
+                  f"The `libarchive` `{excluded['tag']}` checkout (`{excluded['commit']}`) excludes the following two tests from the CTest run. The rest of the configured suite passes and contributes coverage.", "",
+                  "| Test | Observed failure |", "| --- | --- |",
+                  "| `libarchive_test_read_format_7zip_lzma2_riscv` | `archive_read_data` returned -30 instead of 8,488 bytes; computed CRC 433,319,548 differed from expected 4,159,513,831. |",
+                  "| `libarchive_test_write_disk_perms` | The test observed mode 0742 where it expected setuid mode 04742 and setgid mode 02742. |", "",
+                  "Reproduce both observations from the built test tree with:", "",
+                  "```sh",
+                  "ctest --test-dir build -R '^(libarchive_test_read_format_7zip_lzma2_riscv|libarchive_test_write_disk_perms)$' --output-on-failure -V",
+                  "```", ""]
     (ROOT / "docs/validation/real-projects.md").write_text("\n".join(lines), encoding="utf-8")
 
 
