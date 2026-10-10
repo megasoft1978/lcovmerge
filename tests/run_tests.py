@@ -194,7 +194,26 @@ def parser_boundary_tests(binary: Path, temporary: Path) -> int:
             f"exactly 1 MiB line was not preserved: status={result.returncode}, "
             f"stderr={result.stderr!r}"
         )
-    return 1
+
+    joined_source = ROOT / "tests" / "fixtures" / "joined-boundary.info"
+    joined_output = base / "joined-boundary-out.info"
+    joined_result = run([str(binary), str(joined_source), "-o", str(joined_output)])
+    joined_expected = (
+        "SF:/synthetic/a-before.c\n"
+        "DA:1,1\nFNF:0\nFNH:0\nBRF:0\nBRH:0\n"
+        "MCF:0\nMCH:0\nLF:1\nLH:1\nend_of_record\n"
+        "SF:/synthetic/b-after.c\n"
+        "DA:2,3\nFNF:0\nFNH:0\nBRF:0\nBRH:0\n"
+        "MCF:0\nMCH:0\nLF:1\nLH:1\nend_of_record\n"
+    ).encode("ascii")
+    if (joined_result.returncode != 0 or not joined_output.exists() or
+            joined_output.read_bytes() != joined_expected or
+            b"recovered joined end_of_record/source boundary" not in joined_result.stderr):
+        raise AssertionError(
+            "joined end_of_record/SF boundary was not recovered with a warning: "
+            f"status={joined_result.returncode}, stderr={joined_result.stderr!r}"
+        )
+    return 2
 
 
 def malformed_tests(binary: Path, temporary: Path) -> int:

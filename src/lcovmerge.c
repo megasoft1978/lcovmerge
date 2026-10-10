@@ -1198,6 +1198,32 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
                              uint64_t *fnl_end, int *fnl_valid) {
     if (length && line[length - 1] == '\r') line[--length] = '\0';
     if (length == 0 || line[0] == '#') return 0;
+    const size_t end_record_length = sizeof("end_of_record") - 1u;
+    if (length >= end_record_length + 3u &&
+        memcmp(line, "end_of_record", end_record_length) == 0 &&
+        (memcmp(line + end_record_length, "SF:", 3u) == 0 ||
+         memcmp(line + end_record_length, "KF:", 3u) == 0)) {
+        if (!*section_open)
+            return worker_error(worker, 2, filename, line_no,
+                                "joined end_of_record/source record without SF record");
+        if (*path && direct_preserve_last_path(worker, *path) != 0) return -1;
+        *section_open = 0;
+        *fnl_valid = 0;
+        chunk->last_source_path = NULL;
+        if (worker->direct_mode) worker->direct_current_path = NULL;
+        free(*path);
+        *path = NULL;
+        *keep_path = 0;
+
+        FILE *diagnostics = worker->diagnostic_file ? worker->diagnostic_file : stderr;
+        fprintf(diagnostics,
+                "lcovmerge: %s:%" PRIu64 ": warning: recovered joined end_of_record/source boundary after missing newline\n",
+                filename, line_no);
+        ++worker->warnings;
+
+        memmove(line, line + end_record_length, length - end_record_length + 1u);
+        length -= end_record_length;
+    }
     if (strcmp(line, "end_of_record") == 0) {
         if (!*section_open) return worker_error(worker, 2, filename, line_no, "end_of_record without SF record");
         if (*path && direct_preserve_last_path(worker, *path) != 0) return -1;
