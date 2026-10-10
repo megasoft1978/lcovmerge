@@ -21,7 +21,7 @@ it into the `bucket/lcovmerge.json` path in `megasoft1978/homebrew-tap` and open
 when `TAP_TOKEN` is configured.
 
 The `Scoop smoke` GitHub Actions workflow runs on pull requests that change this directory or
-`scripts/update-packaging.sh`. It defaults to the published v1.0.1 release; a manual run accepts another
+`scripts/update-packaging.sh`. It defaults to the published v1.0.2 release; a manual run accepts another
 published version. On Windows, it verifies the bootstrap script SHA-256 before running the pinned official
 Scoop installer, pins Scoop core to v0.6.0, compares the downloaded lcovmerge ZIP with the release checksum,
 checks `checkver` and forced autoupdate behavior, installs from a temporary local bucket, runs the version and

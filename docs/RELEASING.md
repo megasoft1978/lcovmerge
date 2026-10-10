@@ -15,7 +15,7 @@ tables with `python3 tools/render_benchmarks.py`.
 - [ ] Run parser tests, sanitizer/fuzz checks, and the documented regression suite in the code repository.
 - [ ] Verify runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
   confirm the release-target size budget job and the Windows release-binary job pass on the final commit.
-- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the published v1.0.1 download and checks byte-for-byte output against the CLI.
+- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the published v1.0.2 download and checks byte-for-byte output against the CLI.
 - [ ] Run `actionlint` and confirm the action references remain SHA-pinned and match `docs/validation/action-pins.txt`.
 - [ ] Verify Linux binaries are static musl builds and macOS/Windows artifacts match their target
 architecture.
@@ -58,7 +58,7 @@ The release workflow can open a package update pull request to `megasoft1978/hom
 configured; that repository contains both the Homebrew formula and Scoop bucket manifest. After the manifest is
 updated, run the `Scoop smoke` workflow from GitHub Actions and enter the published version without its leading
 `v`. Pull requests touching `packaging/scoop/**` or `scripts/update-packaging.sh` also run the smoke workflow
-against v1.0.1 by default.
+against v1.0.2 by default.
 
 The smoke workflow downloads the official Scoop installer at commit
 `1e2f334083d609986d8c8bc9e31ae8e87c39fab4` and verifies SHA-256

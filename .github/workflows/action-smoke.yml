@@ -64,7 +64,7 @@ jobs:
       - name: Run CLI oracle
         run: ${{ env.LCOVMERGE_PYTHON }} action/tests/run_oracle.py
 
-      - name: Merge with the published v1.0.1 Action
+      - name: Merge with the published v1.0.2 Action
         id: merge
         uses: ./
         with:
@@ -75,7 +75,7 @@ jobs:
           output: coverage/action-merged.info
           mem-limit: 8M
           extra-args: --branch-coverage on
-          version: v1.0.1
+          version: v1.0.2
 
       - name: Assert output, CLI parity, and summary
         env:
@@ -89,7 +89,7 @@ jobs:
         with:
           files: ""
           output: coverage/missing-files.info
-          version: v1.0.1
+          version: v1.0.2
 
       - name: Assert missing files input failed
         if: always()
@@ -105,7 +105,7 @@ jobs:
         with:
           files: coverage/bad.info
           output: coverage/malformed-output.info
-          version: v1.0.1
+          version: v1.0.2
 
       - name: Assert malformed LCOV input failed
         if: always()
