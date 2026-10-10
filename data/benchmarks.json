@@ -372,5 +372,166 @@
     "lcov-result-merger was unavailable in this run; its prior canonical measurements remain unchanged. Benchmark outputs were not compared against external tools.",
     "Dataset M sorted regular shards use the direct single-threaded path; --jobs timings record run variation and do not demonstrate worker scaling.",
     "The external Bazel issue is context only and was not measured with these commands."
+  ],
+  "host_results": [
+    {
+      "entry_schema_version": 1,
+      "id": "github:megasoft1978/lcovmerge:38028511293:1:88d58fcfe025d9fa92e781e0373fd9f12436bf16",
+      "label": "windows-latest GitHub-hosted benchmark host (Zig -Oz and MSYS2 UCRT64 GCC -O2)",
+      "measurement_date": "2026-10-10",
+      "host": {
+        "runner_label": "windows-latest",
+        "os": "Windows-2025Server-10.0.26100-SP0",
+        "kernel": "2025Server",
+        "os_build": "26100",
+        "architecture": "AMD64",
+        "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "logical_cores": 4,
+        "memory_bytes": 17174360064,
+        "compiler": "Zig 0.17.0; gcc.exe (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0",
+        "zig": "0.17.0",
+        "gcc": "gcc.exe (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0",
+        "lcov": "not measured (this run compares lcovmerge builds only)",
+        "rss_tool": "Windows GetProcessMemoryInfo PeakWorkingSetSize"
+      },
+      "source": {
+        "repository": "megasoft1978/lcovmerge",
+        "revision": "88d58fcfe025d9fa92e781e0373fd9f12436bf16",
+        "workflow": "Windows benchmark",
+        "run_id": "38028511293",
+        "run_attempt": "1"
+      },
+      "method": {
+        "runner": "bench/run-ci-windows.py",
+        "repeat_counts": {
+          "S": 5,
+          "M": 3,
+          "L": 2
+        },
+        "warmup_count": 1,
+        "wall_time_summary": "median and minimum of measured runs per binary",
+        "rss_summary": "maximum process lifetime PeakWorkingSetSize across measured runs; unknown unless all runs are sampled",
+        "rss_tool": "Windows GetProcessMemoryInfo PeakWorkingSetSize",
+        "timeout_seconds_per_run": 1800,
+        "cache_state": "no explicit cache flush; one warmup per binary; measured order alternates; runner load uncontrolled",
+        "generator": "tools/gen-lcov.py --benchmark-compatible --checksums using native Windows Python",
+        "temporary_data": "under .luna-tmp; generated dataset is removed after measurement"
+      },
+      "tool_labels": {
+        "lcovmerge": "lcovmerge 1.0.0 Zig 0.17.0 -Oz Windows x86_64",
+        "lcovmerge_ucrt64_gcc": "lcovmerge 1.0.0 MSYS2 UCRT64 GCC -O2"
+      },
+      "datasets": [
+        {
+          "name": "S",
+          "input_bytes": 99996906,
+          "shards": 8,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 0.742948,
+              "median_time_s": 0.742948,
+              "min_time_s": 0.735589,
+              "rss_bytes": 4546560,
+              "rss_mib": 4.335938,
+              "rss_display": null,
+              "rss_sample_count": 5,
+              "throughput_mb_s": 134.6,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 0.554377,
+              "median_time_s": 0.554377,
+              "min_time_s": 0.552852,
+              "rss_bytes": 5402624,
+              "rss_mib": 5.152344,
+              "rss_display": null,
+              "rss_sample_count": 5,
+              "throughput_mb_s": 180.4,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            }
+          }
+        },
+        {
+          "name": "M",
+          "input_bytes": 1118686233,
+          "shards": 32,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 9.505662,
+              "median_time_s": 9.505662,
+              "min_time_s": 9.492751,
+              "rss_bytes": 6381568,
+              "rss_mib": 6.085938,
+              "rss_display": null,
+              "rss_sample_count": 3,
+              "throughput_mb_s": 117.7,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 7.642444,
+              "median_time_s": 7.642444,
+              "min_time_s": 7.579035,
+              "rss_bytes": 7249920,
+              "rss_mib": 6.914062,
+              "rss_display": null,
+              "rss_sample_count": 3,
+              "throughput_mb_s": 146.4,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            }
+          }
+        },
+        {
+          "name": "L",
+          "input_bytes": 4853340843,
+          "shards": 64,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 652.354144,
+              "median_time_s": 652.354144,
+              "min_time_s": 652.062547,
+              "rss_bytes": 22949888,
+              "rss_mib": 21.886719,
+              "rss_display": null,
+              "rss_sample_count": 2,
+              "throughput_mb_s": 7.4,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 655.185935,
+              "median_time_s": 655.185935,
+              "min_time_s": 654.202,
+              "rss_bytes": 23748608,
+              "rss_mib": 22.648438,
+              "rss_display": null,
+              "rss_sample_count": 2,
+              "throughput_mb_s": 7.4,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            }
+          }
+        }
+      ],
+      "platform": "windows"
+    }
   ]
 }
