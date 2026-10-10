@@ -26,7 +26,7 @@
   <meta name="twitter:title" content="lcovmerge — merge LCOV shards with bounded memory">
   <meta name="twitter:description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
   <meta name="twitter:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta name="twitter:image:alt" content="lcovmerge merges 32 generated LCOV shards with elapsed time and memory measurements">
+  <meta name="twitter:image:alt" content="lcovmerge generated LCOV benchmark results for elapsed time and peak memory">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -175,8 +175,18 @@ tar -xzf "$asset"
             </section>
             <section class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
               <h3>macOS binary</h3>
-              <p>Choose the arm64 or x86_64 archive that matches your Mac.</p>
-              <pre><code>tar -xzf lcovmerge-1.0.0-macos-&lt;arch&gt;.tar.gz
+              <p>Download the release archive for your Mac, then verify and unpack it:</p>
+              <pre><code>set -eu
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+case "$(uname -m)" in
+  arm64|aarch64) asset=lcovmerge-1.0.0-macos-arm64.tar.gz ;;
+  x86_64|amd64) asset=lcovmerge-1.0.0-macos-x86_64.tar.gz ;;
+  *) echo "Unsupported Mac architecture: $(uname -m)" &gt;&amp;2; exit 1 ;;
+esac
+curl -fL "$base/$asset" -o "$asset"
+curl -fL "$base/SHA256SUMS" -o SHA256SUMS
+grep " $asset$" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
               <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/latest">Open the latest release ↗</a> · Archive names use <code>macos-arm64</code> or <code>macos-x86_64</code>.</p>
             </section>
@@ -191,14 +201,14 @@ tar -xzf "$asset"
               <h3>Homebrew</h3>
               <p>Install from the Homebrew tap. The formula pins the release archive’s SHA-256 checksum.</p>
               <pre><code>brew install megasoft1978/tap/lcovmerge</code></pre>
-              <p class="small-note">Tested on macOS arm64. For a manual install, verify the release archive with <code>SHA256SUMS</code>.</p>
+              <p class="small-note">The repository does not record a Homebrew install test. For a direct install, verify the release archive with <code>SHA256SUMS</code>.</p>
             </section>
             <section class="install-panel" id="panel-scoop" role="tabpanel" aria-labelledby="tab-scoop" tabindex="0" hidden>
               <h3>Scoop</h3>
               <p>Add the bucket and install the Windows x86_64 manifest. Its manifest pins the release archive’s SHA-256 checksum.</p>
               <pre><code>scoop bucket add lcovmerge https://github.com/megasoft1978/homebrew-tap
 scoop install lcovmerge</code></pre>
-              <p class="small-note">Not yet tested on Windows. For a manual install, verify the release archive with <code>SHA256SUMS</code>.</p>
+              <p class="small-note">The repository does not record a Windows Scoop install test. For a direct install, verify the release archive with <code>SHA256SUMS</code>.</p>
             </section>
             <section class="install-panel" id="panel-docker" role="tabpanel" aria-labelledby="tab-docker" tabindex="0" hidden>
               <h3>Docker · GitHub Container Registry</h3>
@@ -218,7 +228,7 @@ cd lcovmerge</code></pre>
             <section class="install-panel" id="panel-action" role="tabpanel" aria-labelledby="tab-action" tabindex="0" hidden>
               <h3>GitHub Actions</h3>
               <p>The action downloads and verifies the selected release before merging files in the workspace.</p>
-              <pre><code>- uses: megasoft1978/lcovmerge@v1
+              <pre><code>- uses: megasoft1978/lcovmerge@v1.0.0
   with:
     files: coverage-shards/*.info
     output: coverage/merged.info
@@ -273,7 +283,7 @@ cd lcovmerge</code></pre>
         <div class="section-heading">
           <p class="eyebrow">How it works</p>
           <h2 id="workflow-title">Read, sort, merge, stream.</h2>
-          <p>The merge path is designed to process inputs incrementally while respecting a configured memory limit.</p>
+          <p>Parsing is incremental and <code>--mem-limit</code> caps the record arena. Total RSS and temporary disk use are not fully capped.</p>
         </div>
         <div class="diagram-frame">
           <svg class="diagram" viewBox="0 0 960 185" role="img" aria-labelledby="flow-title flow-desc">

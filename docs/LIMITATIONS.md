@@ -27,13 +27,13 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 
 ## Performance and packaging limits
 
-- Dataset M measured 320.7 MB/s and 5,373,952 B peak RSS at default settings. The paired baseline measured 311.4 MB/s and 5,390,336 B; the final build was 1.03x faster on the median. LCOV 2.6 took 50.542 s for M, 14.49x the final merger time. Across the generated datasets, the final measured RSS stayed below 32 MiB; L was the highest at 26,279,936 B (25.06 MiB). The paired results and intermediate experiments are recorded in [the optimization log](validation/optimization-log.md) and [the benchmark report](validation/benchmark.txt).
-- The M `-j1`, `-j2`, `-j4`, and `-j8` runs measured 268.9, 302.1, 302.7, and 300.2 MB/s. Sorted regular files use the single-threaded stream path, so these results show run variation rather than worker scaling. Determinism was checked across job settings and input order.
-- Linux release binaries are statically linked against musl. macOS binaries dynamically link Apple's `libSystem.B.dylib`. Windows is built with static linking, but still uses Windows system APIs; executable runtime behavior remains unverified until a Windows CI run passes.
-- Benchmark measurements cover one macOS arm64 host and generated inputs. `REAL` was not measured because no project-derived capture was available. LCOV 2.6 exited with status 1 on PATH-HEAVY after 98.805 s, so no speedup is reported for that failed run. Apple `/usr/bin/time -l` could not query RSS under the host policy; lcovmerge peak RSS came from hyperfine, while successful LCOV comparator RSS values remain from the prior canonical measurements.
+- Performance figures depend on the recorded host, dataset, tool version, and measurement conditions. Consult the canonical [`data/benchmarks.json`](../data/benchmarks.json) and [benchmark report](BENCHMARKS.md) for the current results, run counts, and caveats. Failed or timed-out runs are not successful speed comparisons.
+- Already-sorted regular files use the single-threaded stream path. `-j` applies to the external-sort fallback, so a timing difference on a workload that stays on the stream path does not show worker scaling. The benchmark data records each run's host and input type.
+- Linux release binaries are statically linked against musl. macOS binaries dynamically link Apple's `libSystem.B.dylib`. Windows uses Windows system APIs; use the Windows CI smoke result as runtime evidence in addition to cross-build results.
+- The generated benchmark set's `REAL` case is not measured when no project-derived capture is available for that run. Separate small real-project compatibility results are documented in [the validation report](validation/real-projects.md). Measurement tools and RSS availability also differ by host; check the recorded method before comparing results.
 
 Benchmark and dependency evidence: [benchmark results](validation/benchmark.txt), [macOS dependencies](validation/macos-dependencies.txt), and [cross-build checks](validation/cross-build.txt).
 
 ## Verification status
 
-Platform-specific and performance claims are limited to the evidence recorded under validation. A successful Windows PE build does not establish Windows runtime behavior; a passing Windows CI run is still required.
+Platform-specific and performance claims are limited to the evidence recorded under validation. A Windows PE cross-build alone does not establish runtime behavior; consult the Windows CI smoke result for runtime evidence.

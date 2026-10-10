@@ -15,15 +15,15 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
   <meta property="og:title" content="Usage and options — lcovmerge">
-  <meta property="og:description" content="Command-line reference and verified CI recipes for merging LCOV tracefiles.">
+  <meta property="og:description" content="Command-line reference and example CI recipes for merging LCOV tracefiles.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/docs.html">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta property="og:image:alt" content="lcovmerge command-line reference and verified CI recipes">
+  <meta property="og:image:alt" content="lcovmerge command-line reference and example CI recipes">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Usage and options — lcovmerge">
-  <meta name="twitter:description" content="Command-line reference and verified CI recipes for merging LCOV tracefiles.">
+  <meta name="twitter:description" content="Command-line reference and example CI recipes for merging LCOV tracefiles.">
   <meta name="twitter:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta name="twitter:image:alt" content="lcovmerge command-line reference and verified CI recipes">
+  <meta name="twitter:image:alt" content="lcovmerge command-line reference and example CI recipes">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -139,7 +139,7 @@ lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
           pattern: coverage-*
           path: coverage-shards
           merge-multiple: true
-      - uses: megasoft1978/lcovmerge@v1
+      - uses: megasoft1978/lcovmerge@v1.0.0
         with:
           files: coverage-shards/*.info
           output: coverage/merged.info

@@ -441,7 +441,10 @@ def site_benchmarks():
         "data_kind": DATA.get("data_kind", "generated"),
         "environment": DATA["environment"],
     }
-    return {**metadata, "datasets": datasets}
+    site_data = {**metadata, "datasets": datasets}
+    if isinstance(DATA.get("host_results"), list):
+        site_data["host_results"] = DATA["host_results"]
+    return site_data
 
 
 def replace_section(path, content):
