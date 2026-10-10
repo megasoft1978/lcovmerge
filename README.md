@@ -4,33 +4,33 @@
 [![Release v1.0.0](docs/site/badges/release.svg)](https://github.com/megasoft1978/lcovmerge/releases/latest)
 [![MIT License](docs/site/badges/license.svg)](LICENSE)
 
-<!-- HERO-PROOF:START -->
-> **Dataset M · generated, 32 shards · 1,118,686,233 input bytes**<br>
-> lcovmerge: **3.488279 s**, **5,373,952 B peak RSS** (median of 5 runs).<br>
-> lcov 2.6: **50.542 s**, **639,844,352 B peak RSS** (one run; prior canonical RSS measurement).<br>
-> One macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox) host; no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.
-<!-- HERO-PROOF:END -->
+**Merge existing LCOV shards after test jobs finish.**
 
-`lcovmerge` combines existing LCOV `.info` shards at the end of a coverage pipeline. This focused C11 CLI
-produces deterministic output with a configurable record-memory budget; your collector, report generator, and
-uploader keep their jobs.
+lcovmerge is a C11 CLI with a configurable record-arena budget and deterministic canonical output. It writes
+one tracefile for a downstream report or uploader. Keep your collector and report generator.
 
-[Get the release](https://github.com/megasoft1978/lcovmerge/releases/latest) ·
-[Read the usage guide](docs/USAGE.md) ·
-[See what it does not promise](docs/LIMITATIONS.md)
+## Try it now
 
-## Why use lcovmerge?
+Download and verify the Linux x86-64 release archive, then merge the tracefiles your test jobs produced:
 
-| Memory-bounded | Deterministic | Fast and portable |
-| --- | --- | --- |
-| Streams tracefiles, caps the record arena, and spills sort runs to temporary disk. | Emits canonical output that is byte-identical across input order and job settings when options and inputs are the same. | One small C11 executable per target; no Node.js or JVM runtime in the merge job. Linux builds are static musl binaries. |
+```sh
+asset=lcovmerge-1.0.0-linux-x86_64.tar.gz
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+curl -fL "$base/$asset" -o "$asset"
+curl -fL "$base/SHA256SUMS" -o SHA256SUMS
+grep " $asset$" SHA256SUMS | sha256sum -c -
+tar -xzf "$asset"
+./lcovmerge coverage/shard-*.info -o coverage/merged.info
+genhtml coverage/merged.info --output-directory coverage/html
+```
 
-The memory option limits the record arena, not total process RSS. Leave room for process overhead and temporary
-disk space. See [limits and compatibility](docs/LIMITATIONS.md) before switching an established workflow.
+The last command is the existing report step. On macOS, use `shasum -a 256 -c -` and choose the `macos-arm64` or
+`macos-x86_64` archive. Windows release assets use a zip; runtime verification is still pending a passing
+Windows CI run. See [install and CI notes](docs/INTEGRATIONS.md).
 
-## Replace the merge command
+## Before and after
 
-If your pipeline only needs to combine existing `.info` files, the merge step can look like this:
+Replace only the merge step:
 
 ```sh
 # Before
@@ -43,38 +43,34 @@ lcovmerge shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html
 ```
 
-lcovmerge writes an LCOV tracefile for downstream tools that consume LCOV, including `genhtml`, Codecov, and
-Coveralls. Some SonarQube analyzers also accept LCOV; SonarQube's C/C++ analyzer expects gcov or llvm-cov
-reports, so keep that compiler-specific flow for C/C++ analysis. This is a focused merge step, not a promise
-that every `lcov -a` option or output byte is interchangeable. See [the comparison](docs/COMPARISON.md) and
-[FAQ](docs/FAQ.md#is-the-output-identical-to-lcov--a).
+This is not a drop-in replacement for `lcov -a`. The tools differ in how they handle some records, summaries,
+checksums, and MC/DC data. See [migration notes](docs/MIGRATING-FROM-LCOV.md) before switching.
 
-## Try it in 30 seconds
+## Why use it?
 
-Download the archive for your platform from the [latest release](https://github.com/megasoft1978/lcovmerge/releases/latest).
-For Linux x86-64, verify the checksum, unpack the binary, and merge:
+- **A record-arena budget:** external sorting writes runs to temporary files when needed. `--mem-limit` is not
+  a cap on total process RSS or temporary disk use.
+- **Canonical output:** the same inputs, options, and build produce byte-identical output across input order
+  and job settings. This does not promise byte-for-byte output matching LCOV.
+- **A focused C11 executable:** the merge job does not need a Node.js or JVM runtime. lcovmerge accepts
+  already-generated LCOV tracefiles; it does not collect coverage or render reports.
 
-```sh
-asset=lcovmerge-1.0.0-linux-x86_64.tar.gz
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
-curl -fL "$base/$asset" -o "$asset"
-curl -fL "$base/SHA256SUMS" -o SHA256SUMS
-grep " $asset$" SHA256SUMS | sha256sum -c -
-tar -xzf "$asset"
-./lcovmerge --version
-./lcovmerge coverage/shard-*.info -o coverage/merged.info
+## Where it fits
+
+```text
+test jobs → collectors / exporters → LCOV shard artifacts → lcovmerge → one LCOV file → report or uploader
 ```
 
-On macOS, replace `sha256sum -c` with `shasum -a 256 -c` and select the `macos-arm64` or `macos-x86_64`
-archive. Windows uses the `windows-x86_64` zip. The release page provides the available assets; if a release
-archive is not available yet, [build from source](#build-from-source).
+If `genhtml` or an uploader can consume the shard files directly and you do not need one consolidated file,
+you may not need a separate merge step.
 
-## CI and distribution
+## Install and CI
 
-### GitHub Actions
+The [latest release](https://github.com/megasoft1978/lcovmerge/releases/latest) provides Linux, macOS, and
+Windows archives. Verify archives with `SHA256SUMS`. The [Homebrew and Scoop tap](https://github.com/megasoft1978/homebrew-tap)
+has package definitions; package-manager installation is not recorded as tested in this repository.
 
-After downloading each test shard as an artifact, use the reusable action to merge them. The action downloads
-the selected release and verifies its SHA-256 checksum before running it.
+For GitHub Actions, pin the reusable action to the verified release tag:
 
 ```yaml
 - name: Merge coverage
@@ -87,40 +83,23 @@ the selected release and verifies its SHA-256 checksum before running it.
     mem-limit: 256M
 ```
 
-See the complete [GitHub Actions recipe](docs/INTEGRATIONS.md#github-actions) and examples for
-[GitLab](docs/INTEGRATIONS.md#gitlab-ci), [Bazel](docs/INTEGRATIONS.md#bazel), and
-[CMake with gcov](docs/INTEGRATIONS.md#cmake-and-gcov).
+See [copyable CI and exporter recipes](docs/RECIPES.md) for GitHub Actions, GitLab, Jenkins, CMake, Bazel,
+Rust, JavaScript, Python, Go, and JaCoCo. The action's inputs and Windows qualification are in
+[action/README.md](action/README.md).
 
-### Docker
+## Measured results
 
-Release tags publish a multi-architecture image to GitHub Container Registry. Mount the workspace so the
-container can read shard files and write its result:
+The generated benchmark results below are workload-specific. The renderer owns these sections and adds the
+dataset, host, run counts, status, and measurement caveats.
 
-```sh
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.0 \
-  --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
-```
-
-### Homebrew and Scoop
-
-Formula and manifest templates live in the repository. The release workflow opens a package-update pull
-request when its tap token is configured; package-manager installation depends on that update being merged.
-The [Homebrew/Scoop tap](https://github.com/megasoft1978/homebrew-tap) currently carries v1.0.0. The
-repository does not record a Homebrew or Scoop installation test. Install with:
-
-```sh
-brew install megasoft1978/tap/lcovmerge
-scoop bucket add lcovmerge https://github.com/megasoft1978/homebrew-tap
-scoop install lcovmerge
-```
-
-If the package is not present there yet, use the verified release archive instead.
-
-## What the benchmarks show
-
-These generated-input comparisons give one concrete view of memory and elapsed time. The table is rendered
-from [`data/benchmarks.json`](data/benchmarks.json); failed and timed-out runs stay visible, and the report
-explains the limits of the comparison.
+<!-- markdownlint-disable MD033 -->
+<!-- HERO-PROOF:START -->
+> **Dataset M · generated, 32 shards · 1,118,686,233 input bytes**<br>
+> lcovmerge: **3.488279 s**, **5,373,952 B peak RSS** (median of 5 runs).<br>
+> lcov 2.6: **50.542 s**, **639,844,352 B peak RSS** (one run; prior canonical RSS measurement).<br>
+> One macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox) host; no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.
+<!-- HERO-PROOF:END -->
+<!-- markdownlint-enable MD033 -->
 
 <!-- BENCH-CONTEXT:START -->
 Host: macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox), 18 cores, 64 GiB RAM; no
@@ -139,11 +118,13 @@ per dataset. Per-command timeout: 30 minutes.
 | PATH-HEAVY (130,000,000) | 2.122 s / 20.23 MiB / 61.3 MB/s / OK | 98.805 s / RSS unavailable for current failed run / n/a / ERROR_1 | 1,800.002 s / 842 MiB sampled in final 308 s; full-run peak unavailable / n/a / TIMEOUT |
 <!-- BENCHMARKS:END -->
 
-These generated-input measurements are not a promise for every project or machine. The synthetic benchmark set
-has no project-derived REAL run; separate small real-project compatibility measurements follow. See the [full
-benchmark report](docs/BENCHMARKS.md) for tool versions, run counts, methodology, and caveats.
+See the [benchmark report](docs/BENCHMARKS.md) for the method and full caveats. Failed, timed-out, and
+unavailable comparisons remain visible in the rendered results.
 
-## Tested on real projects (small inputs)
+## Real-project compatibility
+
+The following generated section describes the project-derived captures, their scope, and the comparison
+method. These are compatibility checks, not large production benchmarks.
 
 <!-- REAL-PROJECTS:START -->
 8 small project-derived LCOV captures were checked on one macOS 27.0 arm64 host. Each project used multiple shards,
@@ -173,45 +154,33 @@ Java heap above 10 GB. It also shows a 745 MB single-file case failing with a he
 reported workload, not a universal result for Bazel.
 <!-- BAZEL-EVIDENCE:END -->
 
-The [Bazel issue #26383](https://github.com/bazelbuild/bazel/issues/26383) is useful context for the
-memory cost of a large coverage merge. It is a report about Bazel's own `CoverageOutputGenerator`, not a
-benchmark of lcovmerge or a claim that this tool changes Bazel's implementation.
+The Bazel note is context from a reported workload about Bazel's own coverage generator. It is not a
+lcovmerge benchmark.
 
-## When not to use it
+## Comparison and limits
 
-- Keep `lcov -a` when you depend on its testcase, checksum, MC/DC, or configuration semantics, or need output
-  identical to lcov. lcovmerge canonicalizes records and has documented semantic differences.
-- Keep your existing collector when you need to capture raw `.gcda`, `.profraw`, or other compiler/runtime
-  data. lcovmerge accepts already-generated LCOV tracefiles only.
-- Keep a tool with MC/DC support when reports rely on MC/DC accounting semantics. lcovmerge does not make
-  that guarantee.
-- Check the worker's free disk and temporary directory. External sorting can use temporary storage
-  proportional to the input; `--mem-limit` is not a total RSS or disk cap.
-- Do not expect `-j` to speed up one large input file. Parallel parsing is across files, and the merge stage
-  itself is single-threaded.
+| Choose | When it fits |
+| --- | --- |
+| **lcov / genhtml** | You need collection, filtering, report generation, or lcov-specific `-a` semantics. `genhtml` may be able to consume multiple tracefiles directly. |
+| **fastcov** | You want a parallelized gcov collector with its own `.info` and JSON combine workflow. No fastcov comparison is included in this project's benchmark data. |
+| **grcov / gcovr** | You want their collection and report pipeline, need to process their native coverage inputs, or can merge gcovr JSON with gcovr. |
+| **Native raw-profile merge** | Your shards are still raw LLVM profiles, nyc data, coverage.py data, or Bazel coverage inputs. Use the matching native merge/export step before LCOV. |
 
-See [all limitations and intentional differences](docs/LIMITATIONS.md) and the
-[comparison](docs/COMPARISON.md).
+Use lcovmerge when independent jobs have already produced LCOV and a later step needs one tracefile. Keep the
+current tool when you rely on lcov-specific testcase or MC/DC behavior, exact `lcov -a` output, raw coverage
+collection, or a merge job without temporary disk headroom. Read [all limitations](docs/LIMITATIONS.md) and
+the [comparison details](docs/COMPARISON.md).
 
 ## Trust and maintenance
 
-- CI runs the golden, malformed-input, differential, determinism, and documentation checks; separate jobs run
-  ASan/UBSan and a fuzz smoke test. See the [CI workflow](.github/workflows/ci.yml).
-- Run the same local checks with `make test`, `make asan`, and `make fuzz`.
-- Release assets include `SHA256SUMS` and a CycloneDX SBOM, with GitHub build provenance. The Action verifies
-  the matching release checksum before execution. See the [release workflow](.github/workflows/release.yml).
-- The project is MIT licensed and does not bundle an external font, analytics script, or tracking pixel on
-  its static site.
+- The repository CI workflow defines functional, malformed-input, differential, deterministic, documentation,
+  ASan/UBSan, and fuzz checks.
+- The recorded 2026-10-10 soak run passed `make test` (698,548 assertions), `make asan`, and a five-million
+  execution fuzz run across eleven corpus seeds on Darwin 27.0 arm64. Dedicated leak detection was unavailable
+  on that host; see the [soak record](docs/validation/soak.md).
+- Release assets include `SHA256SUMS`, a CycloneDX SBOM, and GitHub build provenance. The GitHub Action checks
+  the selected release archive against its checksum before execution.
+- Build from source with `git clone https://github.com/megasoft1978/lcovmerge.git`, `cd lcovmerge`, then
+  `make`. The project is licensed under [MIT](LICENSE).
 
-## Build from source
-
-Requires a C11 compiler and `make`:
-
-```sh
-git clone https://github.com/megasoft1978/lcovmerge.git
-cd lcovmerge
-make
-```
-
-Then run `bin/lcovmerge --help`. The [usage guide](docs/USAGE.md) documents the full CLI, including path
-rebasing, filtering, list files, temporary-directory selection, and strict checksum handling.
+Read the [FAQ](docs/FAQ.md), [CLI usage](docs/USAGE.md), or [open an issue](https://github.com/megasoft1978/lcovmerge/issues).

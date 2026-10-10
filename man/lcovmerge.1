@@ -102,10 +102,12 @@ Merge LCOV files from test shards:
 lcovmerge coverage/shard-*.info -o coverage/merged.info
 .fi
 .PP
-Read paths from a list file and choose a temporary directory:
+Create a temporary directory and read paths from a list file:
 .PP
 .nf
-lcovmerge --mem-limit 128M --tmpdir /scratch/lcovmerge \\
+tmpdir=${TMPDIR:-/tmp}/lcovmerge
+mkdir -p "$tmpdir"
+lcovmerge --mem-limit 128M --tmpdir "$tmpdir" \\
   @coverage-inputs.txt -o merged.info
 .fi
 .PP

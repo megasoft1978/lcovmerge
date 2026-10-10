@@ -26,8 +26,9 @@ merge bookkeeping, thread stacks, and temporary files are outside this cap.
 
 ### `--tmpdir DIR`
 
-Store temporary sorted runs under `DIR`. The default is the operating system's temporary directory. Temporary
-runs are removed when processing finishes or fails.
+Store external-sort runs under an existing `DIR`. The default is the operating system's temporary directory.
+Runs are removed on success and handled failures. On POSIX, caught SIGINT, SIGTERM, and SIGHUP also trigger
+cleanup; SIGKILL or machine failure can leave named run files behind.
 
 ### `-j N`, `--jobs N`
 
@@ -127,3 +128,9 @@ The parser recognizes `TN`, `SF`/`KF`, legacy `FN`/`FNDA`, LCOV 2.x `FNL`/`FNA`,
 checksums, `BRDA`, and `MCDC`. Existing summary rows are ignored and regenerated from the merged coverpoints.
 Unknown colon-delimited rows inside a source section are preserved in sorted order; exact duplicate unknown
 rows are preserved too.
+
+## Related guides
+
+- [Migrate from `lcov -a`](MIGRATING-FROM-LCOV.md), including flag mapping and a verification checklist.
+- [CI and format-export recipes](RECIPES.md).
+- [Frequently asked questions](FAQ.md).
