@@ -5,27 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f9f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#09130f" media="(prefers-color-scheme: dark)">
-  <meta name="description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
+  <meta name="description" content="Merge existing LCOV .info shards into one file after test jobs finish. Keep your collector and report step.">
   <meta name="robots" content="index,follow">
-  <title>lcovmerge — merge existing LCOV shards with bounded record memory</title>
+  <title>lcovmerge — merge existing LCOV shards</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="site.css">
   <script src="site.js" defer></script>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
-  <meta property="og:title" content="lcovmerge — merge existing LCOV shards with bounded record memory">
-  <meta property="og:description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
+  <meta property="og:title" content="lcovmerge — merge existing LCOV shards">
+  <meta property="og:description" content="Merge existing LCOV .info shards into one file after test jobs finish. Keep your collector and report step.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta property="og:image:alt" content="lcovmerge: merge existing LCOV shards with bounded record memory and deterministic output">
+  <meta property="og:image:alt" content="lcovmerge combines existing LCOV .info files into one file">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="lcovmerge — merge existing LCOV shards with bounded record memory">
-  <meta name="twitter:description" content="Merge existing LCOV tracefiles with deterministic output and bounded record memory. See measured results, methodology, and caveats.">
+  <meta name="twitter:title" content="lcovmerge — merge existing LCOV shards">
+  <meta name="twitter:description" content="Merge existing LCOV .info shards into one file after test jobs finish. Keep your collector and report step.">
   <meta name="twitter:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta name="twitter:image:alt" content="lcovmerge merges existing LCOV shards with bounded record memory and deterministic output">
+  <meta name="twitter:image:alt" content="lcovmerge combines existing LCOV .info files into one file">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -34,7 +34,7 @@
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS; Windows CI-verified only",
     "softwareVersion": "1.0.1",
-    "description": "C11 command-line merger for existing LCOV .info tracefiles. Writes deterministic output with a configurable record-memory budget; does not collect coverage or generate reports.",
+    "description": "C11 command-line tool that combines existing LCOV .info files. Its memory setting limits memory reserved for coverage records while sorting; total process memory can be higher, and sorting uses temporary disk. It does not collect coverage or generate reports.",
     "license": "https://opensource.org/license/mit",
     "url": "https://megasoft1978.github.io/lcovmerge/",
     "codeRepository": "https://github.com/megasoft1978/lcovmerge",
@@ -51,7 +51,7 @@
         <span class="brand-mark" aria-hidden="true">LC</span><span class="brand-word">lcov<span>merge</span></span>
       </a>
       <nav class="main-nav" aria-label="Main navigation">
-        <a href="docs.html">Docs</a>
+        <a href="docs.html">Usage</a>
         <a href="benchmarks.html">Benchmarks</a>
         <a class="nav-github" href="https://github.com/megasoft1978/lcovmerge">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
@@ -59,58 +59,35 @@
   </header>
 
   <main id="main">
-    <div class="shell hero">
-      <div class="hero-copy-block">
-        <!-- HERO-PROOF:START -->
-<p class="eyebrow">LCOV tracefile merge · C11 · MIT</p>
-        <h1>Merge existing LCOV shards with bounded record memory.</h1>
-        <p class="hero-copy">Merge existing <code>.info</code> files into deterministic output. Keep your collector and report generator.</p>
-        <div class="actions">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="shell hero-layout">
+        <div class="hero-copy-block">
+          <!-- HERO-PROOF:START -->
+<p class="eyebrow">LCOV .info merger · C11 · MIT</p>
+        <h1 id="hero-title">Merge existing LCOV shards after your test jobs.</h1>
+        <p class="hero-copy">Turn existing .info files into one LCOV file. Keep your collector and report step.</p>
+        <div class="hero-actions">
           <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Download v1.0.1</a>
-          <a class="button secondary" href="docs.html#github-actions">GitHub Action</a>
+          <a class="action-link" href="docs.html#github-actions">Use in GitHub Actions</a>
         </div>
-        <p class="hero-note">The <code>--mem-limit</code> budget covers the record arena, not total RSS or temporary disk. lcovmerge is not a drop-in for <code>lcov -a</code>. Read <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits &amp; semantics</a>.</p>
-<!-- HERO-PROOF:END -->
-        <section class="quick-merge card" aria-labelledby="quick-merge-title">
+        <div class="quick-merge card" aria-labelledby="quick-merge-title">
           <p class="eyebrow">Quick merge</p>
           <h2 id="quick-merge-title">Merge, then keep your report step.</h2>
           <pre class="code-block" data-copy-label="Copy merge and genhtml commands"><code>lcovmerge coverage/shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html</code></pre>
-        </section>
-      </div>
-      <aside class="hero-card" aria-labelledby="hero-results-title">
-        <!-- HERO-CARD:START -->
-<p class="eyebrow">Measured on generated LCOV</p>
-        <h2 id="hero-results-title">Dataset M · 32 shards</h2>
-        <p id="hero-benchmark-context">Generated input: 1,118,686,233 bytes · macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09</p>
-        <div class="metric-grid">
-          <div class="metric">
-            <strong data-benchmark-value="datasets.0.results.0.seconds_display">3.488279 s</strong>
-            <span>lcovmerge 1.0.1 · median of 5 measured runs</span>
-            <span class="metric-detail">5,373,952 B peak RSS</span>
-          </div>
-          <div class="metric">
-            <strong data-benchmark-value="datasets.0.results.1.seconds_display">50.542 s</strong>
-            <span>lcov 2.6 · 1 measured run(s)</span>
-            <span class="metric-detail">Status: OK</span>
-          </div>
         </div>
-        <p class="bench-note">One generated workload on one recorded host. no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.</p>
-        <a class="text-link" href="benchmarks.html#method-title">Method and caveats ↗</a>
+        <p class="hero-note">The memory setting limits memory reserved for coverage records while sorting. Total process memory can be higher, and sorting uses temporary disk. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Read the limits</a>.</p>
+<!-- HERO-PROOF:END -->
+        </div>
+        <aside class="hero-card" aria-labelledby="hero-results-title">
+          <!-- HERO-CARD:START -->
+<p class="eyebrow">Measured on generated LCOV</p>
+        <h2 id="hero-results-title">Dataset M · 1,118,686,233 bytes · 32 shards</h2>
+        <p><strong>lcovmerge 1.0.0</strong>: 3.488279 s median of 5 runs; 5,373,952 B peak resident memory.</p>
+        <p>One macOS 27.0 arm64 host. no explicit cache flush; paired hyperfine warmups; machine load uncontrolled.</p>
+        <a class="text-link" href="benchmarks.html#method-title">Full data and method ↗</a>
 <!-- HERO-CARD:END -->
-      </aside>
-    </div>
-
-    <section class="trust-strip" aria-label="Validation and release records">
-      <div class="shell trust-strip-inner">
-        <p class="eyebrow">Validated</p>
-        <ul>
-          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/.github/workflows/ci.yml">CI workflow</a><span>Build and test jobs, including Windows CI</span></li>
-          <li><a href="https://github.com/megasoft1978/lcovmerge/releases/latest">Checksums, SBOM, provenance</a><span>Release files and build attestation</span></li>
-          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">Project-derived checks</a><span>Small compatibility inputs; one macOS host; scope and exclusions recorded</span></li>
-          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/soak.md">Soak results</a><span>Recorded macOS test, sanitizer, and fuzz runs</span></li>
-        </ul>
-        <p class="trust-scope">Windows validation is CI-only. Project-derived and soak results describe their recorded host and scope.</p>
+        </aside>
       </div>
     </section>
 
@@ -118,133 +95,70 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
       <div class="shell">
         <div class="section-heading">
           <p class="eyebrow">Where it fits</p>
-          <h2 id="where-title">One merge step after coverage collection.</h2>
-          <p>lcovmerge starts with LCOV files that already exist. It does not collect coverage or render the report.</p>
+          <h2 id="where-title">Add one merge after LCOV export.</h2>
         </div>
         <ol class="pipeline-flow" aria-label="Coverage artifact flow">
-          <li><strong>Collector</strong><span>Keep the tool that records your tests.</span></li>
-          <li><strong>Per-job <code>.info</code></strong><span>Each test job writes its LCOV artifact.</span></li>
-          <li><strong>lcovmerge</strong><span>Combine the existing shards into one LCOV file.</span></li>
-          <li><strong>genhtml or uploader</strong><span>Keep your report or upload step.</span></li>
+          <li><strong>Collect</strong><span>Keep your coverage tool.</span></li>
+          <li><strong>Export .info files</strong><span>One file from each test job.</span></li>
+          <li><strong>Merge</strong><span>Combine them with lcovmerge.</span></li>
+          <li><strong>Report or upload</strong><span>Use the one LCOV output.</span></li>
         </ol>
+        <p class="fit-summary">Use lcovmerge when separate .info files must become one output. Skip it if your report tool accepts each shard; export raw coverage first. It is not a drop-in for <code>lcov -a</code>; compare your records and reports before switching.</p>
       </div>
     </section>
 
-    <section class="section alt" aria-labelledby="fit-title">
+    <section class="section section-alt" aria-labelledby="why-title">
       <div class="shell">
         <div class="section-heading">
-          <p class="eyebrow">Fit and alternatives</p>
-          <h2 id="fit-title">Use the tool that matches the artifact you have.</h2>
-        </div>
-        <div class="grid-2 fit-grid">
-          <article class="card">
-            <h3>When lcovmerge fits</h3>
-            <p>You already have separate LCOV <code>.info</code> files and want one canonical file for a downstream step. Record memory is configurable; path rebasing and deterministic output are available when their semantics fit.</p>
-          </article>
-          <article class="card">
-            <h3>When another path fits better</h3>
-            <p>Keep your collector or report tool when you need capture, conversion, exact <code>lcov -a</code> behavior, or a report directly from tracefile patterns. Use the native merge step while artifacts are still raw profiles or another tool’s own format.</p>
-          </article>
-        </div>
-        <div class="table-wrap comparison-wrap">
-          <table class="comparison-table">
-            <caption>Neutral workflow comparison. lcovmerge handles existing LCOV tracefiles only.</caption>
-            <thead><tr><th scope="col">Workflow</th><th scope="col">Typical input or job</th><th scope="col">Where lcovmerge fits</th></tr></thead>
-            <tbody>
-              <tr><th scope="row">lcov + genhtml</th><td>Capture, process, and render coverage. genhtml can also read tracefile patterns directly.</td><td>Use a separate merge when one LCOV artifact is the handoff you need; keep lcov for its other behavior.</td></tr>
-              <tr><th scope="row">fastcov</th><td>GCC coverage collection, with combine mode for LCOV or JSON reports.</td><td>Use fastcov when its collector and combine workflow matches your pipeline. lcovmerge is another option after LCOV files exist.</td></tr>
-              <tr><th scope="row">grcov / gcovr</th><td>Collection, conversion, and reporting workflows with their own input and merge paths.</td><td>Use their native merge path for their own formats; export separate LCOV files before using lcovmerge.</td></tr>
-              <tr><th scope="row">Native raw-profile merge</th><td>For example, LLVM <code>.profraw</code> profiles merged with <code>llvm-profdata</code>.</td><td>Merge raw profiles with the matching tool first. lcovmerge applies after those results are exported as LCOV.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="small-note">The command shape does not make lcovmerge a drop-in for <code>lcov -a</code>. See <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">the semantic differences</a>.</p>
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="why-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Why this exists</p>
-          <h2 id="why-title">Keep the merge job from becoming the coverage bottleneck.</h2>
-          <p>Monorepos and test-sharded pipelines combine many tracefiles at the end of a build. Bazel, CMake, and Gradle C++ teams can use lcovmerge when their existing coverage steps already write LCOV.</p>
-        </div>
-        <div class="problem-band">
-          <div>
-            <h3>Large coverage merges can demand more than the runner has.</h3>
-            <p><a href="https://github.com/bazelbuild/bazel/issues/26383">Bazel issue #26383</a> reports high heap use in Bazel’s own coverage output generator. That issue is context for the problem; lcovmerge does not change Bazel’s implementation, and the issue’s workload was not part of our benchmark.</p>
-          </div>
-          <div class="problem-links">
-            <a href="https://github.com/bazelbuild/bazel/issues/26383">Bazel issue #26383 ↗</a>
-            <a href="benchmarks.html">Review the measured cases ↗</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" aria-labelledby="pillars-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Three reasons to switch the merge step</p>
-          <h2 id="pillars-title">A smaller, predictable job at the end of CI.</h2>
+          <p class="eyebrow">Why use it</p>
+          <h2 id="why-title">A focused step for existing LCOV files.</h2>
         </div>
         <div class="grid-3">
           <article class="card">
-            <p class="card-kicker">Memory-bounded</p>
-            <h3>Cap record memory.</h3>
-            <p>Stream records and spill sorted runs to temporary disk. <code>--mem-limit</code> caps the record arena; total RSS and disk use are separate.</p>
+            <h3>Set a record-memory limit</h3>
+            <p>Choose memory reserved for coverage records. Total process memory can be higher; sorted batches use temporary disk.</p>
           </article>
           <article class="card">
-            <p class="card-kicker">Deterministic</p>
-            <h3>Get canonical output.</h3>
-            <p>The same inputs and options produce byte-identical output across input order and <code>-j</code> settings.</p>
+            <h3>Keep output order stable</h3>
+            <p>The same inputs, options, and build produce the same bytes across shard order and worker settings; this does not promise byte-for-byte identity with LCOV.</p>
           </article>
           <article class="card">
-            <p class="card-kicker">Fast &amp; portable</p>
-            <h3>Keep the merge lean.</h3>
-            <p>One C11 executable per target, with no Node.js or JVM runtime. Linux builds are static musl; macOS uses the system library; Windows uses Windows APIs.</p>
+            <h3>Use one C11 program</h3>
+            <p>The merge job does not need a Node.js or Java runtime.</p>
           </article>
         </div>
-        <p class="small-note">Memory accounting, platform validation, and semantics are documented in <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">limitations and intentional differences</a>.</p>
       </div>
     </section>
 
-    <section class="section" aria-labelledby="install-title" id="install">
+    <section class="section" id="install" aria-labelledby="install-title">
       <div class="shell">
         <div class="section-heading">
-          <p class="eyebrow">Get started</p>
-          <h2 id="install-title">Install the binary or use your CI action.</h2>
-          <p>Choose an operating system first, or use the reusable GitHub Action when your shards are workflow artifacts. The browser suggests a tab when its platform is available; all choices remain visible.</p>
-          <p class="small-note">Direct release: <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">lcovmerge v1.0.1 assets and SHA256SUMS ↗</a>.</p>
+          <p class="eyebrow">Install</p>
+          <h2 id="install-title">Choose your operating system.</h2>
+          <p>Release archives include SHA256SUMS. Each command verifies the archive and checks the installed version.</p>
         </div>
         <div class="install-wrap">
-          <div class="install-tabs" role="tablist" aria-label="Choose an installation method">
+          <div class="install-tabs" role="tablist" aria-label="Choose an operating system">
             <button id="tab-linux" type="button" role="tab" aria-selected="true" aria-controls="panel-linux" tabindex="0">Linux</button>
             <button id="tab-macos" type="button" role="tab" aria-selected="false" aria-controls="panel-macos" tabindex="-1">macOS</button>
             <button id="tab-windows" type="button" role="tab" aria-selected="false" aria-controls="panel-windows" tabindex="-1">Windows</button>
-            <button id="tab-homebrew" type="button" role="tab" aria-selected="false" aria-controls="panel-homebrew" tabindex="-1">Homebrew</button>
-            <button id="tab-scoop" type="button" role="tab" aria-selected="false" aria-controls="panel-scoop" tabindex="-1">Scoop</button>
-            <button id="tab-docker" type="button" role="tab" aria-selected="false" aria-controls="panel-docker" tabindex="-1">Docker</button>
-            <button id="tab-source" type="button" role="tab" aria-selected="false" aria-controls="panel-source" tabindex="-1">Source</button>
-            <button id="tab-action" type="button" role="tab" aria-selected="false" aria-controls="panel-action" tabindex="-1">GitHub Action</button>
           </div>
           <div class="install-content">
-            <section class="install-panel" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
-              <h3>Linux · static musl binary</h3>
-              <p>For a quick Linux x86-64 install, download the release archive, verify it, and run the binary.</p>
-              <pre><code>asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+            <div class="install-panel" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
+              <h3>Linux · x86-64</h3>
+              <p>For Linux ARM64, choose its matching archive from the release page.</p>
+              <pre class="code-block" data-copy-label="Copy Linux download and checksum commands"><code>set -eu
+asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
 base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
 curl -fL "$base/$asset" -o "$asset"
 curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 grep " $asset$" SHA256SUMS | sha256sum -c -
 tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
-              <p class="small-note">Choose the matching <code>linux-x86_64</code> or <code>linux-aarch64</code> archive and its checksum from the <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">v1.0.1 release page ↗</a>.</p>
-            </section>
-            <section class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
-              <h3>macOS binary</h3>
-              <p>Download the release archive for your Mac, then verify and unpack it:</p>
-              <pre><code>set -eu
+            </div>
+            <div class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
+              <h3>macOS · Apple silicon or Intel</h3>
+              <pre class="code-block" data-copy-label="Copy macOS download and checksum commands"><code>set -eu
 base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
 case "$(uname -m)" in
   arm64|aarch64) asset=lcovmerge-1.0.1-macos-arm64.tar.gz ;;
@@ -256,12 +170,11 @@ curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 grep " $asset$" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
-              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Open the v1.0.1 release ↗</a> · Archive names use <code>macos-arm64</code> or <code>macos-x86_64</code>; the command verifies the selected archive against <code>SHA256SUMS</code>.</p>
-            </section>
-            <section class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
-              <h3>Windows binary</h3>
-              <p>Download the x86_64 zip, verify its checksum, and extract it to a directory on your PATH. Windows validation is CI-only.</p>
-              <pre data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
+            </div>
+            <div class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
+              <h3>Windows · CI-verified only</h3>
+              <p>Windows runtime behavior has not been verified on a Windows host.</p>
+              <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
 $base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
 Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
@@ -272,316 +185,47 @@ $actual = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "SHA256 checksum mismatch" }
 Expand-Archive $asset -DestinationPath .\lcovmerge
 .\lcovmerge\lcovmerge.exe --version</code></pre>
-              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Browse v1.0.1 release assets ↗</a>. Keep the checksum step when downloading the archive manually.</p>
-            </section>
-            <section class="install-panel" id="panel-homebrew" role="tabpanel" aria-labelledby="tab-homebrew" tabindex="0" hidden>
-              <h3>Homebrew</h3>
-              <p>Install from the Homebrew tap. The formula pins the release archive’s SHA-256 checksum.</p>
-              <pre><code>brew install megasoft1978/tap/lcovmerge</code></pre>
-              <p class="small-note">The repository does not record a Homebrew install test. For a direct install, verify the release archive with <code>SHA256SUMS</code>.</p>
-            </section>
-            <section class="install-panel" id="panel-scoop" role="tabpanel" aria-labelledby="tab-scoop" tabindex="0" hidden>
-              <h3>Scoop</h3>
-              <p>Add the bucket and install the Windows x86_64 manifest. Its manifest pins the release archive’s SHA-256 checksum.</p>
-              <pre><code>scoop bucket add lcovmerge https://github.com/megasoft1978/homebrew-tap
-scoop install lcovmerge</code></pre>
-              <p class="small-note">The repository does not record a Windows Scoop install test. For a direct install, verify the release archive with <code>SHA256SUMS</code>.</p>
-            </section>
-            <section class="install-panel" id="panel-docker" role="tabpanel" aria-labelledby="tab-docker" tabindex="0" hidden>
-              <h3>Docker · GitHub Container Registry</h3>
-              <p>Release tags publish a multi-architecture image. Mount the workspace so it can read shards and write the result.</p>
-              <pre><code>docker run --rm -v "$PWD:/work" -w /work \
-  ghcr.io/megasoft1978/lcovmerge:v1.0.1 \
-  --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info</code></pre>
-              <p class="small-note">The image runs lcovmerge directly and has a writable <code>/tmp</code> for sort runs. <a href="https://github.com/megasoft1978/lcovmerge/pkgs/container/lcovmerge">Browse container versions ↗</a></p>
-            </section>
-            <section class="install-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source" tabindex="0" hidden>
-              <h3>Build from source</h3>
-              <p>The project is C11 and MIT licensed. Clone the source and follow the build instructions shipped with the repository.</p>
-              <pre><code>git clone https://github.com/megasoft1978/lcovmerge.git
-cd lcovmerge</code></pre>
-              <a class="text-link" href="https://github.com/megasoft1978/lcovmerge">Open the source repository ↗</a>
-            </section>
-            <section class="install-panel" id="panel-action" role="tabpanel" aria-labelledby="tab-action" tabindex="0" hidden>
-              <h3>GitHub Actions</h3>
-              <p>The action downloads and verifies the selected release before merging files in the workspace.</p>
-              <pre><code>- uses: megasoft1978/lcovmerge@v1.0.1
-  with:
-    files: coverage-shards/*.info
-    output: coverage/merged.info
-    mem-limit: 256M</code></pre>
-              <p class="small-note">Use an <code>@listfile</code> for very long input lists. See the <a href="docs.html#github-actions">complete sharded workflow ↗</a>.</p>
-            </section>
+            </div>
           </div>
         </div>
-        <noscript><p class="callout" style="margin-top:18px">JavaScript is off; all installation panels are shown together.</p></noscript>
+        <p class="alt-installers">Other paths: <a href="docs.html#alternatives">Homebrew</a>, <a href="docs.html#alternatives">Scoop</a>, <a href="docs.html#alternatives">Docker</a>, <a href="docs.html#alternatives">build from source</a>, and <a href="docs.html#github-actions">GitHub Actions</a>.</p>
       </div>
     </section>
 
-    <section class="section alt" aria-labelledby="command-title">
+    <section class="section section-alt" aria-labelledby="evidence-title">
       <div class="shell">
         <div class="section-heading">
-          <p class="eyebrow">Before / after</p>
-          <h2 id="command-title">Change the merge command. Keep the report step.</h2>
-          <p>For a file-only merge stage, replace the merger command and leave your <code>.info</code> consumer in place.</p>
+          <p class="eyebrow">Evidence</p>
+          <h2 id="evidence-title">Check the recorded scope.</h2>
         </div>
-        <div class="grid-2 demo-grid">
-          <article class="card command-card">
-            <h3>Before · lcov</h3>
-            <div class="terminal">
-              <div class="terminal-bar" aria-hidden="true"><i></i><i></i><i></i><span>coverage job · before</span></div>
-              <pre><code>lcov -a shard-a.info \
-  -a shard-b.info \
-  -o coverage/merged.info</code></pre>
-            </div>
-          </article>
-          <article class="card command-card">
-            <h3>After · lcovmerge</h3>
-            <div class="terminal">
-              <div class="terminal-bar" aria-hidden="true"><i></i><i></i><i></i><span>coverage job · after</span></div>
-              <pre><code>lcovmerge coverage/shard-*.info \
-  -o coverage/merged.info</code></pre>
-            </div>
-          </article>
-        </div>
-        <p class="small-note">For the same file inputs and output path, this maps the command shape only. Then run <code>genhtml</code> or your uploader as before; output order, summaries, checksums, testcase handling, and MC/DC behavior are not interchangeable. Read <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">the documented differences</a>.</p>
-        <div class="table-wrap migration-wrap">
-          <table class="migration-table">
-            <caption>One verified command-shape mapping from lcov 2.6 and <code>lcovmerge --help</code>.</caption>
-            <thead><tr><th scope="col">lcov</th><th scope="col">lcovmerge</th><th scope="col">Mapping</th></tr></thead>
-            <tbody><tr><td><code>lcov -a shard-a.info -a shard-b.info -o merged.info</code></td><td><code>lcovmerge shard-a.info shard-b.info -o merged.info</code></td><td>Add the same input tracefiles and write the merged file to the same path.</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" aria-labelledby="workflow-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">How it works</p>
-          <h2 id="workflow-title">Read, sort, merge, stream.</h2>
-          <p>Parsing is incremental and <code>--mem-limit</code> caps the record arena. Total RSS and temporary disk use are not fully capped.</p>
-        </div>
-        <div class="diagram-frame">
-          <svg class="diagram" viewBox="0 0 960 185" role="img" aria-labelledby="flow-title flow-desc">
-            <title id="flow-title">lcovmerge processing flow</title>
-            <desc id="flow-desc">LCOV inputs are parsed into sorted runs, merged with a k-way merge, and streamed to the output tracefile.</desc>
-            <defs><marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--accent-2)" /></marker></defs>
-            <rect class="node" x="18" y="42" width="190" height="94" rx="14" />
-            <text x="113" y="79" text-anchor="middle" font-size="18" font-weight="750">Parse</text>
-            <text class="sub" x="113" y="104" text-anchor="middle">LCOV tracefiles</text>
-            <path class="arrow" d="M214 89 H267" marker-end="url(#arrowhead)" />
-            <rect class="node" x="280" y="42" width="190" height="94" rx="14" />
-            <text x="375" y="79" text-anchor="middle" font-size="18" font-weight="750">Sorted runs</text>
-            <text class="sub" x="375" y="104" text-anchor="middle">bounded working set</text>
-            <path class="arrow" d="M476 89 H529" marker-end="url(#arrowhead)" />
-            <rect class="node-strong" x="542" y="42" width="190" height="94" rx="14" />
-            <text x="637" y="79" text-anchor="middle" font-size="18" font-weight="750">K-way merge</text>
-            <text class="sub" x="637" y="104" text-anchor="middle">combine matching records</text>
-            <path class="arrow" d="M738 89 H791" marker-end="url(#arrowhead)" />
-            <rect class="node" x="804" y="42" width="138" height="94" rx="14" />
-            <text x="873" y="79" text-anchor="middle" font-size="18" font-weight="750">Stream out</text>
-            <text class="sub" x="873" y="104" text-anchor="middle">merged LCOV</text>
-          </svg>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" aria-labelledby="bench-overview-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">The measured result</p>
-          <h2 id="bench-overview-title">Compare a generated sharded workload.</h2>
-          <p>Charts and the exact-value table summarize one generated workload. Dataset, host, run counts, units, statuses, and methodology are rendered from the canonical data.</p>
-        </div>
-        <p data-chart-status role="status" aria-live="polite">The chart and exact-value table are included in this page; JavaScript may refresh the values from <code>data/benchmarks.json</code>.</p>
-        <div class="dataset-charts">
-          <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="medium"><!-- CHART-M:TIME:START -->
-<ul class="bar-chart" aria-label="M dataset elapsed time results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.1</span><span class="bar-chart-value">3.488279 s · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:2.403%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">50.542 s · OK · 1 time run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:34.815%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">145.171 s · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 145.171 seconds"><span>0.0 s</span><span>73 s</span><span>145 s</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
-<!-- CHART-M:TIME:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:TIME-ALT:START -->
-M elapsed time, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.1 3.488279 s · OK · 5 runs; lcov 2.6 50.542 s · OK · 1 time run(s); lcov-result-merger 6.0.0 145.171 s · OK · prior canonical measurement; run count not reported.
-<!-- CHART-M:TIME-ALT:END --></p></div>
-          <div class="chart-card"><h3>Peak resident memory</h3><p>Lower is less memory · axis in MiB, exact values in bytes</p><div data-chart="rss" data-dataset="medium"><!-- CHART-M:RSS:START -->
-<ul class="bar-chart" aria-label="M dataset peak resident memory results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.1</span><span class="bar-chart-value">5,373,952 B · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:0.215%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">639,844,352 B · OK · prior canonical RSS; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:25.618%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">2,497,675,264 B · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 2,381.969 MiB"><span>0.0 MiB</span><span>1,191 MiB</span><span>2,382 MiB</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
-<!-- CHART-M:RSS:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:RSS-ALT:START -->
-M peak RSS, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.1 5,373,952 B · OK · 5 runs; lcov 2.6 639,844,352 B · OK · prior canonical RSS; run count not reported; lcov-result-merger 6.0.0 2,497,675,264 B · OK · prior canonical measurement; run count not reported.
-<!-- CHART-M:RSS-ALT:END --></p></div>
-        </div>
-        <div class="table-wrap">
-          <table class="benchmark-table">
-            <caption id="medium-caption"><!-- MEDIUM-CAPTION:START -->
-M: 1,118,686,233 generated input bytes across 32 shards; host macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox); measured 2026-10-09. lcovmerge: 5 measured runs; lcov elapsed time: 1 run(s); successful lcov RSS values are prior canonical, with run counts not reported. lcov-result-merger values are prior canonical, with run counts not reported. RSS is peak resident memory. See <a href="benchmarks.html#method-title">method and caveats</a>.
-<!-- MEDIUM-CAPTION:END --></caption>
-            <thead><tr><th scope="col">Tool</th><th scope="col">Elapsed time</th><th scope="col">Peak RSS</th><th scope="col">Throughput</th><th scope="col">Runs</th><th scope="col">Status</th></tr></thead>
-            <tbody id="medium-results-body" data-results-dataset="medium"><!-- MEDIUM-RESULTS:START -->
-<tr><th scope="row" class="tool-primary">lcovmerge 1.0.1</th><td class="table-numeric">3.488279 s</td><td class="table-numeric">5,373,952 B</td><td class="table-numeric">320.7 MB/s</td><td>5 measured</td><td>OK</td></tr>
-<tr><th scope="row">lcov 2.6</th><td class="table-numeric">50.542 s</td><td class="table-numeric">639,844,352 B</td><td class="table-numeric">22.1 MB/s</td><td>Time: 1 run; RSS: prior canonical, count unknown</td><td>OK</td></tr>
-<tr><th scope="row">lcov-result-merger 6.0.0</th><td class="table-numeric">145.171 s</td><td class="table-numeric">2,497,675,264 B</td><td class="table-numeric">7.7 MB/s</td><td>Prior canonical; count unknown</td><td>OK</td></tr>
-<!-- MEDIUM-RESULTS:END --></tbody>
-          </table>
-        </div>
-        <p class="bench-note" id="medium-note">Dataset M values are generated at build time; see the full report for all datasets and caveats. <a href="benchmarks.html">Read methodology and full results.</a></p>
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="real-projects-title">
-      <div class="shell">
-        <!-- REAL-PROJECTS:START -->
-<div class="section-heading">
-          <p class="eyebrow">Project-derived captures · small inputs</p>
-          <h2 id="real-projects-title">Tested on real projects.</h2>
-          <p>8 small project-derived captures, with multiple independently captured shards per project, were compared with LCOV 2.6. Each input was 0.051–6.091 MB; the composite was 11.225 MB across 15 shards. These are useful compatibility checks, not large production workloads.</p>
-        </div>
-        <div class="table-wrap">
-          <table class="benchmark-table real-project-table">
-            <caption>Measurements from 2026-10-09 on one macOS 27.0 arm64 host; elapsed time / peak RSS. Timed-run counts are not reported. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">method and exclusions</a>.</caption>
-            <thead><tr><th scope="col">Project</th><th scope="col">Input</th><th scope="col">lcovmerge</th><th scope="col">LCOV 2.6</th><th scope="col">Semantic comparison / genhtml</th></tr></thead>
-            <tbody><tr><th scope="row">zlib</th><td class="table-numeric">0.180 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.08 MiB</td><td class="table-numeric">0.108 s / 42.42 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">lua</th><td class="table-numeric">0.579 MB · 2 shards</td><td class="table-numeric">0.008 s / 6.77 MiB</td><td class="table-numeric">0.173 s / 46.78 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">cjson</th><td class="table-numeric">0.203 MB · 2 shards</td><td class="table-numeric">0.004 s / 4.22 MiB</td><td class="table-numeric">0.116 s / 42.83 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">json-c</th><td class="table-numeric">0.210 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.28 MiB</td><td class="table-numeric">0.116 s / 42.95 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">libyaml</th><td class="table-numeric">0.051 MB · 2 shards</td><td class="table-numeric">0.003 s / 2.86 MiB</td><td class="table-numeric">0.093 s / 40.88 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">tinyxml2</th><td class="table-numeric">0.281 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.47 MiB</td><td class="table-numeric">0.129 s / 43.73 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">sqlite</th><td class="table-numeric">6.091 MB · 1 shards</td><td class="table-numeric">0.070 s / 16.38 MiB</td><td class="table-numeric">0.898 s / 90.41 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">libarchive</th><td class="table-numeric">3.631 MB · 2 shards</td><td class="table-numeric">0.036 s / 16.83 MiB</td><td class="table-numeric">0.580 s / 78.28 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">REAL composite</th><td class="table-numeric">11.225 MB · 15 shards</td><td class="table-numeric">0.078 s / 20.11 MiB</td><td class="table-numeric">1.635 s / 139.55 MiB</td><td>PASS / PASS</td></tr></tbody>
-          </table>
-        </div>
-        <p class="small-note">All listed project checks passed normalized record comparisons and genhtml. The separate 34-input external-sort, reverse-order and job-determinism checks passed. Lua used portable test mode; capture warnings, exclusions, and method details are documented in <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">the real-project validation record ↗</a>. These are small compatibility checks on one host; they are not large production benchmarks.</p>
-<!-- REAL-PROJECTS:END -->
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="features-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Built for coverage pipelines</p>
-          <h2 id="features-title">A focused LCOV merger with CI controls.</h2>
-        </div>
-        <ul class="feature-list">
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Bounded-memory processing</strong><span>Set a working memory budget and a temporary directory for the merge.</span></span></li>
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Large input lists</strong><span>Read input paths from an <code>@listfile</code>; use <code>-</code> for standard input or output.</span></span></li>
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Path cleanup</strong><span>Rebase source paths or strip a prefix to reconcile build and checkout paths.</span></span></li>
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Record controls</strong><span>Filter <code>SF:</code> paths, enable or disable branch coverage, and omit function data.</span></span></li>
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Validation signals</strong><span>Choose strict checksum handling and warnings for unknown records.</span></span></li>
-          <li><span class="feature-icon" aria-hidden="true">✓</span><span><strong>Portable distribution</strong><span>Linux binaries are static musl, macOS binaries link Apple's <code>libSystem</code>, and Windows statically links runtime libraries while using Windows system APIs.</span></span></li>
+        <p>Compatibility: 8 small project-derived captures (0.051–6.091 MB) and an 11.225 MB composite were checked on one macOS host; see validation for warnings and exclusions.</p>
+        <ul class="evidence-links">
+          <li><a href="benchmarks.html">Full benchmark results and method</a></li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">Project-derived validation record</a></li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/.github/workflows/ci.yml">CI checks</a></li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/releases/latest">Checksums, SBOM, and build provenance</a></li>
         </ul>
       </div>
     </section>
 
-    <section class="section" aria-labelledby="limits-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Limits and compatibility</p>
-          <h2 id="limits-title">Know when to keep your existing tool.</h2>
-          <p>Use lcovmerge only when its LCOV semantics fit the report you need. Read the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">full limitations and intentional differences</a>.</p>
-        </div>
-        <div class="grid-2">
-          <article class="card limit-card">
-            <h3>Need exact lcov behavior?</h3>
-            <p>Keep <code>lcov -a</code> when you depend on testcase-aware reporting, lcov-specific configuration, or MC/DC semantics. lcovmerge canonicalizes output and documents semantic differences.</p>
-          </article>
-          <article class="card">
-            <h3>Need raw-data collection or reports?</h3>
-            <p>Keep lcov or grcov for collection and conversion. lcovmerge accepts existing LCOV tracefiles and does not create HTML reports.</p>
-          </article>
-          <article class="card">
-            <h3>Need a total RSS or disk cap?</h3>
-            <p><code>--mem-limit</code> bounds the record arena, not total RSS. External sorting needs temporary disk space proportional to input and intermediate runs.</p>
-          </article>
-          <article class="card">
-            <h3>Expect one file to use many workers?</h3>
-            <p>Parallel parsing is across input files. One large file does not scale across parser workers, and the merge stage is single-threaded.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="ci-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">CI recipes</p>
-          <h2 id="ci-title">Fit the merge into your build.</h2>
-          <p>Each example starts with LCOV files from an existing collector and merges them after the test jobs complete.</p>
-        </div>
-        <div class="grid-2">
-          <article class="card">
-            <h3>GitLab CI</h3>
-            <p>Collect shard artifacts in a final job, verify the release archive checksum, and merge the files.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#gitlab-ci">View the GitLab recipe ↗</a>
-          </article>
-          <article class="card">
-            <h3>Bazel</h3>
-            <p>Use lcovmerge only when separately produced LCOV files need another combine step. It does not replace Bazel's coverage generator.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#bazel">View the Bazel recipe ↗</a>
-          </article>
-          <article class="card">
-            <h3>CMake and gcov</h3>
-            <p>Capture LCOV from the build tree, merge files from independent shards, and pass the result to your report step.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#cmake-and-gcov">View the CMake recipe ↗</a>
-          </article>
-          <article class="card">
-            <h3>genhtml and uploaders</h3>
-            <p>Keep the merged <code>.info</code> file for downstream consumers that accept LCOV. SonarQube support depends on its language analyzer.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#coverage-report-consumers">Check consumer notes ↗</a>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="trust-title">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="eyebrow">Built to inspect</p>
-          <h2 id="trust-title">Tests and release details are public.</h2>
-        </div>
-        <div class="grid-3">
-          <article class="card">
-            <h3>Behavior checks</h3>
-            <p>CI runs golden, malformed-input, differential, determinism, and documentation checks.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/blob/main/.github/workflows/ci.yml">See the CI workflow ↗</a>
-          </article>
-          <article class="card">
-            <h3>Memory safety</h3>
-            <p>CI has separate ASan/UBSan and fuzz-smoke jobs. The harness and corpus are in the source tree.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/tree/main/tests">Inspect test sources ↗</a>
-          </article>
-          <article class="card">
-            <h3>Release integrity</h3>
-            <p>Release assets include SHA-256 sums and a CycloneDX SBOM, with GitHub build provenance.</p>
-            <a class="text-link" href="https://github.com/megasoft1978/lcovmerge/releases/latest">Check release files ↗</a>
-          </article>
-        </div>
-        <p class="small-note">The site is static: no external fonts, scripts, or tracking.</p>
-      </div>
-    </section>
-
-    <section class="section alt" aria-labelledby="faq-title">
+    <section class="section" aria-labelledby="faq-title">
       <div class="shell">
         <div class="section-heading">
           <p class="eyebrow">FAQ</p>
-          <h2 id="faq-title">A few practical details.</h2>
+          <h2 id="faq-title">Before you switch.</h2>
         </div>
         <div class="faq-list">
           <details>
-            <summary>Is the output identical to <code>lcov -a</code>?</summary>
-            <p>No. lcovmerge writes canonicalized output and documents semantic differences. Keep lcov when you depend on its behavior. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Read the compatibility details ↗</a></p>
+            <summary>Does this replace <code>lcov -a</code>?</summary>
+            <p>No. lcovmerge is not a drop-in replacement for <code>lcov -a</code>; compare your report and record needs before switching. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/MIGRATING-FROM-LCOV.md">migration guide</a>.</p>
           </details>
           <details>
-            <summary>Does lcovmerge replace lcov?</summary>
-            <p>No. It handles LCOV tracefile merging. lcov also captures coverage, filters and extracts tracefiles, summarizes data and supports other coverage workflows. Both tools can merge LCOV tracefiles; see <a href="https://manpages.debian.org/trixie/lcov/lcov.1.en.html">the lcov manual ↗</a>.</p>
+            <summary>What does the memory setting limit?</summary>
+            <p>Memory reserved for coverage records only. Total process memory can be higher, and sorting uses temporary disk. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Read all limits</a>.</p>
           </details>
           <details>
-            <summary>Can I feed it coverage shards from CI?</summary>
-            <p>Yes. Pass the shard paths directly, or use <code>@listfile</code> for a long input list. A merge job can combine artifacts after test shards finish. See the <a href="docs.html#github-actions">GitHub Actions example</a>.</p>
-          </details>
-          <details>
-            <summary>Does it merge MC/DC coverage?</summary>
-            <p>No MC/DC semantic guarantee is made. The published scope covers line, function and optional branch data. Check the current CLI documentation and your compiler and lcov versions before relying on other records.</p>
-          </details>
-          <details>
-            <summary>Where are benchmark inputs and commands?</summary>
-            <p>The benchmark page explains the synthetic inputs, host, run counts, caveats and reproduction procedure. The operating-system cache state was not controlled.</p>
+            <summary>Can I pass raw coverage profiles?</summary>
+            <p>No. Export LCOV .info files first; lcovmerge does not collect coverage or generate reports.</p>
           </details>
         </div>
       </div>
@@ -591,7 +235,7 @@ M: 1,118,686,233 generated input bytes across 32 shards; host macOS 27.0 arm64 A
   <footer class="site-footer">
     <div class="shell footer-row">
       <p>lcovmerge 1.0.1 · MIT License</p>
-      <div class="footer-links"><a href="docs.html">Docs</a><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a></div>
+      <div class="footer-links"><a href="docs.html">Usage</a><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a><a href="https://github.com/megasoft1978/lcovmerge/releases/latest">Release files</a><a href="https://github.com/megasoft1978/lcovmerge/issues">Issues</a></div>
     </div>
   </footer>
 </body>

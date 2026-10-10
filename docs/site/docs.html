@@ -3,190 +3,198 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f9f7">
-  <meta name="description" content="Install lcovmerge and merge LCOV artifacts in GitHub Actions, GitLab CI, Bazel, and CMake workflows.">
+  <meta name="theme-color" content="#f6f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#09130f" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Install lcovmerge, merge existing LCOV .info files, and look up its command options and CI recipes.">
   <meta name="robots" content="index,follow">
-  <title>Usage and options — lcovmerge</title>
+  <title>Usage — lcovmerge</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/docs.html">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="site.css">
   <script src="site.js" defer></script>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
-  <meta property="og:title" content="Usage and options — lcovmerge">
-  <meta property="og:description" content="Command-line reference and example CI recipes for merging LCOV tracefiles.">
+  <meta property="og:title" content="Usage — lcovmerge">
+  <meta property="og:description" content="Install lcovmerge, merge existing LCOV .info files, and look up its command options and CI recipes.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/docs.html">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta property="og:image:alt" content="lcovmerge command-line reference and example CI recipes">
+  <meta property="og:image:alt" content="lcovmerge usage guide for installing and merging LCOV files">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Usage and options — lcovmerge">
-  <meta name="twitter:description" content="Command-line reference and example CI recipes for merging LCOV tracefiles.">
+  <meta name="twitter:title" content="Usage — lcovmerge">
+  <meta name="twitter:description" content="Install lcovmerge, merge existing LCOV .info files, and look up its command options and CI recipes.">
   <meta name="twitter:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
-  <meta name="twitter:image:alt" content="lcovmerge command-line reference and example CI recipes">
+  <meta name="twitter:image:alt" content="lcovmerge usage guide for installing and merging LCOV files">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
+  <span id="copy-status" class="sr-only" aria-live="polite" aria-atomic="true"></span>
   <header class="site-header">
     <div class="shell header-row">
       <a class="brand" href="index.html" aria-label="lcovmerge home"><span class="brand-mark" aria-hidden="true">LC</span><span class="brand-word">lcov<span>merge</span></span></a>
       <nav class="main-nav" aria-label="Main navigation">
-        <a href="docs.html" aria-current="page">Docs</a><a href="benchmarks.html">Benchmarks</a><a class="nav-github" href="https://github.com/megasoft1978/lcovmerge">GitHub <span aria-hidden="true">↗</span></a>
+        <a href="docs.html" aria-current="page">Usage</a>
+        <a href="benchmarks.html">Benchmarks</a>
+        <a class="nav-github" href="https://github.com/megasoft1978/lcovmerge">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
   </header>
   <main id="main" class="shell">
     <header class="page-intro">
-      <p class="eyebrow">Command-line reference</p>
-      <h1>Usage and options</h1>
-      <p>Merge LCOV tracefiles from local builds, test shards or another coverage pipeline. Run <code>lcovmerge --help</code> against the binary you installed for the complete release-specific help text.</p>
+      <p class="eyebrow">Usage guide</p>
+      <h1>Install and merge LCOV .info files.</h1>
+      <p>Quick start, release downloads, command options, path handling, and recipes for common CI jobs.</p>
     </header>
     <div class="page-body">
-      <section aria-labelledby="syntax-title">
-        <h2 id="syntax-title">Basic syntax</h2>
-        <pre class="code-block"><code>lcovmerge [options] a.info b.info ... -o out.info</code></pre>
-        <p>The <code>-o</code> or <code>--output</code> option is required. Use <code>-</code> once as an input path to read standard input, or as the output path to write standard output. Prefix an input list with <code>@</code> to read paths from a list file.</p>
-        <pre class="code-block"><code>lcovmerge shard-a.info shard-b.info -o merged.info
-lcovmerge --mem-limit SIZE --tmpdir "$RUNNER_TEMP" @coverage-files.txt -o merged.info
-cat coverage.info | lcovmerge - -o - &gt; normalized.info</code></pre>
-        <p>List files contain one path per line; blank lines and lines beginning with <code>#</code> are ignored. Nested list files are limited to eight levels, paths are relative to the current working directory, and <code>@@name</code> names a literal path beginning with <code>@</code>. The shell expands globs; lcovmerge does not.</p>
-      </section>
-
-      <section aria-labelledby="options-title">
-        <h2 id="options-title">Options</h2>
-        <div class="table-wrap">
-          <table>
-            <caption>CLI options in lcovmerge 1.0.1</caption>
-            <thead><tr><th scope="col">Option</th><th scope="col">Purpose</th></tr></thead>
-            <tbody>
-              <tr><th scope="row"><code>-o</code>, <code>--output</code> FILE</th><td>Required. Write to FILE, replacing it only after a successful merge. Use <code>-</code> for standard output.</td></tr>
-              <tr><th scope="row"><code>--mem-limit</code> SIZE</th><td>Set the record-arena cap; default <code>64M</code>, minimum <code>8M</code> per job. Bare values are bytes; case-insensitive K, M, and G suffixes are binary multiples of 1024.</td></tr>
-              <tr><th scope="row"><code>--tmpdir</code> DIR</th><td>Place temporary sorted runs in DIR. The default is the system temporary directory.</td></tr>
-              <tr><th scope="row"><code>-j</code>, <code>--jobs</code> N</th><td>Use 1–32 external-sort jobs. The default is <code>min(4, detected cores)</code>, reduced if needed to fit the memory limit; explicit jobs require at least <code>8M</code> per job. Sorted regular files use a single-threaded stream merge; out-of-order, non-regular, or stream-memory-limited inputs use the configured jobs.</td></tr>
-              <tr><th scope="row"><code>--prefix-strip</code> PREFIX</th><td>Remove a matching leading <code>SF:</code> path prefix at a path boundary, including separators immediately after the prefix.</td></tr>
-              <tr><th scope="row"><code>--rebase</code> OLD=NEW</th><td>Rewrite a matching leading <code>SF:</code> path prefix. Repeatable; path-boundary matching applies, and directory separator style is preserved where possible.</td></tr>
-              <tr><th scope="row"><code>--include</code> GLOB</th><td>Keep a path matching at least one include pattern. Repeatable; supports <code>*</code>, <code>?</code>, and bracket ranges.</td></tr>
-              <tr><th scope="row"><code>--exclude</code> GLOB</th><td>Drop matching paths. Repeatable; exclusions take precedence over includes.</td></tr>
-              <tr><th scope="row"><code>--branch-coverage</code> on|off</th><td>Keep or drop <code>BRDA:</code> rows. The default is <code>on</code>; this does not create absent branch data.</td></tr>
-              <tr><th scope="row"><code>--no-function-data</code></th><td>Drop <code>FN</code>, <code>FNDA</code>, <code>FNL</code>, and <code>FNA</code> records.</td></tr>
-              <tr><th scope="row"><code>--strict-checksum</code></th><td>Return status 2 when non-empty checksums for the same source line differ. By default, warn and emit the lexicographically smallest non-empty checksum.</td></tr>
-              <tr><th scope="row"><code>--warn-unknown</code></th><td>Print a diagnostic for every preserved unknown colon-delimited row inside a source section.</td></tr>
-              <tr><th scope="row"><code>-q</code></th><td>Suppress routine progress output; errors remain visible.</td></tr>
-              <tr><th scope="row"><code>-v</code></th><td>Print parsed byte and record totals, selected worker count, and merged summary totals to standard error.</td></tr>
-              <tr><th scope="row"><code>--stats</code></th><td>Print merged <code>LF</code>, <code>LH</code>, <code>FNF</code>, <code>FNH</code>, <code>BRF</code>, and <code>BRH</code> totals to standard error.</td></tr>
-              <tr><th scope="row"><code>--version</code></th><td>Print the version and build's Git commit identifier.</td></tr>
-              <tr><th scope="row"><code>-h</code>, <code>--help</code></th><td>Print the built-in usage summary.</td></tr>
-            </tbody>
-          </table>
+      <section id="quick-start" aria-labelledby="quick-start-title">
+        <h2 id="quick-start-title">Quick start and install</h2>
+        <p>Use lcovmerge after your collector has written LCOV files. The release page has archives for Linux, macOS, and Windows.</p>
+        <pre class="code-block" data-copy-label="Copy merge and genhtml commands"><code>lcovmerge coverage/shard-*.info -o coverage/merged.info
+genhtml coverage/merged.info --output-directory coverage/html
+lcovmerge --version</code></pre>
+        <p class="small-note">The output remains LCOV for your report or upload step. <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Download v1.0.1</a>.</p>
+        <div class="install-wrap">
+          <div class="install-tabs" role="tablist" aria-label="Choose an operating system">
+            <button id="tab-linux" type="button" role="tab" aria-selected="true" aria-controls="panel-linux" tabindex="0">Linux</button>
+            <button id="tab-macos" type="button" role="tab" aria-selected="false" aria-controls="panel-macos" tabindex="-1">macOS</button>
+            <button id="tab-windows" type="button" role="tab" aria-selected="false" aria-controls="panel-windows" tabindex="-1">Windows</button>
+          </div>
+          <div class="install-content">
+            <section class="install-panel" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
+              <h3>Linux · x86-64</h3>
+              <p>For Linux ARM64, select its matching archive from the release page.</p>
+              <pre class="code-block" data-copy-label="Copy Linux download and checksum commands"><code>set -eu
+asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+curl -fL "$base/$asset" -o "$asset"
+curl -fL "$base/SHA256SUMS" -o SHA256SUMS
+grep " $asset$" SHA256SUMS | sha256sum -c -
+tar -xzf "$asset"
+./lcovmerge --version</code></pre>
+            </section>
+            <section class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
+              <h3>macOS · Apple silicon or Intel</h3>
+              <pre class="code-block" data-copy-label="Copy macOS download and checksum commands"><code>set -eu
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+case "$(uname -m)" in
+  arm64|aarch64) asset=lcovmerge-1.0.1-macos-arm64.tar.gz ;;
+  x86_64|amd64) asset=lcovmerge-1.0.1-macos-x86_64.tar.gz ;;
+  *) echo "Unsupported Mac architecture: $(uname -m)" &gt;&amp;2; exit 1 ;;
+esac
+curl -fL "$base/$asset" -o "$asset"
+curl -fL "$base/SHA256SUMS" -o SHA256SUMS
+grep " $asset$" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$asset"
+./lcovmerge --version</code></pre>
+            </section>
+            <section class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
+              <h3>Windows · CI-verified only</h3>
+              <p>Windows runtime behavior has not been verified on a Windows host.</p>
+              <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
+$base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1"
+Invoke-WebRequest "$base/$asset" -OutFile $asset
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
+$entry = Get-Content SHA256SUMS | Where-Object { ($_ -split '\s+', 2)[1].TrimStart('*') -eq $asset }
+if (@($entry).Count -ne 1) { throw "Expected one checksum entry for $asset" }
+$expected = ($entry -split '\s+', 2)[0].ToLowerInvariant()
+$actual = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "SHA256 checksum mismatch" }
+Expand-Archive $asset -DestinationPath .\lcovmerge
+.\lcovmerge\lcovmerge.exe --version</code></pre>
+            </section>
+          </div>
         </div>
-        <p>Path rewriting runs in this order: <code>--rebase</code>, <code>--prefix-strip</code>, then include and exclude filtering. Rewritten paths that become identical are merged.</p>
+        <div id="alternatives" class="alt-installers">
+          <h3>Other install paths</h3>
+          <ul>
+            <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md">Homebrew and Scoop packages</a></li>
+            <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md">Docker container</a></li>
+            <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md">Build from source</a></li>
+            <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/action/README.md">GitHub Action</a> · see the <a href="#github-actions">recipe link</a> below</li>
+          </ul>
+        </div>
       </section>
 
-      <section aria-labelledby="exit-title">
-        <h2 id="exit-title">Exit codes</h2>
+      <section id="options" aria-labelledby="options-title">
+        <h2 id="options-title">Common and full options</h2>
+        <ul class="common-options">
+          <li><code>-o FILE</code> writes one LCOV file after a successful merge.</li>
+          <li><code>--mem-limit SIZE</code> sets memory reserved for coverage records; total process memory can be higher.</li>
+          <li><code>--tmpdir DIR</code> selects where sorted batches are written before they are merged. The directory must exist and have free disk space.</li>
+          <li><code>-j N</code> sets workers that write sorted batches to temporary files before merging; one large input file is not split across parser workers.</li>
+        </ul>
+        <details class="full-options">
+          <summary>Show the full options table</summary>
+          <div class="table-wrap">
+            <table>
+              <caption>Command-line options in lcovmerge 1.0.1</caption>
+              <thead><tr><th scope="col">Option</th><th scope="col">Purpose</th></tr></thead>
+              <tbody>
+                <tr><th scope="row"><code>-o</code>, <code>--output</code> FILE</th><td>Required. Write to FILE, replacing it only after a successful merge. Use <code>-</code> for standard output.</td></tr>
+                <tr><th scope="row"><code>--mem-limit</code> SIZE</th><td>Limit memory reserved for coverage records. Total process memory can be higher, and sorting uses temporary disk. Default <code>64M</code>; minimum <code>8M</code> per job. Bare values are bytes; K, M, and G suffixes are binary multiples of 1024.</td></tr>
+                <tr><th scope="row"><code>--tmpdir</code> DIR</th><td>Write sorted batches to temporary files in DIR before merging them. The directory must exist and have enough free disk space. Files are removed after success and handled failures; caught POSIX SIGINT, SIGTERM, and SIGHUP also trigger cleanup. SIGKILL or machine failure can leave files. Blocked Windows operations can delay interruption and cleanup; the signal cleanup guarantee applies to POSIX only. Default: the system temporary directory.</td></tr>
+                <tr><th scope="row"><code>-j</code>, <code>--jobs</code> N</th><td>Use 1–32 workers to write sorted batches to temporary files before merging them. The default is <code>min(4, detected cores)</code>, reduced if needed to fit the memory limit; explicit jobs require at least <code>8M</code> per job. One large input file is not split across parser workers.</td></tr>
+                <tr><th scope="row"><code>--prefix-strip</code> PREFIX</th><td>Remove a matching leading <code>SF:</code> source path prefix at a path boundary, including separators immediately after the prefix.</td></tr>
+                <tr><th scope="row"><code>--rebase</code> OLD=NEW</th><td>Rewrite a matching leading <code>SF:</code> source path prefix. Repeatable; matching is at a path boundary, and directory separator style is preserved where possible.</td></tr>
+                <tr><th scope="row"><code>--include</code> GLOB</th><td>Keep a source path matching at least one include pattern. Repeatable; supports <code>*</code>, <code>?</code>, and bracket ranges.</td></tr>
+                <tr><th scope="row"><code>--exclude</code> GLOB</th><td>Drop matching source paths. Repeatable; exclusions take precedence over includes.</td></tr>
+                <tr><th scope="row"><code>--branch-coverage</code> on|off</th><td>Keep or drop <code>BRDA:</code> rows. Default: <code>on</code>; this does not create branch data that is absent.</td></tr>
+                <tr><th scope="row"><code>--no-function-data</code></th><td>Drop <code>FN</code>, <code>FNDA</code>, <code>FNL</code>, and <code>FNA</code> records.</td></tr>
+                <tr><th scope="row"><code>--strict-checksum</code></th><td>Return status 2 when non-empty checksums for the same source line differ. By default, warn and emit the lexicographically smallest non-empty checksum.</td></tr>
+                <tr><th scope="row"><code>--warn-unknown</code></th><td>Print a diagnostic for each preserved unknown colon-delimited row inside a source section.</td></tr>
+                <tr><th scope="row"><code>-q</code></th><td>Suppress routine progress output; errors remain visible.</td></tr>
+                <tr><th scope="row"><code>-v</code></th><td>Print parsed byte and record totals, selected worker count, and merged summary totals to standard error.</td></tr>
+                <tr><th scope="row"><code>--stats</code></th><td>Print merged <code>LF</code>, <code>LH</code>, <code>FNF</code>, <code>FNH</code>, <code>BRF</code>, and <code>BRH</code> totals to standard error.</td></tr>
+                <tr><th scope="row"><code>--version</code></th><td>Print the version and build's Git commit identifier.</td></tr>
+                <tr><th scope="row"><code>-h</code>, <code>--help</code></th><td>Print the built-in usage summary.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section id="paths" aria-labelledby="paths-title">
+        <h2 id="paths-title">Paths and input lists</h2>
+        <h3>Rebase source paths</h3>
+        <p>Use <code>--rebase</code> when <code>SF:</code> source paths point to a build directory but reports use another root.</p>
+        <pre class="code-block" data-copy-label="Copy source path rebase command"><code>lcovmerge --rebase /build/worker/project=/workspace/project shard-a.info shard-b.info -o merged.info</code></pre>
+        <p>A path below <code>/build/worker/project</code> is rewritten below <code>/workspace/project</code>. Check the resulting <code>SF:</code> paths against the source tree used by your report generator. Rewriting is not automatic path detection.</p>
+        <h3>Strip a path prefix</h3>
+        <p><code>--prefix-strip PREFIX</code> removes a matching leading source-path prefix at a path boundary. Rewriting runs in this order: <code>--rebase</code>, <code>--prefix-strip</code>, then include and exclude filters. If two paths become identical, their records are merged.</p>
+        <h3>Use a list file</h3>
+        <pre class="code-block" data-copy-label="Copy list-file merge command"><code>lcovmerge @coverage-files.txt -o merged.info</code></pre>
+        <p>A list file has one input path per line. Blank lines and lines beginning with <code>#</code> are ignored. Paths are relative to the current working directory; nested list files are limited to eight levels. Use <code>@@name</code> for a literal path that begins with <code>@</code>. The shell expands globs; lcovmerge does not.</p>
+      </section>
+
+      <section id="compatibility" aria-labelledby="compatibility-title">
+        <h2 id="compatibility-title">Compatibility and exit codes</h2>
+        <h3>What lcovmerge reads and writes</h3>
+        <p>lcovmerge reads existing LCOV .info files. It does not collect raw coverage or generate reports. If a report tool accepts all shard files directly, you may not need a separate merge.</p>
+        <p><code>--mem-limit</code> limits memory reserved for coverage records; total process memory can be higher. Sorting writes batches to temporary files and merges them, so the selected directory needs free disk space. Output order is stable for the same inputs, options, and build across input order and worker settings; this does not promise byte-for-byte identity with LCOV. Unknown colon-delimited rows are preserved, not interpreted; their application-specific merge meaning is unknown. lcovmerge is not a drop-in replacement for <code>lcov -a</code>; compare your records and report using the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/MIGRATING-FROM-LCOV.md">migration guide</a> and <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">limits</a>.</p>
+        <h3>Exit codes</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
             <tbody>
               <tr><th scope="row"><code>0</code></th><td>Success.</td></tr>
               <tr><th scope="row"><code>1</code></th><td>Invalid or incomplete command-line options.</td></tr>
-              <tr><th scope="row"><code>2</code></th><td>Input or tracefile format error, including strict checksum disagreement.</td></tr>
+              <tr><th scope="row"><code>2</code></th><td>Input or LCOV .info format error, including strict checksum disagreement.</td></tr>
               <tr><th scope="row"><code>3</code></th><td>Input/output or temporary-file I/O failure, allocation failure, or interruption.</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <section aria-labelledby="rebase-title">
-        <h2 id="rebase-title">Rebase source paths</h2>
-        <p>Use a path rebase when reports contain build-agent paths but your checkout uses a different root. The rewrite applies to source file paths carried by <code>SF:</code> records.</p>
-        <pre class="code-block"><code>lcovmerge --rebase /build/worker/project=/workspace/project shard-a.info shard-b.info -o merged.info</code></pre>
-        <p>For example, a source path below <code>/build/worker/project</code> is rewritten below <code>/workspace/project</code>. Verify the output paths against the source tree used by your report generator.</p>
-      </section>
-
-      <section id="bazel" aria-labelledby="bazel-title">
-        <h2 id="bazel-title">Bazel pipelines</h2>
-        <p>Bazel’s coverage tooling can produce or combine LCOV data as part of its own workflow. lcovmerge is a separate tracefile-merging step for pipelines that collect LCOV shard files; it is not a drop-in implementation of Bazel’s <code>CoverageOutputGenerator</code>.</p>
-        <pre class="code-block"><code># After a workflow has collected per-target or per-job LCOV files:
-lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
-        <p>Point your report generator at <code>coverage/merged.info</code>. The Bazel project has documented memory pressure in its coverage output generator; see <a href="https://github.com/bazelbuild/bazel/issues/26383">issue #26383 ↗</a>.</p>
-      </section>
-
-      <section id="github-actions" aria-labelledby="actions-title">
-        <h2 id="actions-title">GitHub Actions with sharded tests</h2>
-        <p>Upload each shard’s LCOV file as an artifact, then download those artifacts in a final merge job. The reusable action downloads and verifies the selected release binary.</p>
-        <pre class="code-block"><code>jobs:
-  tests:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        shard: [a, b]
-    steps:
-      # Replace this with your sharded test command.
-      - run: ./run-coverage-tests.sh "${{ matrix.shard }}"
-      - run: mv coverage.info "coverage-${{ matrix.shard }}.info"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: coverage-${{ matrix.shard }}
-          path: coverage-${{ matrix.shard }}.info
-
-  merge:
-    needs: tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: coverage-*
-          path: coverage-shards
-          merge-multiple: true
-      - uses: megasoft1978/lcovmerge@v1.0.1
-        with:
-          files: coverage-shards/*.info
-          output: coverage/merged.info
-          mem-limit: 256M
-      - run: genhtml coverage/merged.info --output-directory coverage/html</code></pre>
-        <p>This example uses current GitHub artifact actions. Keep each shard tracefile name unique so a flat artifact merge cannot overwrite a file with the same name.</p>
-      </section>
-
-      <section id="gitlab-ci" aria-labelledby="gitlab-title">
-        <h2 id="gitlab-title">GitLab CI</h2>
-        <p>Have each test job publish a distinct LCOV artifact. In the merge job, download those artifacts, install the release archive for the runner, and keep the merged file as the handoff to your report step.</p>
-        <pre class="code-block"><code>mkdir -p coverage
-./lcovmerge coverage/*.info -o coverage/merged.info
-genhtml coverage/merged.info --output-directory coverage/html</code></pre>
-        <p>Verify the archive with <code>SHA256SUMS</code> before installation. GitLab’s built-in coverage visualization accepts Cobertura or JaCoCo, not LCOV; retain the merged <code>.info</code> for an LCOV-aware uploader or convert it separately. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#gitlab-ci">full GitLab example ↗</a>.</p>
-      </section>
-
-      <section id="cmake" aria-labelledby="cmake-title">
-        <h2 id="cmake-title">CMake and gcov</h2>
-        <p>Compile and run tests with gcov instrumentation, capture LCOV, then merge the files produced by independent shards.</p>
-        <pre class="code-block"><code>cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage
-cmake --build build
-ctest --test-dir build --output-on-failure
-mkdir -p coverage
-lcov --capture --directory build --output-file coverage/shard-1.info
-# Repeat in each CI shard with a distinct output path
-lcovmerge coverage/shard-*.info -o coverage/merged.info</code></pre>
-        <p>See <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#cmake-and-gcov">the full CMake recipe ↗</a> for gcovr and build-tree notes.</p>
-      </section>
-
-      <section id="report-consumers" aria-labelledby="consumers-title">
-        <h2 id="consumers-title">Report and upload consumers</h2>
-        <p>The merged file remains LCOV. Pass it to <code>genhtml</code>, Codecov, or a Coveralls integration that accepts LCOV. SonarQube accepts LCOV for analyzers including JavaScript/TypeScript, Dart, and Rust; its C/C++ analyzer imports gcov or llvm-cov reports instead. See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/INTEGRATIONS.md#coverage-report-consumers">consumer notes and references ↗</a>.</p>
-      </section>
-
-      <section id="jenkins" aria-labelledby="jenkins-title">
-        <h2 id="jenkins-title">Jenkins</h2>
-        <p>Collect LCOV files from parallel stages and merge them after the test stage completes.</p>
-        <pre class="code-block"><code>find coverage -type f -name '*.info' -print | sort &gt; coverage-files.txt
-lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
-        <p>Keep the list file outside the searched output directory if your job runs the collection step more than once.</p>
-      </section>
-
-      <section aria-labelledby="lcov-title">
-        <h2 id="lcov-title">How it differs from lcov</h2>
-        <p>lcov is a broader Perl coverage tool. It can capture coverage from compiler data, combine tracefiles with <code>--add-tracefile</code>, and filter, extract, summarize and report coverage. lcovmerge focuses on merging existing LCOV tracefiles under a configured memory budget; it does not replace the broader capture and reporting workflow. Recent lcov versions also expose memory and parallel-processing controls, so compare the versions and settings that match your pipeline.</p>
-        <p>See the <a href="https://manpages.debian.org/trixie/lcov/lcov.1.en.html">lcov manual ↗</a> and <a href="https://github.com/linux-test-project/lcov/blob/master/docs/man/geninfo.rst">LCOV tracefile documentation ↗</a>. lcovmerge does not claim MC/DC semantic accounting.</p>
+      <section id="recipes" aria-labelledby="recipes-title">
+        <h2 id="recipes-title">CI, build, and report recipes</h2>
+        <p>Each recipe uses LCOV files that have already been exported.</p>
+        <ul class="recipe-index">
+          <li id="github-actions"><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#github-actions">GitHub Actions</a> · upload shard files, then merge them in a final job.</li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#gitlab-ci">GitLab CI</a> · collect artifacts and merge after test jobs finish.</li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#jenkins">Jenkins</a> · merge files produced by parallel stages.</li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#cmake-with-gcov">CMake with gcov</a> · capture LCOV, then merge independent outputs.</li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#bazel">Bazel</a> · use only when a separate LCOV merge is still needed.</li>
+          <li><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/RECIPES.md#report-and-upload-consumers">Report and upload consumers</a> · pass the merged .info file to an LCOV-aware tool.</li>
+        </ul>
       </section>
     </div>
   </main>

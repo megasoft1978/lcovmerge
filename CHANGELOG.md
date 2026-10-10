@@ -6,6 +6,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Make temporary-run errors name `--tmpdir` and state that it must exist and be writable; output temporary-file errors include the OS reason and parent-directory hint.
+- Include unmatched file patterns in GitHub Action no-match errors.
+
+### Added
+
+- Add the opt-in `tools/gen-lcov.py --lcov-valid` mode, which emits function starts on in-range `DA` lines while preserving the existing default and benchmark-compatible output.
+
 ## [1.0.1] - 2026-10-10
 
 ### Added

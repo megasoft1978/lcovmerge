@@ -76,11 +76,21 @@ def generate_benchmark(args: argparse.Namespace) -> int:
                 function_count = 20
                 function_lines: list[int] = []
                 function_hits: list[int] = []
-                for function in range(function_count):
-                    line = 1 if function == 0 else function * args.lines // function_count
-                    while not executable_line(line):
-                        line += 1
-                    function_lines.append(line)
+                if args.lcov_valid:
+                    da_lines = [line for line in range(1, args.lines + 1)
+                                if executable_line(line)]
+                    function_count = min(function_count, len(da_lines))
+                    function_lines.extend(
+                        da_lines[function * len(da_lines) // function_count]
+                        for function in range(function_count)
+                    )
+                else:
+                    for function in range(function_count):
+                        line = 1 if function == 0 else function * args.lines // function_count
+                        while not executable_line(line):
+                            line += 1
+                        function_lines.append(line)
+                for _function in range(function_count):
                     function_hits.append(rng.hit_count())
                 for function, line in enumerate(function_lines):
                     rows.append(f"FN:{line},function_{function:04}\n")
@@ -136,6 +146,8 @@ def main() -> int:
     parser.add_argument("--checksums", action="store_true")
     parser.add_argument("--benchmark-compatible", action="store_true",
                         help="generate the deterministic benchmark LCOV format")
+    parser.add_argument("--lcov-valid", action="store_true",
+                        help="keep every FN start within --lines and on an emitted DA line")
     args = parser.parse_args()
     if min(args.shards, args.files, args.lines) <= 0:
         parser.error("shards, files, and lines must be positive")
@@ -150,13 +162,31 @@ def main() -> int:
                 if rng.randrange(100) >= 65:
                     continue
                 stream.write(f"TN:test-{shard}\nSF:/generated/pkg{source // 100:04}/source-{source:06}.c\n")
-                for function in range(4):
-                    line = 1 + function * max(1, args.lines // 4)
+                function_count = 4
+                function_lines: list[int] = []
+                if args.lcov_valid:
+                    da_lines = [line for line in range(1, args.lines + 1) if line % 4 == 0]
+                    if not da_lines:
+                        da_lines = [args.lines]
+                    function_count = min(function_count, len(da_lines))
+                    function_lines.extend(
+                        da_lines[function * len(da_lines) // function_count]
+                        for function in range(function_count)
+                    )
+                else:
+                    function_lines = [1 + function * max(1, args.lines // 4)
+                                      for function in range(function_count)]
+                function_hits = [rng.randrange(8) for _line in function_lines]
+                function_hits_by_line = dict(zip(function_lines, function_hits))
+                for function, line in enumerate(function_lines):
                     stream.write(f"FN:{line},function_{function:03}\n")
-                    stream.write(f"FNDA:{rng.randrange(8)},{'function_%03d' % function}\n")
+                    stream.write(f"FNDA:{function_hits[function]},{'function_%03d' % function}\n")
                 for line in range(1, args.lines + 1):
-                    if line % 4 == 0:
-                        count = rng.randrange(20)
+                    if line % 4 == 0 or (args.lcov_valid and line in function_lines):
+                        if args.lcov_valid and line in function_hits_by_line:
+                            count = function_hits_by_line[line]
+                        else:
+                            count = rng.randrange(20)
                         checksum = f",{(source * 65537 + line):032x}" if args.checksums else ""
                         stream.write(f"DA:{line},{count}{checksum}\n")
                     if line % 10 == 0:

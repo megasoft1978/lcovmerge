@@ -4,11 +4,20 @@
 lcovmerge [options] a.info b.info ... -o out.info
 ```
 
-`-o` or `--output` is required. Use `-` as one input to read standard input or as the output path to write
-standard output. Input paths beginning with `@` name a list file: one path per line, blank lines and lines
-beginning with `#` are ignored, nested list files are limited to eight levels, and paths are relative to the
-process working directory. Use `@@name` for a literal input path beginning with `@`. The shell expands globs;
+lcovmerge reads existing LCOV `.info` files; it does not collect raw coverage or generate reports. `-o` or
+`--output` is required. Use `-` as one input to read standard input or as the output path to write standard
+output. Input paths beginning with `@` name a list file: one path per line, blank lines and lines beginning
+with `#` are ignored, nested list files are limited to eight levels, and paths are relative to the process
+working directory. Use `@@name` for a literal input path beginning with `@`. The shell expands globs;
 lcovmerge does not.
+
+## Install
+
+The [release page](https://github.com/megasoft1978/lcovmerge/releases) provides Linux x86-64 and aarch64,
+macOS arm64 and x86-64, and Windows x86-64 archives. Verify the selected archive against `SHA256SUMS` before
+extracting it. The [README quick start](../README.md#try-it-linux-x86-64) has a complete checksum-verified
+Linux command sequence. Windows runtime verification is pending a passing Windows CI run; a published archive
+or cross-build does not establish target-runtime verification. See [platform limits](LIMITATIONS.md).
 
 ## Options
 
@@ -20,24 +29,28 @@ standard output. File output is staged before it replaces the destination. Bytes
 
 ### `--mem-limit SIZE`
 
-Set the record-arena cap. The default is `64M`; the minimum is `8M` per job. A suffix of `K`, `M`, or `G` is
-case-insensitive and denotes a binary multiple of 1024. A value without a suffix is bytes. Parser buffers,
-merge bookkeeping, thread stacks, and temporary files are outside this cap.
+Set the limit for memory reserved for coverage records while sorting. The default is `64M`; the minimum is
+`8M` per job. A suffix of `K`, `M`, or `G` is case-insensitive and denotes a binary multiple of 1024. A value
+without a suffix is bytes. This setting does not cap total process memory or temporary disk use: parser
+buffers, merge bookkeeping, thread stacks, and runtime state need additional memory, and sorting writes
+temporary files.
 
 ### `--tmpdir DIR`
 
-Store external-sort runs under an existing `DIR`. The default is the operating system's temporary directory.
-Runs are removed on success and handled failures. On POSIX, caught SIGINT, SIGTERM, and SIGHUP also trigger
-cleanup; SIGKILL or machine failure can leave named run files behind.
+Store temporary sorted files under an existing `DIR`; it must be writable and have enough free disk space.
+The default is the operating system's temporary directory. Files are removed on success and handled failures.
+On POSIX, caught SIGINT, SIGTERM, and SIGHUP also trigger cleanup. A forced kill or machine failure can leave
+named files behind. Windows does not promise the same interruption cleanup because blocked I/O and worker
+joins have no cancellation path.
 
 ### `-j N`, `--jobs N`
 
-Set the number of external-sort input jobs from 1 through 32. The default is the lesser of four and the detected
-processor count, further reduced when needed to fit the memory limit. An explicit job count must fit the
-minimum `8M` per job. When all inputs are regular files and their rewritten records are already in canonical
-order, lcovmerge streams the merge with one job and ignores this setting. An out-of-order row, unsupported
-stream type, or memory limit for the streaming path causes lcovmerge to discard the attempt and use the
-external-sort path with the requested jobs.
+Set the number of input-file workers from 1 through 32. The default is the lesser of four and the detected
+processor count, further reduced when needed to fit the memory setting. An explicit job count must fit the
+minimum `8M` per job. Workers process whole files; a single large file is not split across workers. When all
+inputs are regular files and their rewritten records are already in stable order, lcovmerge streams the merge
+with one worker and ignores this setting. An out-of-order row, unsupported stream type, or memory limit for
+the streaming path causes lcovmerge to retry using temporary sorted files and the requested worker count.
 
 ### `--prefix-strip PREFIX`
 
@@ -58,8 +71,9 @@ Keep paths matching at least one include pattern. Repeat the option for addition
 Drop paths matching an exclude pattern. Exclusions take precedence over includes. `*`, `?`, and bracket ranges
 are supported.
 
-Path rewriting runs in this order: `--rebase`, `--prefix-strip`, then include and exclude filtering. If
-rewritten paths become identical, their records are merged.
+Path rewriting runs in this order: `--rebase`, `--prefix-strip`, then include and exclude filtering. Prefix
+matching requires a path boundary; it is not automatic path detection. If rewritten paths become identical,
+their records are merged. Review the emitted `SF:` paths before generating a report.
 
 ### `--branch-coverage on|off`
 
@@ -111,8 +125,8 @@ Print the built-in usage summary.
 ## Interruption and cleanup
 
 On POSIX, SIGINT, SIGTERM, and SIGHUP request cooperative interruption. A caught interruption returns status
-3 and removes temporary sort runs and any unpublished staged output. Runs are also removed after success and
-handled failures. SIGKILL and machine failure cannot run cleanup.
+3 and removes temporary sorted files and any unpublished staged output. Temporary sorted files are also removed
+after success and handled failures. SIGKILL and machine failure cannot run cleanup.
 
 On POSIX, lcovmerge ignores SIGPIPE, so writing to a closed pipe reports EPIPE as an I/O failure and
 follows normal cleanup. Bytes already written to stdout remain visible if a later signal or write
@@ -134,3 +148,15 @@ rows are preserved too.
 - [Migrate from `lcov -a`](MIGRATING-FROM-LCOV.md), including flag mapping and a verification checklist.
 - [CI and format-export recipes](RECIPES.md).
 - [Frequently asked questions](FAQ.md).
+
+## Local temporary-directory example
+
+The selected directory must exist and have free disk space. This example creates it before the merge and
+removes it when the shell exits:
+
+```sh
+set -eu
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+lcovmerge --mem-limit 8M --jobs 1 --tmpdir "$tmpdir" @coverage-inputs.txt -o merged.info -v
+```

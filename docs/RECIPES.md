@@ -1,15 +1,10 @@
 # CI and exporter recipes
 
-lcovmerge runs after a collector or exporter has written LCOV tracefiles. Each merge command expects one or
-more valid `.info` files in the named directory. The CI samples use Python `unittest` as a concrete test
-runner; change the test filename patterns to match your suite. They assume `genhtml` is available if you render
-HTML in the final job.
+lcovmerge reads existing LCOV `.info` files. Run it after test jobs have exported coverage; it does not collect raw coverage or generate reports. Export each shard to a distinct file before merging.
 
-## GitHub Actions matrix
+## GitHub Actions
 
-This workflow runs two test patterns in separate jobs, uploads one LCOV file per job, then merges the
-downloaded artifacts. For another test runner, replace the test and export commands with commands that write
-one distinct `.info` file per matrix value.
+Upload one LCOV file from each test job, then download the artifacts and merge them in a final job. Replace the example test patterns and exporter commands with those used by your project.
 
 ```yaml
 name: coverage
@@ -63,15 +58,11 @@ jobs:
       - run: genhtml coverage/merged.info --output-directory coverage/html
 ```
 
-Change the two test patterns to names that exist in your checkout. Give each upload a distinct artifact name;
-the download step merges their contents into `coverage/shards/`. See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations)
-and the [upload](https://github.com/actions/upload-artifact) and
-[download](https://github.com/actions/download-artifact) action documentation.
+Give each upload a distinct artifact name. The workflow syntax and hosted jobs were not exercised in the local documentation audit. See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations), [upload action](https://github.com/actions/upload-artifact), and [download action](https://github.com/actions/download-artifact).
 
-## GitLab CI matrix
+## GitLab CI
 
-Each matrix job uploads a uniquely named tracefile. The merge job downloads artifacts from all instances of
-`test`:
+This example uses Python Coverage.py. The artifact merge and release-download shell block starts with `set -eu` so a failed download or checksum check stops before extraction.
 
 ```yaml
 stages: [test, report]
@@ -98,32 +89,34 @@ merge-coverage:
     - job: test
       artifacts: true
   before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends curl lcov
-    - asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
-    - base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
-    - curl -fL "$base/$asset" -o "$asset"
-    - curl -fL "$base/SHA256SUMS" -o SHA256SUMS
-    - grep " $asset$" SHA256SUMS | sha256sum -c -
-    - tar -xzf "$asset"
+    - |
+      set -eu
+      apt-get update
+      apt-get install -y --no-install-recommends curl lcov
+      asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+      curl -fL "$base/$asset" -o "$asset"
+      curl -fL "$base/SHA256SUMS" -o SHA256SUMS
+      awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
+      sha256sum -c "$asset.sha256"
+      tar -xzf "$asset"
   script:
-    - mkdir -p coverage
-    - ./lcovmerge coverage/shards/*.info -o coverage/merged.info
-    - genhtml coverage/merged.info --output-directory coverage/html
+    - |
+      set -eu
+      mkdir -p coverage
+      ./lcovmerge coverage/shards/*.info -o coverage/merged.info
+      genhtml coverage/merged.info --output-directory coverage/html
   artifacts:
     paths:
       - coverage/merged.info
       - coverage/html/
 ```
 
-The patterns must match files in your checkout. The merge job installs lcov for `genhtml`. See GitLab's
-[job artifact guide](https://docs.gitlab.com/ci/jobs/job_artifacts/) and
-[parallel:matrix reference](https://docs.gitlab.com/ci/yaml/#parallelmatrix).
+Change the test patterns to match files in your checkout. Hosted GitLab CI execution was not tested in the documentation audit. See GitLab's [artifact guide](https://docs.gitlab.com/ci/jobs/job_artifacts/) and [parallel matrix reference](https://docs.gitlab.com/ci/yaml/#parallelmatrix).
 
-## Jenkins Pipeline
+## Jenkins
 
-The agent needs Python with Coverage.py, curl, tar, and sha256sum. Install `genhtml` if the final stage should
-render HTML. The two test stages stash distinct LCOV files; the merge stage unstashes both:
+The agent needs Python with Coverage.py, `curl`, `tar`, and `sha256sum`; install `genhtml` if the final stage should render HTML. `set -eu` makes the archive verification and extraction block stop on failure.
 
 ```groovy
 pipeline {
@@ -134,6 +127,7 @@ pipeline {
         stage('Unit') {
           steps {
             sh '''
+              set -eu
               python3 -m pip install coverage
               mkdir -p coverage/shards
               COVERAGE_FILE=.coverage-unit python3 -m coverage run -m unittest discover -s tests -p 'test_unit*.py'
@@ -145,6 +139,7 @@ pipeline {
         stage('Integration') {
           steps {
             sh '''
+              set -eu
               python3 -m pip install coverage
               mkdir -p coverage/shards
               COVERAGE_FILE=.coverage-integration python3 -m coverage run -m unittest discover -s tests -p 'test_integration*.py'
@@ -160,11 +155,13 @@ pipeline {
         unstash 'lcov-unit'
         unstash 'lcov-integration'
         sh '''
+          set -eu
           asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
           base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
           curl -fL "$base/$asset" -o "$asset"
           curl -fL "$base/SHA256SUMS" -o SHA256SUMS
-          grep " $asset$" SHA256SUMS | sha256sum -c -
+          awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
+          sha256sum -c "$asset.sha256"
           tar -xzf "$asset"
           ./lcovmerge coverage/shards/unit.info coverage/shards/integration.info -o coverage/merged.info
           genhtml coverage/merged.info --output-directory coverage/html
@@ -176,18 +173,14 @@ pipeline {
 }
 ```
 
-Jenkins `stash` is intended for small files in one pipeline. Use an artifact manager or shared storage for
-large reports. See the [stash/unstash steps](https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/)
-and [archiveArtifacts](https://www.jenkins.io/doc/pipeline/steps/core/).
+Jenkins `stash` is intended for small files in one pipeline. Hosted Jenkins syntax and runtime were not tested in the documentation audit. See the [stash/unstash steps](https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/) and [archiveArtifacts](https://www.jenkins.io/doc/pipeline/steps/core/).
 
 ## CMake with gcov
 
-Compile each isolated test shard with GCC coverage instrumentation, run its tests, then capture the shard's
-`.gcda` data to LCOV with lcov. Set `SHARD` to a different value in each CI job so output names stay distinct.
-GCC documents `--coverage` in its
-[instrumentation guide](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html).
+Compile each isolated test shard with GCC coverage instrumentation, run its tests, then capture the `.gcda` data to LCOV with `lcov`. Give each CI job a different shard name. GCC documents `--coverage` in its [instrumentation guide](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html).
 
 ```sh
+set -eu
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage
 cmake --build build
@@ -200,55 +193,53 @@ lcov --capture --directory build --output-file "coverage/shards/shard-$SHARD.inf
 After each shard uploads its `.info` file, merge them in the report job:
 
 ```sh
+set -eu
 lcovmerge coverage/shards/shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html
 ```
 
-Use isolated build directories so each shard captures only its own counters. See the
-[LCOV project documentation](https://github.com/linux-test-project/lcov).
+Use separate build directories so each shard captures only its own counters. See the [LCOV project documentation](https://github.com/linux-test-project/lcov).
 
 ## Bazel
 
-Bazel's `coverage` command creates a combined LCOV report. Use that report directly when one Bazel invocation
-already covers the tests you need:
+A single `bazel coverage` invocation can already create a combined LCOV report. Use that report directly when it covers the tests you need:
 
 ```sh
+set -eu
 bazel coverage --combined_report=lcov //...
 report="$(bazel info output_path)/_coverage/_coverage_report.dat"
 genhtml "$report" --output-directory coverage/html
 ```
 
-If independent Bazel jobs have each exported a separate LCOV file and you need one artifact, merge those files
-after downloading them:
+If independent Bazel jobs each exported a separate LCOV file and you need one artifact, merge after downloading them:
 
 ```sh
+set -eu
 lcovmerge coverage/bazel-shards/bazel-shard-*.info -o coverage/merged.info
 ```
 
-Bazel does not need lcovmerge for the combined report it already creates. See the
-[Bazel coverage guide](https://bazel.build/docs/coverage).
+The Bazel commands were not run in the documentation audit because Bazel was unavailable. See the [Bazel coverage guide](https://bazel.build/docs/coverage).
 
 ## Export to LCOV, then merge
 
-Use the exporter that matches your raw data. Run the commands below only after the collector has produced the
-required raw profile or execution data. lcovmerge reads LCOV tracefiles, not these raw formats.
+Use the exporter that matches your raw data. lcovmerge reads the LCOV files these commands create; it does not read raw profiles or execution data.
 
 ### Rust with cargo-llvm-cov
 
-`cargo llvm-cov` can run the Rust coverage workflow and write LCOV:
-
 ```sh
+set -eu
 mkdir -p coverage/shards
 cargo llvm-cov --lcov --output-path coverage/shards/rust.info
 ```
 
-See the [cargo-llvm-cov LCOV instructions](https://github.com/taiki-e/cargo-llvm-cov#lcov-output).
+This command was not verified in the documentation audit because `cargo-llvm-cov` was unavailable. See the [cargo-llvm-cov LCOV instructions](https://github.com/taiki-e/cargo-llvm-cov#lcov-output).
 
 ### Rust with grcov
 
-This source-based coverage example assumes `rustup`, `cargo`, and `grcov` are installed:
+This source-based coverage example requires `rustup`, `cargo`, `grcov`, and the compatible Rust LLVM tools component:
 
 ```sh
+set -eu
 mkdir -p coverage/shards
 rustup component add llvm-tools
 export RUSTFLAGS="-Cinstrument-coverage"
@@ -257,16 +248,14 @@ LLVM_PROFILE_FILE="coverage/rust-%p-%m.profraw" cargo test
 grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o coverage/shards/rust.info
 ```
 
-See the [grcov Rust example](https://github.com/mozilla/grcov#example-how-to-generate-source-based-coverage-for-a-rust-project).
+The source-based example was not verified in the documentation audit because the required compatible `llvm-tools` component was unavailable. See the [grcov Rust example](https://github.com/mozilla/grcov#example-how-to-generate-source-based-coverage-for-a-rust-project).
 
 ### Clang with llvm-profdata and llvm-cov
 
-These commands assume `./build/test-suite` was compiled for source-based coverage and each test job stored its
-raw profile in `coverage/profiles/`. LLVM documents raw-profile merging and LCOV export in the
-[llvm-profdata guide](https://llvm.org/docs/CommandGuide/llvm-profdata.html) and
-[llvm-cov guide](https://www.llvm.org/docs/CommandGuide/llvm-cov.html):
+These commands assume `./build/test-suite` was compiled for source-based coverage and test jobs saved raw profiles under `coverage/profiles/`. LLVM documents raw-profile merging and LCOV export in the [llvm-profdata guide](https://llvm.org/docs/CommandGuide/llvm-profdata.html) and [llvm-cov guide](https://llvm.org/docs/CommandGuide/llvm-cov.html):
 
 ```sh
+set -eu
 mkdir -p coverage/profiles coverage/shards
 LLVM_PROFILE_FILE="coverage/profiles/shard-%p-%m.profraw" ./build/test-suite
 llvm-profdata merge -sparse coverage/profiles/*.profraw -o coverage/merged.profdata
@@ -275,38 +264,52 @@ llvm-cov export -format=lcov -instr-profile=coverage/merged.profdata ./build/tes
 
 ### JavaScript with c8 or nyc
 
-Install c8 or nyc in the project first. These commands assume the package has an `npm test` script:
+Run one exporter from the monorepo root. Use either c8 or nyc for a package, not both. Keep package-specific output directories and the coverage working directory at the monorepo root so `SF:` records retain package-qualified paths.
+
+For c8:
 
 ```sh
-mkdir -p coverage/c8 coverage/nyc coverage/shards
-npx c8 --reporter=lcov --reports-dir=coverage/c8 npm test
-mv coverage/c8/lcov.info coverage/shards/c8.info
-npx nyc --reporter=lcov --report-dir=coverage/nyc npm test
-mv coverage/nyc/lcov.info coverage/shards/nyc.info
+set -eu
+mkdir -p coverage/packages/a
+npx c8 --cwd "$PWD" --reporter=lcov --reports-dir coverage/packages/a npm --prefix packages/a test
 ```
 
-Use a separate output directory for each test shard. If all raw nyc JSON data is available, see nyc's
-[`nyc merge` documentation](https://github.com/istanbuljs/nyc#what-about-nyc-merge) before exporting LCOV.
+Or use nyc instead:
+
+```sh
+set -eu
+mkdir -p coverage/packages/a
+npx nyc --cwd "$PWD" --reporter=lcov --report-dir coverage/packages/a npm --prefix packages/a test
+```
+
+Repeat the chosen command for each package with a separate report directory, then merge the exported files:
+
+```sh
+set -eu
+lcovmerge coverage/packages/*/lcov.info -o coverage/merged.info
+```
+
+If two packages emit the same relative `SF:` path, such as `SF:src/math.js`, lcovmerge treats those records as the same source and combines them. It cannot infer that identical paths refer to different files. Inspect the output `SF:` paths before reporting. If nyc's raw JSON data is still available, consider its [`nyc merge` path](https://github.com/istanbuljs/nyc#what-about-nyc-merge) before exporting LCOV.
 
 ### Python with Coverage.py
 
-Run each shard with its own data file, then export that file to LCOV. If you still have the raw data from all
-shards, use `coverage combine` before `coverage lcov` instead of exporting each shard:
+Run each shard with its own data file, then export it to LCOV. If you still have raw data from all shards, use `coverage combine` before exporting:
 
 ```sh
+set -eu
 mkdir -p coverage/shards
 COVERAGE_FILE=.coverage-unit coverage run -m pytest
 COVERAGE_FILE=.coverage-unit coverage lcov -o coverage/shards/python.info
 ```
 
-Coverage.py documents the [LCOV reporting command](https://coverage.readthedocs.io/en/latest/commands/cmd_lcov.html)
-and [combine command](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html).
+See Coverage.py's [LCOV reporting command](https://coverage.readthedocs.io/en/latest/commands/cmd_lcov.html) and [combine command](https://coverage.readthedocs.io/en/latest/commands/cmd_combine.html).
 
 ### Go with gcov2lcov
 
 Run Go's coverage command, then convert its profile to LCOV:
 
 ```sh
+set -eu
 mkdir -p coverage/shards
 go test -coverprofile=coverage/go.out ./...
 gcov2lcov -infile=coverage/go.out -outfile=coverage/shards/go.info
@@ -316,32 +319,64 @@ Install gcov2lcov following its [upstream README](https://github.com/jandelgado/
 
 ### Java with JaCoCo
 
-If JaCoCo has produced execution data and the JaCoCo CLI, classes, and LCOV converter are available, the lcov
-project documents these conversion commands:
+If JaCoCo produced execution data and the JaCoCo CLI, classes, and LCOV converter are available, convert the execution data to XML and then to LCOV:
 
 ```sh
+set -eu
 mkdir -p coverage/shards
 java -jar jacococli.jar report coverage/jacoco.exec --classfiles build/classes --xml coverage/jacoco.xml
 xml2lcov --output coverage/shards/java.info --source-directory src coverage/jacoco.xml
 ```
 
-The lcov project also documents the `jacoco2lcov` wrapper:
+The lcov project's `jacoco2lcov` wrapper also needs the JaCoCo CLI jar location. Include `--jar`; the documented wrapper invocation without it fails when the jar is not otherwise configured:
 
 ```sh
-jacoco2lcov --output coverage/shards/java.info --source-directory src --classpath build/classes coverage/jacoco.exec
+set -eu
+jacoco2lcov --jar jacococli.jar --output coverage/shards/java.info --source-directory src --classpath build/classes coverage/jacoco.exec
 ```
 
-See the lcov project's [JaCoCo instructions](https://github.com/linux-test-project/lcov#java-code-using-jacoco)
-and [tool list](https://github.com/linux-test-project/lcov#included-files).
+The audit verified the XML plus `xml2lcov` path and the wrapper with `--jar`. See the lcov project's [JaCoCo instructions](https://github.com/linux-test-project/lcov#java-code-using-jacoco) and [tool list](https://github.com/linux-test-project/lcov#included-files).
+
+## Build from source
+
+From a checkout of the repository, the standard build command creates `bin/lcovmerge` with the project's strict compiler warnings:
+
+```sh
+make
+```
+
+Run `make test` when validating a local change.
+
+## Release archives and provenance
+
+Release archives and `SHA256SUMS` are published on the [release page](https://github.com/megasoft1978/lcovmerge/releases). For Linux and macOS installation commands, see the [Usage guide](USAGE.md#install). The [Homebrew tap](https://github.com/megasoft1978/homebrew-tap) also has a formula; Homebrew installation could not be verified in the local audit because `brew` stopped before formula lookup while trying to create a protected lock. The Scoop package was not installed on Windows in that audit. Windows runtime verification is pending a passing Windows CI run; see [limitations](LIMITATIONS.md#verification-status).
+
+To verify build provenance manually, use a GitHub CLI version with `gh attestation verify` support. Cosign needs a writable Sigstore trust-root cache or a supplied trust-root file. See the [GitHub CLI attestation guide](https://cli.github.com/manual/gh_attestation_verify) and [Cosign verification guide](https://docs.sigstore.dev/cosign/verifying/verify/).
+
+## Docker
+
+The container writes into the mounted working directory. The temporary directory must exist and have available disk space:
+
+```sh
+set -eu
+mkdir -p coverage
+
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.1 \
+  --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
+```
+
+The v1.0.1 arm64 container command passed in the local audit; other container platforms were not exercised there. See the [container registry](https://github.com/megasoft1978/lcovmerge/pkgs/container/lcovmerge).
+
+## Report and upload consumers
+
+lcovmerge produces one LCOV `.info` file. Pass that file to `genhtml` or to an uploader configured for LCOV. Some report and upload tools accept multiple input files directly; if your current command already handles the shards, skip the separate merge. A consumer that expects another format needs its matching exporter or converter first.
 
 ## Common after-export merge
 
-After exported artifacts have been downloaded into one job:
+After exported files have been downloaded into one job, merge them and pass the result to the existing report command:
 
 ```sh
+set -eu
 lcovmerge coverage/shards/*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html
 ```
-
-This produces one LCOV tracefile and then uses the report tool. If your consumer accepts the shard files
-directly, skip the merge step.

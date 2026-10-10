@@ -1,6 +1,6 @@
 # Benchmarks
 
-[`data/benchmarks.json`](../data/benchmarks.json) is the canonical record for benchmark measurements. The tables in
+[`data/benchmarks.json`](../data/benchmarks.json) is the published measurement record. The generated tables in
 this file, the README, and the site data are rendered from it.
 
 ## Methodology
@@ -14,24 +14,25 @@ per dataset. Per-command timeout: 30 minutes.
 
 - Synthetic fixtures were generated with `bench/run.py`, `tools/gen-lcov.py`, and `tools/gen-path-heavy.py`. Set
   `TMPDIR=./.luna-tmp`; the harness removes generated inputs when it exits.
-- Baseline and final lcovmerge runs used the same deterministic fixture per dataset. `hyperfine 2.0.0` performed
-  warmup runs and measured repeats; wall time is the median and RSS is the maximum measured `memory_peak_resident`.
+- Baseline and final lcovmerge runs used the same generated input per dataset. `hyperfine 2.0.0` performed
+  warmup runs and measured repeats; wall time is the median and peak resident memory is the maximum measured
+  `memory_peak_resident` value.
   S used three warmups; the other paired cases used one.
 - LCOV 2.6 was measured once per dataset by `bench/run.py`. It ran after the baseline merger read the fixtures,
   so this is a fixed-order, cache-warm comparison rather than a cold-cache result. The PATH-HEAVY LCOV command
   exited with status 1.
-- Apple `/usr/bin/time -l` could not query `kern.clockrate` under the host policy. lcovmerge RSS therefore comes
-  from hyperfine. Successful LCOV RSS values in the table are the previous canonical measurements and were not
-  refreshed in this run; PATH-HEAVY current-run RSS is unavailable.
+- Apple `/usr/bin/time -l` could not query `kern.clockrate` under the host policy. lcovmerge peak resident-memory
+  values therefore come from hyperfine. Successful LCOV values in the table are from an earlier recorded
+  measurement and were not refreshed in this run; PATH-HEAVY current-run peak resident memory is unavailable.
 - The generated-fixture table below is not a pairwise semantic comparison against LCOV. The separate
   project-derived validation compares normalized results with LCOV and records genhtml compatibility,
-  determinism, and external-sort checks in [real-projects.md](validation/real-projects.md).
+  determinism, and temporary-file sort checks in [real-projects.md](validation/real-projects.md).
 
 ## Linux measurements
 
 The manually triggered `Linux benchmark` workflow runs S, M, and L on `ubuntu-24.04`, with an optional
-PATH-HEAVY run. Each tool gets one hyperfine warmup and repeat measurements. On Linux, peak RSS comes from GNU
-`/usr/bin/time -v` for each measured run. The workflow artifact contains host metadata and aggregate JSON and
+PATH-HEAVY run. Each tool gets one hyperfine warmup and repeat measurements. On Linux, peak resident memory comes
+from GNU `/usr/bin/time -v` for each measured run. The workflow artifact contains host metadata and aggregate JSON and
 text reports; generated tracefiles stay in the runner's ignored `.luna-tmp` directory and are removed by the
 benchmark runner.
 
@@ -42,7 +43,7 @@ under `.luna-tmp`, then merge the aggregate JSON with:
 python3 -I bench/ingest-ci-results.py .luna-tmp/<download-dir>/benchmark.json
 ```
 
-The ingester appends or replaces that run under the additive `host_results` field in the canonical data and the
+The ingester appends or replaces that run under the additive `host_results` field in the published measurement record and the
 site data mirror. It leaves the existing macOS host and measurements intact. The workflow runs only on
 `workflow_dispatch`.
 
@@ -53,7 +54,7 @@ shipped Windows release executable with checksum-verified Zig 0.17.0 and `script
 second UCRT64 executable with MSYS2 GCC at `-O2`. Native Windows Python generates the same S/M/L fixture
 parameters with `tools/gen-lcov.py --benchmark-compatible --checksums`; the generated inputs are shared by both
 binaries. Each binary gets one warmup and then 5 S runs, 3 M runs, and 2 L runs. The JSON and text artifact list
-the median and minimum wall time for each binary. Peak RSS uses Windows `GetProcessMemoryInfo`; it is marked
+the median and minimum wall time for each binary. Peak resident memory uses Windows `GetProcessMemoryInfo`; it is marked
 unknown if any measured run cannot be sampled. No LCOV comparator is run, and these Windows measurements are a
 separate host entry rather than a cross-platform speed claim.
 
@@ -87,26 +88,27 @@ whose result is already recorded. `--hyperfine-runs N` adds one warmup followed 
 
 ## Results
 
-Each tool cell is wall time / peak RSS / throughput / command status. Exact input byte counts are shown in the
-first column. Throughput is shown only after a successful exit. The final M run reached 320.7 MB/s at 5.12 MiB
-RSS; the highest final RSS across these datasets was 25.06 MiB on L.
+Each tool cell is wall time / peak resident memory / throughput / command status. Exact input byte counts are
+shown in the first column. Throughput is shown only after a successful exit. The final M run reached 320.7 MB/s
+at 5.12 MiB peak resident memory; the highest final value across these datasets was 25.06 MiB on L.
 
 <!-- BENCHMARKS:START -->
 <!-- Generated by tools/render_benchmarks.py from data/benchmarks.json. -->
-| Dataset (input bytes) | lcovmerge 1.0.1 | lcov 2.6 | lcov-result-merger 6.0.0 |
+| Dataset (input bytes) | lcovmerge 1.0.0 | lcov 2.6 | lcov-result-merger 6.0.0 |
 | --- | ---: | ---: | ---: |
 | S (99,996,906 bytes) | 0.260 s / 2.95 MiB / 384.6 MB/s / OK | 5.317 s / 229.78 MiB / 18.8 MB/s / OK | 17.521 s / 437.70 MiB / 5.7 MB/s / OK |
 | M (1,118,686,233 bytes) | 3.488 s / 5.12 MiB / 320.7 MB/s / OK | 50.542 s / 610.20 MiB / 22.1 MB/s / OK | 145.171 s / 2,381.97 MiB / 7.7 MB/s / OK |
 | L (4,853,340,843 bytes) | 27.723 s / 25.06 MiB / 175.1 MB/s / OK | 203.235 s / 1,430.23 MiB / 23.9 MB/s / OK | 604.280 s / 3,106.12 MiB / 8.0 MB/s / OK |
 | XL-single (744,992,058 bytes) | 1.456 s / 2.28 MiB / 511.8 MB/s / OK | 37.803 s / 3,577.38 MiB / 19.7 MB/s / OK | 0.170 s / 607.67 MiB / n/a / ERROR_1 |
-| PATH-HEAVY (130,000,000 bytes) | 2.122 s / 20.23 MiB / 61.3 MB/s / OK | 98.805 s / RSS unavailable for current failed run / n/a / ERROR_1 | 1,800.002 s / 842 MiB sampled in final 308 s; full-run peak unavailable / n/a / TIMEOUT |
+| PATH-HEAVY (130,000,000 bytes) | 2.122 s / 20.23 MiB / 61.3 MB/s / OK | 98.805 s / peak resident memory unavailable for current failed run / n/a / ERROR_1 | 1,800.002 s / 842 MiB sampled in final 308 s; full-run peak resident memory unavailable / n/a / TIMEOUT |
 | REAL (unavailable) | — / — / n/a / NOT MEASURED | — / — / n/a / NOT MEASURED | — / — / n/a / NOT MEASURED |
 <!-- BENCHMARKS:END -->
 
-### Paired speedups
+### Recorded timing ratios
 
-Baseline and final lcovmerge binaries processed the same generated input for each paired hyperfine run.
-lcov 2.6 ran once per dataset; the LCOV PATH-HEAVY run failed, so no speedup is claimed for it.
+Baseline and final lcovmerge binaries processed the same generated input for each paired hyperfine run. lcov 2.6
+ran once per dataset. These ratios describe the listed runs on this host; they are not a general speed claim. The
+LCOV PATH-HEAVY run failed, so no ratio is shown for it.
 
 | Dataset | Baseline lcovmerge | Final lcovmerge | vs baseline | lcov 2.6 | vs lcov |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -119,7 +121,7 @@ lcov 2.6 ran once per dataset; the LCOV PATH-HEAVY run failed, so no speedup is 
 ### Dataset M job settings
 
 <!-- SCALING:START -->
-| lcovmerge jobs argument | Time | Peak RSS | Throughput |
+| lcovmerge jobs argument | Time | Peak resident memory | Throughput |
 | ---: | ---: | ---: | ---: |
 | default | 3.620 s | 5.16 MiB | 309.1 MB/s |
 | -j1 | 4.160 s | 5.16 MiB | 268.9 MB/s |
@@ -129,7 +131,7 @@ lcov 2.6 ran once per dataset; the LCOV PATH-HEAVY run failed, so no speedup is 
 <!-- SCALING:END -->
 
 The sorted regular-file fast path streams with one job and ignores the jobs setting. These measurements record the
-observed command variation for the requested values; they do not measure external-sort worker scaling.
+observed command variation for the requested values; they do not measure parallel sorting across input files.
 
 ## Caveats
 
@@ -141,16 +143,17 @@ observed command variation for the requested values; they do not measure externa
 - lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts
   are listed per workload. Cache warmups were used, but no explicit cache flush was applied.
 - lcov 2.6 ran once per dataset after the baseline merge. Its PATH-HEAVY run exited with status 1 after 98.805
-  s; no valid speedup or current-run RSS is reported for that failure.
-- Successful lcov comparator RSS values remain from the prior canonical benchmark; the current host policy
-  blocked the /usr/bin/time -l sysctl query.
-- lcov-result-merger was unavailable in this run; its prior canonical measurements remain unchanged. Benchmark
-  outputs were not compared against external tools.
-- Dataset M sorted regular shards use the direct single-threaded path; --jobs timings record run variation and
-  do not demonstrate worker scaling.
+  s; no valid speedup or current-run peak resident memory is reported for that failure.
+- Successful lcov comparator peak resident memory values remain from the earlier recorded benchmark; the
+  current host policy blocked the /usr/bin/time -l sysctl query.
+- lcov-result-merger was unavailable in this run; its earlier recorded measurements remain unchanged.
+  Benchmark outputs were not compared against external tools.
+- Dataset M's sorted regular inputs use one merge worker; --jobs results show run variation, not the effect of
+  adding workers.
 - The external Bazel issue is context only and was not measured with these commands.
 <!-- BENCH-CAVEATS:END -->
 
 The benchmark set is not a conformance suite. It cannot establish equivalence across every LCOV extension or
-project workload. lcovmerge does not implement MC/DC semantics. The [Bazel issue](https://github.com/bazelbuild/bazel/issues/26383)
-describes a separate memory-pressure case; it is not a benchmark result for this repository.
+project workload. lcovmerge preserves and combines MC/DC rows but does not promise LCOV-equivalent MC/DC counts.
+The [Bazel issue](https://github.com/bazelbuild/bazel/issues/26383) describes a separate memory-pressure case; it
+is not a benchmark result for this repository.

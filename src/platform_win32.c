@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <errno.h>
+#include <limits.h>
 #include <process.h>
 #include <signal.h>
 #include <stdint.h>
@@ -20,9 +21,14 @@ static char *utf8_path(const wchar_t *path) {
     int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, NULL, 0, NULL, NULL);
     if (count <= 0) return NULL;
     char *utf8 = malloc((size_t)count);
-    if (!utf8) return NULL;
+    if (!utf8) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
     if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, utf8, count, NULL, NULL) != count) {
+        DWORD error = GetLastError();
         free(utf8);
+        SetLastError(error);
         return NULL;
     }
     return utf8;
@@ -43,14 +49,24 @@ static wchar_t *long_path(wchar_t *path) {
           (path_length >= 2u && path[0] == L'\\' && path[1] == L'\\'))) {
         DWORD capacity = GetFullPathNameW(path, 0, NULL, NULL);
         if (capacity == 0 || (size_t)capacity * sizeof(*path) / sizeof(*path) != (size_t)capacity) {
+            if (capacity != 0) SetLastError(ERROR_FILENAME_EXCED_RANGE);
             free(path);
             return NULL;
         }
         absolute = malloc((size_t)capacity * sizeof(*absolute));
-        if (!absolute) { free(path); return NULL; }
+        if (!absolute) {
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            free(path);
+            return NULL;
+        }
         DWORD length = GetFullPathNameW(path, capacity, absolute, NULL);
+        DWORD error = length == 0 ? GetLastError() : ERROR_INVALID_NAME;
         free(path);
-        if (length == 0 || length >= capacity) { free(absolute); return NULL; }
+        if (length == 0 || length >= capacity) {
+            free(absolute);
+            SetLastError(error);
+            return NULL;
+        }
     }
 
     size_t absolute_length = wcslen(absolute);
@@ -61,10 +77,15 @@ static wchar_t *long_path(wchar_t *path) {
         size_t character_count = prefix_length + absolute_length - 1u;
         if (character_count > SIZE_MAX / sizeof(*absolute)) {
             free(absolute);
+            SetLastError(ERROR_FILENAME_EXCED_RANGE);
             return NULL;
         }
         wchar_t *extended = malloc(character_count * sizeof(*extended));
-        if (!extended) { free(absolute); return NULL; }
+        if (!extended) {
+            free(absolute);
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return NULL;
+        }
         memcpy(extended, prefix, prefix_length * sizeof(*extended));
         memcpy(extended + prefix_length, absolute + 2,
                (absolute_length - 1u) * sizeof(*extended));
@@ -76,10 +97,15 @@ static wchar_t *long_path(wchar_t *path) {
         size_t prefix_length = sizeof(prefix) / sizeof(prefix[0]) - 1u;
         if (absolute_length + prefix_length + 1u > SIZE_MAX / sizeof(*absolute)) {
             free(absolute);
+            SetLastError(ERROR_FILENAME_EXCED_RANGE);
             return NULL;
         }
         wchar_t *extended = malloc((absolute_length + prefix_length + 1u) * sizeof(*extended));
-        if (!extended) { free(absolute); return NULL; }
+        if (!extended) {
+            free(absolute);
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return NULL;
+        }
         memcpy(extended, prefix, prefix_length * sizeof(*extended));
         memcpy(extended + prefix_length, absolute,
                (absolute_length + 1u) * sizeof(*extended));
@@ -87,6 +113,7 @@ static wchar_t *long_path(wchar_t *path) {
         return extended;
     }
     free(absolute);
+    SetLastError(ERROR_INVALID_NAME);
     return NULL;
 }
 
@@ -95,9 +122,14 @@ static wchar_t *wide_path(const char *path) {
     if (count <= 0) return NULL;
     size_t bytes = (size_t)count * sizeof(wchar_t);
     wchar_t *wide = malloc(bytes);
-    if (!wide) return NULL;
+    if (!wide) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, count) != count) {
+        DWORD error = GetLastError();
         free(wide);
+        SetLastError(error);
         return NULL;
     }
     return long_path(wide);
@@ -146,9 +178,15 @@ int lm_is_regular_file(const char *path) {
     return regular;
 }
 
-int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
+int lm_create_temp(const char *directory, char **path_out, lm_handle *out,
+                   unsigned long *error_out) {
+    if (error_out) *error_out = 0;
     wchar_t *wide_dir = wide_path(directory);
-    if (!wide_dir) return -1;
+    if (!wide_dir) {
+        DWORD error = GetLastError();
+        if (error_out) *error_out = error ? error : ERROR_NOT_ENOUGH_MEMORY;
+        return -1;
+    }
     static volatile LONG sequence = 0;
     static const wchar_t name_format[] = L"lcovmerge-%08lX-%08lX-%08lX.tmp";
     wchar_t name[64];
@@ -161,31 +199,53 @@ int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
                                    (unsigned long)GetTickCount(),
                                    (unsigned long)InterlockedIncrement(&sequence));
         if (name_length <= 0 || (size_t)name_length >= sizeof(name) / sizeof(name[0])) {
+            if (error_out) *error_out = ERROR_INVALID_NAME;
             free(wide_dir);
             return -1;
         }
         size_t separator_length = add_separator ? 1u : 0u;
         size_t component_length = (size_t)name_length;
         if (directory_length > SIZE_MAX - separator_length - component_length - 1u) {
+            if (error_out) *error_out = ERROR_FILENAME_EXCED_RANGE;
             free(wide_dir);
             return -1;
         }
         size_t path_length = directory_length + separator_length + component_length + 1u;
-        if (path_length > SIZE_MAX / sizeof(*wide_dir)) { free(wide_dir); return -1; }
+        if (path_length > SIZE_MAX / sizeof(*wide_dir)) {
+            if (error_out) *error_out = ERROR_NOT_ENOUGH_MEMORY;
+            free(wide_dir);
+            return -1;
+        }
         wchar_t *path = malloc(path_length * sizeof(*path));
-        if (!path) { free(wide_dir); return -1; }
+        if (!path) {
+            if (error_out) *error_out = ERROR_NOT_ENOUGH_MEMORY;
+            free(wide_dir);
+            return -1;
+        }
         memcpy(path, wide_dir, directory_length * sizeof(*path));
         if (add_separator) path[directory_length] = L'\\';
         memcpy(path + directory_length + separator_length, name,
                (component_length + 1u) * sizeof(*path));
         path = long_path(path);
-        if (!path) { free(wide_dir); return -1; }
+        if (!path) {
+            DWORD error = GetLastError();
+            if (error_out) *error_out = error ? error : ERROR_NOT_ENOUGH_MEMORY;
+            free(wide_dir);
+            return -1;
+        }
         HANDLE handle = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
                                     NULL, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, NULL);
         if (handle != INVALID_HANDLE_VALUE) {
             free(wide_dir);
             char *utf8 = utf8_path(path);
-            if (!utf8) { CloseHandle(handle); DeleteFileW(path); free(path); return -1; }
+            if (!utf8) {
+                DWORD error = GetLastError();
+                CloseHandle(handle);
+                DeleteFileW(path);
+                free(path);
+                if (error_out) *error_out = error ? error : ERROR_NOT_ENOUGH_MEMORY;
+                return -1;
+            }
             free(path);
             *path_out = utf8;
             *out = (lm_handle)(intptr_t)handle;
@@ -194,12 +254,35 @@ int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
         DWORD error = GetLastError();
         free(path);
         if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS) {
+            if (error_out) *error_out = error;
             free(wide_dir);
             return -1;
         }
     }
+    if (error_out) *error_out = ERROR_FILE_EXISTS;
     free(wide_dir);
     return -1;
+}
+
+void lm_format_error(unsigned long error, char *buffer, size_t capacity) {
+    if (capacity == 0) return;
+    wchar_t wide[256];
+    DWORD length = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                  NULL, (DWORD)error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                                  wide, (DWORD)(sizeof(wide) / sizeof(wide[0])), NULL);
+    while (length > 0 && (wide[length - 1] == L'\r' || wide[length - 1] == L'\n'))
+        wide[--length] = L'\0';
+    if (length == 0 || capacity > (size_t)INT_MAX) {
+        (void)snprintf(buffer, capacity, "Windows error %lu", error);
+        return;
+    }
+    int converted = WideCharToMultiByte(CP_UTF8, 0, wide, (int)length, buffer,
+                                        (int)capacity - 1, NULL, NULL);
+    if (converted <= 0) {
+        (void)snprintf(buffer, capacity, "Windows error %lu", error);
+        return;
+    }
+    buffer[converted] = '\0';
 }
 
 int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out,

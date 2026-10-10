@@ -377,7 +377,7 @@ static int test_line_reader_boundaries(void) {
     int reader_initialized = 0;
     int result = 0;
 
-    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle) == 0);
+    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle, NULL) == 0);
     payload = malloc(MAX_LINE + 2u);
     CHECK_CLEANUP(payload != NULL);
 
@@ -423,7 +423,7 @@ static int test_line_reader_nul(void) {
     memset(&reader, 0, sizeof(reader));
     int reader_initialized = 0;
     int result = 0;
-    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle) == 0);
+    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle, NULL) == 0);
     CHECK_CLEANUP(write_all(handle, line, sizeof(line)) == 0);
     CHECK_CLEANUP(lm_close(handle) == 0);
     handle = LM_INVALID_HANDLE;

@@ -1,14 +1,18 @@
 .TH LCOVMERGE 1 "2026-10-10" "lcovmerge 1.0.1" "User Commands"
 .SH NAME
-lcovmerge \- bounded-memory LCOV tracefile merger
+lcovmerge \- LCOV .info file merger
 .SH SYNOPSIS
 .B lcovmerge
 [\fIoptions\fR] \fIa.info\fR \fIb.info\fR ... \fB-o\fR \fIout.info\fR
 .SH DESCRIPTION
 .B lcovmerge
-merges LCOV tracefiles with a bounded record arena and temporary sorted
-runs. Output source files and coverage rows are sorted deterministically.
-Summary rows are recalculated from merged coverpoints.
+merges already-exported LCOV .info files. It does not collect raw coverage
+or generate reports. Output records are written in a stable order, and
+summary rows are recalculated from merged coverage records.
+.PP
+The --mem-limit setting limits memory reserved for coverage records while
+sorting. It is not a cap on total process memory or temporary disk use.
+--tmpdir selects the directory for temporary sorted files.
 .PP
 The output option is required. List-file paths are read relative to the
 current working directory; empty lines and lines beginning with # are
@@ -27,25 +31,30 @@ cannot be rolled back; a later signal or write failure may leave partial
 output in the stream.
 .TP
 .BI --mem-limit " SIZE"
-Set the record-arena limit. SIZE is bytes or an integer with optional K, M,
-or G binary suffix (multiples of 1024; suffix matching is case-insensitive).
-The default is 64M; the minimum is 8M per job. Parser buffers, merge
-bookkeeping, thread stacks, and temporary files are outside this cap.
+Set the limit for memory reserved for coverage records while sorting.
+SIZE is bytes or an integer with optional K, M, or G binary suffix (multiples
+of 1024; suffix matching is case-insensitive). The default is 64M; the
+minimum is 8M per job. This setting does not cap total process memory or
+temporary disk use; parser buffers, merge bookkeeping, thread stacks, and
+runtime state need additional memory.
 .TP
 .BI --tmpdir " DIR"
-Place sorted run files under DIR. The default is the system temporary
-directory. Run files are removed on success and handled errors. On POSIX they
-are also removed after caught SIGINT, SIGTERM, and SIGHUP.
+Place temporary sorted files under an existing, writable DIR with enough
+free disk space. The default is the system temporary directory. Files are
+removed on success and handled errors. On POSIX they are also removed after
+caught SIGINT, SIGTERM, and SIGHUP. A forced kill or machine failure can leave
+files behind. Windows does not promise the same interruption cleanup.
 .TP
 .BI -j " N" ", " --jobs " N"
-Generate sorted runs from N input files concurrently. N must be from 1
-through 32. The default is the lesser of four and the detected processor
-count, further reduced when needed to fit the memory limit. An explicit
-count must fit the minimum 8M per job. When all inputs are regular files and
-rewritten records are already in canonical order, the streaming merge uses
-one job and ignores this value. An out-of-order row, unsupported stream type,
-or streaming-path memory limit causes the attempt to be discarded and uses
-the external-sort path with this job count.
+Process whole input files concurrently with N workers. N must be from 1
+through 32. A single large input file is not split across workers. The
+default is the lesser of four and the detected processor count, further
+reduced when needed to fit the memory setting. An explicit count must fit
+the minimum 8M per job. When all inputs are regular files and rewritten
+records are already in stable order, the streaming merge uses one worker and
+ignores this value. An out-of-order row, unsupported stream type, or
+streaming-path memory limit causes a retry using temporary sorted files and
+this worker count.
 .TP
 .BI --prefix-strip " PREFIX"
 Remove a matching leading prefix from each SF path. A match must end at a
@@ -123,8 +132,8 @@ lcovmerge --rebase /build/worker-a/project=/workspace/project \\
 Recognized rows include TN, SF/KF, legacy FN/FNDA, LCOV 2.x FNL/FNA, DA
 with optional checksum, BRDA, MCDC, and summary rows. Summary rows in inputs
 are ignored and generated from the merged coverpoints. Unknown colon-delimited
-rows inside a source section are preserved in sorted order; exact duplicate
-unknown rows are preserved too.
+rows inside a source section are preserved in sorted order but are not
+interpreted as coverage data; exact duplicates are preserved too.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -141,8 +150,9 @@ Input/output or temporary-file I/O failure, allocation failure, or
 interruption.
 .SH INTERRUPTION AND CLEANUP
 On POSIX, SIGINT, SIGTERM, and SIGHUP request cooperative interruption.
-A caught interruption returns status 3 and removes temporary sort runs and
-any unpublished staged output. SIGKILL and machine failure cannot run cleanup.
+A caught interruption returns status 3 and removes temporary sorted files
+and any unpublished staged output. SIGKILL and machine failure cannot run
+cleanup.
 .PP
 On POSIX, lcovmerge ignores SIGPIPE, so writing to a closed pipe reports
 EPIPE as an I/O failure and follows normal cleanup. Bytes already written to

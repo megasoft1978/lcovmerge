@@ -158,7 +158,7 @@ typedef struct {
     RunList runs;
     int error_code;
     char error_file[4096];
-    char error_message[256];
+    char error_message[4096];
     uint64_t error_line;
     uint64_t input_bytes;
     uint64_t records;
@@ -773,7 +773,7 @@ static int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir) {
     if (interrupted) return -1;
     char *path = NULL;
     lm_handle handle = LM_INVALID_HANDLE;
-    if (lm_create_temp(tmpdir, &path, &handle) != 0) return -1;
+    if (lm_create_temp(tmpdir, &path, &handle, NULL) != 0) return -1;
     if (interrupted) {
         (void)lm_close(handle);
         (void)lm_remove(path);
@@ -1006,6 +1006,12 @@ static int worker_error(Worker *worker, int code, const char *file, uint64_t lin
     return -1;
 }
 
+static int worker_temp_run_error(Worker *worker, const char *file, uint64_t line) {
+    return worker_error(worker, 3, file, line,
+                        "cannot write temporary run in --tmpdir '%s'; it must exist and be writable",
+                        worker->options->tmpdir);
+}
+
 static int direct_store_last(Worker *worker, const Record *source) {
     size_t needed = (size_t)source->text_length;
     if ((size_t)source->extra_length > SIZE_MAX - needed - 2u) return -1;
@@ -1122,9 +1128,11 @@ static int add_row(Worker *worker, Chunk *chunk, const char *source_path, uint8_
     }
     int result = chunk_add(chunk, &worker->runs, worker->options->tmpdir, &record);
     if (result == -2) return worker_error(worker, 2, worker->current_file, input_line, "record exceeds the configured memory limit");
-    if (result != 0)
-        return worker_error(worker, 3, worker->current_file, input_line,
-                            interrupted ? "interrupted" : "cannot write temporary run");
+    if (result != 0) {
+        if (interrupted)
+            return worker_error(worker, 3, worker->current_file, input_line, "interrupted");
+        return worker_temp_run_error(worker, worker->current_file, input_line);
+    }
     ++worker->records;
     return 0;
 }
@@ -1724,17 +1732,18 @@ static void *worker_main(void *raw) {
         const char *filename = worker->options->inputs.items[i];
         if (parse_input_file(worker, &chunk, filename, (uint32_t)i) != 0) break;
         if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0) {
-            (void)worker_error(worker, 3, filename, 0,
-                               interrupted ? "interrupted" : "cannot write temporary run");
+            if (interrupted) (void)worker_error(worker, 3, filename, 0, "interrupted");
+            else (void)worker_temp_run_error(worker, filename, 0);
             break;
         }
     }
     if (worker->error_code == 0) {
-        if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0)
-            (void)worker_error(worker, 3, worker->current_file, 0,
-                               interrupted ? "interrupted" : "cannot write temporary run");
-        else if (interrupted)
+        if (flush_chunk(&chunk, &worker->runs, worker->options->tmpdir) != 0) {
+            if (interrupted) (void)worker_error(worker, 3, worker->current_file, 0, "interrupted");
+            else (void)worker_temp_run_error(worker, worker->current_file, 0);
+        } else if (interrupted) {
             (void)worker_error(worker, 3, worker->current_file, 0, "interrupted");
+        }
     }
     chunk_destroy(&chunk);
     return NULL;
@@ -2213,7 +2222,8 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     Writer run_writer;
     int have_run_writer = 0;
     if (!final_output) {
-        if (lm_create_temp(tmpdir, out_path, &output_handle) != 0 || writer_init(&run_writer, output_handle) != 0) {
+        if (lm_create_temp(tmpdir, out_path, &output_handle, NULL) != 0 ||
+            writer_init(&run_writer, output_handle) != 0) {
             if (output_handle != LM_INVALID_HANDLE) (void)lm_close(output_handle);
             if (out_path && *out_path) { (void)lm_remove(*out_path); free(*out_path); *out_path = NULL; }
             free(readers); free(heap); free(aggregate_storage);
@@ -2310,6 +2320,28 @@ static int output_directory(const char *filename, char **directory_out) {
     if (separator == copy || (separator == copy + 2 && copy[1] == ':')) separator[1] = '\0';
     else *separator = '\0';
     *directory_out = copy;
+    return 0;
+}
+
+static int create_output_temp(const char *output_path, OutputFile *file) {
+    char *directory = NULL;
+    if (output_directory(output_path, &directory) != 0) {
+        fprintf(stderr, "lcovmerge: %s:0: cannot determine output parent directory; "
+                        "ensure it exists and is writable\n", output_path);
+        return -1;
+    }
+    unsigned long system_error = 0;
+    if (lm_create_temp(directory, &file->path, &file->handle, &system_error) != 0) {
+        char reason[256];
+        lm_format_error(system_error, reason, sizeof(reason));
+        fprintf(stderr, "lcovmerge: %s:0: cannot create output temporary file: %s; "
+                        "parent directory '%s' must exist and be writable\n",
+                output_path, reason, directory);
+        free(directory);
+        return -1;
+    }
+    file->owns_handle = 1;
+    free(directory);
     return 0;
 }
 
@@ -2558,13 +2590,7 @@ static int run_direct_merge(const Options *options) {
     memset(&output, 0, sizeof(output));
     int writer_initialized = 0;
     if (!fallback && status == 0) {
-        char *directory = NULL;
-        if (output_directory(options->output, &directory) != 0 ||
-            lm_create_temp(directory ? directory : ".", &file.path, &file.handle) != 0) {
-            fprintf(stderr, "lcovmerge: %s:0: cannot create output temporary file\n", options->output);
-            status = 3;
-        } else file.owns_handle = 1;
-        free(directory);
+        if (create_output_temp(options->output, &file) != 0) status = 3;
         if (status == 0 && writer_init(&output.writer, file.handle) != 0) {
             fprintf(stderr, "lcovmerge: %s:0: out of memory\n", options->output);
             status = 3;
@@ -2729,13 +2755,7 @@ static int run_merge(const Options *options) {
     if (status == 0) {
         if (strcmp(options->output, "-") == 0) file.handle = lm_stdout_handle();
         else {
-            char *directory = NULL;
-            if (output_directory(options->output, &directory) != 0 ||
-                lm_create_temp(directory ? directory : ".", &file.path, &file.handle) != 0) {
-                fprintf(stderr, "lcovmerge: %s:0: cannot create output temporary file\n", options->output);
-                status = 3;
-            } else file.owns_handle = 1;
-            free(directory);
+            if (create_output_temp(options->output, &file) != 0) status = 3;
         }
     }
     OutputState output;

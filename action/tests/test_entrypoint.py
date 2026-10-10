@@ -87,12 +87,22 @@ class InputExpansionTests(unittest.TestCase):
     def test_rejects_empty_or_unmatched_files_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary)
-            for files in ("", "missing/*.info"):
-                with self.subTest(files=files), patch.dict(
-                    os.environ, {"INPUT_FILES": files}, clear=True
-                ):
-                    with self.assertRaisesRegex(SystemExit, "did not match any files"):
-                        entrypoint.expand_inputs(workspace)
+            with patch.dict(os.environ, {"INPUT_FILES": ""}, clear=True):
+                with self.assertRaisesRegex(SystemExit, "no file patterns were provided"):
+                    entrypoint.expand_inputs(workspace)
+
+            pattern = "missing/*.info"
+            with patch.dict(os.environ, {"INPUT_FILES": pattern}, clear=True):
+                with self.assertRaisesRegex(SystemExit, "did not match any files") as raised:
+                    entrypoint.expand_inputs(workspace)
+            self.assertIn(pattern, str(raised.exception))
+
+            patterns = "coverage/unit/*.info\ncoverage/integration/*.info"
+            with patch.dict(os.environ, {"INPUT_FILES": patterns}, clear=True):
+                with self.assertRaisesRegex(SystemExit, "unmatched patterns") as raised:
+                    entrypoint.expand_inputs(workspace)
+            self.assertIn("coverage/unit/*.info", str(raised.exception))
+            self.assertIn("coverage/integration/*.info", str(raised.exception))
 
 
 class ArchiveVerificationTests(unittest.TestCase):

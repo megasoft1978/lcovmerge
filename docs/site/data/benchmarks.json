@@ -37,7 +37,7 @@
       "shards": "32 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": 3.488279,
           "seconds_display": "3.488279 s",
           "peak_rss_mib": 5.125,
@@ -76,7 +76,7 @@
       "shards": "64 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": 27.723422,
           "seconds_display": "27.723422 s",
           "peak_rss_mib": 25.0625,
@@ -110,12 +110,12 @@
     {
       "id": "single_file",
       "name": "XL-single",
-      "description": "Generated single tracefile.",
+      "description": "Generated single .info file.",
       "input_size": "744,992,058 bytes",
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": 1.455709,
           "seconds_display": "1.455709 s",
           "peak_rss_mib": 2.28125,
@@ -154,7 +154,7 @@
       "shards": "8 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": 0.259979,
           "seconds_display": "0.259979 s",
           "peak_rss_mib": 2.953125,
@@ -193,7 +193,7 @@
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": 2.121826,
           "seconds_display": "2.121826 s",
           "peak_rss_mib": 20.234375,
@@ -207,7 +207,7 @@
           "seconds": 98.805,
           "seconds_display": "98.805 s",
           "peak_rss_mib": null,
-          "rss_display": "RSS unavailable for current failed run",
+          "rss_display": "peak resident memory unavailable for current failed run",
           "throughput_mbs": null,
           "throughput_display": "—",
           "status": "ERROR_1"
@@ -217,7 +217,7 @@
           "seconds": 1800.002,
           "seconds_display": "1800.002 s",
           "peak_rss_mib": null,
-          "rss_display": "842 MiB sampled in final 308 s; full-run peak unavailable",
+          "rss_display": "842 MiB sampled in final 308 s; full-run peak resident memory unavailable",
           "throughput_mbs": null,
           "throughput_display": "—",
           "status": "TIMEOUT"
@@ -232,7 +232,7 @@
       "shards": "not supplied",
       "results": [
         {
-          "tool": "lcovmerge 1.0.1",
+          "tool": "lcovmerge 1.0.0",
           "seconds": null,
           "seconds_display": "NOT MEASURED",
           "peak_rss_mib": null,

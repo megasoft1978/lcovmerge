@@ -28,22 +28,42 @@ int lm_is_regular_file(const char *path) {
     return stat(path, &info) == 0 && S_ISREG(info.st_mode);
 }
 
-int lm_create_temp(const char *directory, char **path_out, lm_handle *out) {
+int lm_create_temp(const char *directory, char **path_out, lm_handle *out,
+                   unsigned long *error_out) {
+    if (error_out) *error_out = 0;
     const char *sep = directory[0] && directory[strlen(directory) - 1] == '/' ? "" : "/";
     size_t dlen = strlen(directory), slen = strlen(sep);
     static const char pattern[] = "lcovmerge-XXXXXX";
-    if (dlen > SIZE_MAX - slen - sizeof(pattern)) return -1;
+    if (dlen > SIZE_MAX - slen - sizeof(pattern)) {
+        if (error_out) *error_out = ENAMETOOLONG;
+        return -1;
+    }
     size_t need = dlen + slen + sizeof(pattern);
     char *path = malloc(need);
-    if (!path) return -1;
+    if (!path) {
+        if (error_out) *error_out = ENOMEM;
+        return -1;
+    }
     memcpy(path, directory, dlen);
     memcpy(path + dlen, sep, slen);
     memcpy(path + dlen + slen, pattern, sizeof(pattern));
     int fd = mkstemp(path);
-    if (fd < 0) { free(path); return -1; }
+    if (fd < 0) {
+        int saved_error = errno;
+        free(path);
+        if (error_out) *error_out = (unsigned long)saved_error;
+        errno = saved_error;
+        return -1;
+    }
     *path_out = path;
     *out = (lm_handle)fd;
     return 0;
+}
+
+void lm_format_error(unsigned long error, char *buffer, size_t capacity) {
+    if (capacity == 0) return;
+    const char *message = strerror((int)error);
+    (void)snprintf(buffer, capacity, "%s", message ? message : "unknown system error");
 }
 
 int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,

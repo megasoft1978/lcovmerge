@@ -9,6 +9,7 @@ import os
 import random
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -613,6 +614,14 @@ def limits_and_io_failure_tests(binary: Path, temporary: Path) -> int:
     bad_output = run([str(binary), str(source), "-o", str(blocked_parent / "out.info")])
     if bad_output.returncode != 3:
         raise AssertionError(f"output under a non-directory parent returned {bad_output.returncode}")
+    if os.name != "nt":
+        diagnostic = bad_output.stderr.decode("utf-8", errors="replace")
+        expected_output = (
+            f"{blocked_parent / 'out.info'}:0: cannot create output temporary file: "
+            f"Not a directory; parent directory '{blocked_parent}' must exist and be writable"
+        )
+        if expected_output not in diagnostic:
+            raise AssertionError(f"output temp-file error was not actionable: {diagnostic!r}")
 
     for name, tmpdir in (("missing", root / "missing-tmpdir"),):
         output = root / f"{name}-preserved.info"
@@ -622,6 +631,14 @@ def limits_and_io_failure_tests(binary: Path, temporary: Path) -> int:
                       str(out_of_order), "-o", str(output)])
         if failed.returncode != 3 or output.read_text(encoding="utf-8") != original:
             raise AssertionError(f"{name} --tmpdir failure did not preserve existing output")
+        if os.name != "nt":
+            diagnostic = failed.stderr.decode("utf-8", errors="replace")
+            expected_tmp = (
+                f"{out_of_order}:0: cannot write temporary run in --tmpdir '{tmpdir}'; "
+                "it must exist and be writable"
+            )
+            if expected_tmp not in diagnostic:
+                raise AssertionError(f"--tmpdir error did not name its requirement: {diagnostic!r}")
 
     file_tmpdir = root / "file-as-tmpdir"
     file_tmpdir.write_text("not a directory\n", encoding="utf-8")
@@ -812,6 +829,65 @@ def closed_stdout_pipe_cleanup_test(binary: Path, temporary: Path) -> int:
     if stderr is not None:
         stderr.close()
     return 1
+
+
+def generator_lcov_valid_test(binary: Path, temporary: Path, *, check_lcov: bool) -> int:
+    base = temporary / "generator-lcov-valid"
+    base.mkdir()
+    generator = ROOT / "tools" / "gen-lcov.py"
+    lcov = shutil.which("lcov") if check_lcov else None
+    generated_shards = 0
+    for name, mode in (("benchmark", ["--benchmark-compatible"]), ("plain", [])):
+        case_dir = base / name
+        shards_dir = case_dir / "shards"
+        generated = run([
+            sys.executable, str(generator), "--out", str(shards_dir), "--shards", "2",
+            "--files", "4", "--lines", "40", "--seed", "1", *mode, "--lcov-valid",
+        ])
+        if generated.returncode != 0:
+            raise AssertionError(
+                f"{name} lcov-valid generator failed: {generated.stderr!r}"
+            )
+        shards = sorted(shards_dir.glob("shard-*.info"))
+        if len(shards) != 2:
+            raise AssertionError(f"{name} lcov-valid generator emitted {len(shards)} shards, expected 2")
+        for shard in shards:
+            function_lines: list[int] = []
+            data_lines: set[int] = set()
+            for row in shard.read_text(encoding="ascii").splitlines():
+                if row.startswith("FN:"):
+                    function_lines.append(int(row[3:].split(",", 1)[0]))
+                elif row.startswith("DA:"):
+                    data_lines.add(int(row[3:].split(",", 1)[0]))
+            if any(line < 1 or line > 40 or line not in data_lines for line in function_lines):
+                raise AssertionError(f"{name}/{shard.name} has an FN without an in-range DA point")
+
+        merged = case_dir / "merged.info"
+        oracle_output = case_dir / "oracle.info"
+        input_paths = [str(path) for path in shards]
+        actual = run([str(binary), *input_paths, "-o", str(merged)])
+        if actual.returncode != 0:
+            raise AssertionError(f"lcovmerge rejected generated {name} data: {actual.stderr!r}")
+        oracle = run([sys.executable, str(ORACLE), "-o", str(oracle_output), *input_paths])
+        if oracle.returncode != 0:
+            raise AssertionError(f"oracle rejected generated {name} data: {oracle.stderr!r}")
+        if merged.read_bytes() != oracle_output.read_bytes():
+            raise AssertionError(f"generated {name} output differed from the reference oracle")
+
+        if lcov:
+            lcov_output = case_dir / "lcov.info"
+            command = [lcov]
+            for path in input_paths:
+                command.extend(("-a", path))
+            command.extend(("-o", str(lcov_output)))
+            lcov_result = run(command, env={**os.environ, "LC_ALL": "C"})
+            if lcov_result.returncode != 0:
+                raise AssertionError(
+                    f"lcov rejected generated {name} data: "
+                    f"{lcov_result.stdout!r} {lcov_result.stderr!r}"
+                )
+        generated_shards += len(shards)
+    return generated_shards
 
 
 class _RaceLost(Exception):
@@ -1068,6 +1144,9 @@ def main() -> int:
         staged_signal_cases = interrupted_staged_output_tests(binary)
         interruption_doc_cases = interruption_documentation_tests()
         many_paths_cases = many_paths_test(binary, temporary)
+        generator_lcov_valid_cases = generator_lcov_valid_test(
+            binary, temporary, check_lcov=not args.no_lcov
+        )
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
     print(f"boundary_cases={boundaries} golden_cases={goldens} malformed_cases={malformed} "
           f"oracle_cases={differential} randomized_sets={randomized_sets} "
@@ -1076,6 +1155,7 @@ def main() -> int:
           f"signal_cleanup_cases={signal_cases} "
           f"closed_pipe_cases={closed_pipe_cases} "
           f"interrupted_staged_output_cases={staged_signal_cases} many_paths_cases={many_paths_cases} "
+          f"generator_lcov_valid_cases={generator_lcov_valid_cases} "
           f"interruption_doc_cases={interruption_doc_cases} "
           f"lcov_cases={lcov_cases}")
     return 0

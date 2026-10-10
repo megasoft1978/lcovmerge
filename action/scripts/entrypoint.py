@@ -122,7 +122,10 @@ def expand_inputs(workspace: Path) -> list[Path]:
                 seen.add(normalized)
                 matches.append(path)
     if not matches:
-        raise SystemExit("The files input did not match any files")
+        if patterns:
+            unmatched = ", ".join(repr(pattern) for pattern in patterns)
+            raise SystemExit(f"The files input did not match any files; unmatched patterns: {unmatched}")
+        raise SystemExit("The files input did not match any files; no file patterns were provided")
     return matches
 
 

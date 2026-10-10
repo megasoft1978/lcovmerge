@@ -19,7 +19,9 @@ typedef void *(*lm_thread_fn)(void *);
 
 int lm_open_read(const char *path, lm_handle *out);
 int lm_is_regular_file(const char *path);
-int lm_create_temp(const char *directory, char **path_out, lm_handle *out);
+int lm_create_temp(const char *directory, char **path_out, lm_handle *out,
+                   unsigned long *error_out);
+void lm_format_error(unsigned long error, char *buffer, size_t capacity);
 int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,
             const atomic_bool *cancelled);
 int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out,
