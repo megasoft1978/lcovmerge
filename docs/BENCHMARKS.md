@@ -3,6 +3,8 @@
 [`data/benchmarks.json`](../data/benchmarks.json) is the published measurement record. The generated tables in
 this file, the README, and the site data are rendered from it.
 
+For a local rerun of the deterministic S and M fixtures, see the [reproduction instructions](REPRODUCE.md).
+
 ## Methodology
 
 <!-- BENCH-METHOD:START -->
