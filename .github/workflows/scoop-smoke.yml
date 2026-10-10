@@ -194,7 +194,8 @@ jobs:
           & git -C $bucketPath commit -m 'Add lcovmerge smoke manifest'
           if ($LASTEXITCODE -ne 0) { throw 'Could not commit the local Scoop manifest.' }
 
-          scoop bucket add lcovmerge-ci $bucketPath
+          $bucketUri = ([System.Uri](Resolve-Path -LiteralPath $bucketPath).Path).AbsoluteUri
+          scoop bucket add lcovmerge-ci $bucketUri
           if (-not $?) { throw 'Could not add the local Scoop bucket.' }
           scoop install lcovmerge-ci/lcovmerge
           if (-not $?) { throw 'Scoop could not install lcovmerge from the local bucket.' }
