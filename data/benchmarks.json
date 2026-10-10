@@ -532,6 +532,219 @@
         }
       ],
       "platform": "windows"
+    },
+    {
+      "entry_schema_version": 1,
+      "id": "github:megasoft1978/lcovmerge:38025960454:1:879d78537fa616bd9aa8f1fba4e490708b6496f2",
+      "label": "ubuntu-24.04 GitHub-hosted benchmark host",
+      "measurement_date": "2026-10-10",
+      "host": {
+        "runner_label": "ubuntu-24.04",
+        "os": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+        "kernel": "6.17.0-1022-azure",
+        "architecture": "x86_64",
+        "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+        "logical_cores": 4,
+        "memory_bytes": 16765378560,
+        "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+        "lcov": "lcov: LCOV version 2.0-1",
+        "hyperfine": "hyperfine 2.0.0",
+        "rss_tool": "/usr/bin/time -v"
+      },
+      "source": {
+        "repository": "megasoft1978/lcovmerge",
+        "revision": "879d78537fa616bd9aa8f1fba4e490708b6496f2",
+        "workflow": "Linux benchmark",
+        "run_id": "38025960454",
+        "run_attempt": "1"
+      },
+      "method": {
+        "runner": "bench/run.py",
+        "repeat_counts": {
+          "S": 5,
+          "M": 3,
+          "L": 2,
+          "PATH-HEAVY": 2
+        },
+        "warmup_count": 1,
+        "wall_time_summary": "median of measured hyperfine runs",
+        "rss_summary": "maximum across measured GNU /usr/bin/time -v samples; warmup excluded",
+        "rss_tool": "/usr/bin/time -v",
+        "timeout_seconds_per_run": 1800,
+        "cache_state": "no explicit cache flush; one warmup per command; runner load uncontrolled"
+      },
+      "tool_labels": {
+        "lcovmerge": "lcovmerge 1.0.0 built from checkout",
+        "lcov": "lcov: LCOV version 2.0-1"
+      },
+      "datasets": [
+        {
+          "name": "S",
+          "input_bytes": 99996906,
+          "shards": 8,
+          "results": {
+            "lcovmerge": {
+              "time_s": 0.588795,
+              "rss_bytes": 2777088,
+              "throughput_mb_s": 169.8,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            },
+            "lcov": {
+              "time_s": 55.666643,
+              "rss_bytes": 1133215744,
+              "throughput_mb_s": 1.8,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            }
+          },
+          "measurement": {
+            "hyperfine_runs": 5,
+            "warmup_count": 1,
+            "timeout_seconds": 1800,
+            "rss_source": "/usr/bin/time -v per measured hyperfine sample",
+            "text_report": "/home/runner/work/lcovmerge/lcovmerge/.luna-tmp/linux-benchmark-artifact/s.txt"
+          }
+        },
+        {
+          "name": "M",
+          "input_bytes": 1118686233,
+          "shards": 32,
+          "results": {
+            "lcovmerge": {
+              "time_s": 4.942996,
+              "rss_bytes": 4575232,
+              "throughput_mb_s": 226.3,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "lcov": {
+              "time_s": 784.57519,
+              "rss_bytes": 3210846208,
+              "throughput_mb_s": 1.4,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            }
+          },
+          "job_scaling": {
+            "1": {
+              "time_s": 4.93752,
+              "rss_bytes": 4575232,
+              "throughput_mb_s": 226.6,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "2": {
+              "time_s": 4.877822,
+              "rss_bytes": 4575232,
+              "throughput_mb_s": 229.3,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "4": {
+              "time_s": 4.837058,
+              "rss_bytes": 4640768,
+              "throughput_mb_s": 231.3,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "8": {
+              "time_s": 4.803624,
+              "rss_bytes": 4640768,
+              "throughput_mb_s": 232.9,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            }
+          },
+          "measurement": {
+            "hyperfine_runs": 3,
+            "warmup_count": 1,
+            "timeout_seconds": 1800,
+            "rss_source": "/usr/bin/time -v per measured hyperfine sample",
+            "text_report": "/home/runner/work/lcovmerge/lcovmerge/.luna-tmp/linux-benchmark-artifact/m.txt"
+          }
+        },
+        {
+          "name": "L",
+          "input_bytes": 4853340843,
+          "shards": 64,
+          "results": {
+            "lcovmerge": {
+              "time_s": 228.651043,
+              "rss_bytes": 31444992,
+              "throughput_mb_s": 21.2,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            },
+            "lcov": {
+              "time_s": 5400.100052,
+              "rss_bytes": null,
+              "throughput_mb_s": null,
+              "status": "TIMEOUT",
+              "exit_code": 124,
+              "run_count": 2,
+              "warmup_count": 1
+            }
+          },
+          "measurement": {
+            "hyperfine_runs": 2,
+            "warmup_count": 1,
+            "timeout_seconds": 1800,
+            "rss_source": "/usr/bin/time -v per measured hyperfine sample",
+            "text_report": "/home/runner/work/lcovmerge/lcovmerge/.luna-tmp/linux-benchmark-artifact/l.txt"
+          }
+        },
+        {
+          "name": "PATH-HEAVY",
+          "input_bytes": 130000000,
+          "shards": 1,
+          "results": {
+            "lcovmerge": {
+              "time_s": 3.344209,
+              "rss_bytes": 23433216,
+              "throughput_mb_s": 38.9,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            },
+            "lcov": {
+              "time_s": 153.921386,
+              "rss_bytes": 11061239808,
+              "throughput_mb_s": 0.8,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            }
+          },
+          "measurement": {
+            "hyperfine_runs": 2,
+            "warmup_count": 1,
+            "timeout_seconds": 1800,
+            "rss_source": "/usr/bin/time -v per measured hyperfine sample",
+            "text_report": "/home/runner/work/lcovmerge/lcovmerge/.luna-tmp/linux-benchmark-artifact/path_heavy.txt"
+          }
+        }
+      ]
     }
   ]
 }
