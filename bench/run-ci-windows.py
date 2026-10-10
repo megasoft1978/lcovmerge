@@ -27,7 +27,7 @@ WORKLOADS = {
     "L": (64, 480, 16000, 2),
 }
 TOOLS = (
-    ("lcovmerge", "Zig -Oz"),
+    ("lcovmerge", "Zig -O2"),
     ("lcovmerge_ucrt64_gcc", "MSYS2 UCRT64 GCC -O2"),
 )
 
@@ -419,7 +419,7 @@ def main() -> int:
             "temporary_data": "under .luna-tmp; generated dataset is removed after measurement",
         },
         "tool_labels": {
-            "lcovmerge": "lcovmerge 1.0.0 Zig 0.17.0 -Oz Windows x86_64",
+            "lcovmerge": "lcovmerge 1.0.0 Zig 0.17.0 -O2 Windows x86_64",
             "lcovmerge_ucrt64_gcc": "lcovmerge 1.0.0 MSYS2 UCRT64 GCC -O2",
         },
         "datasets": datasets,

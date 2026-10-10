@@ -39,7 +39,7 @@ build_set() {
         "$MINGW_CC" "$@" -static src/lcovmerge.c src/platform_win32.c -municode \
             -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     else
-        "$zig_bin" cc -target x86_64-windows-gnu "$@" -Oz -static src/lcovmerge.c src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+        "$zig_bin" cc -target x86_64-windows-gnu "$@" -static src/lcovmerge.c src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     fi
     python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$epoch"
 }

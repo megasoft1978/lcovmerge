@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-limit_bytes=150000
+limit_bytes=160000
 
 if [ "$#" -gt 0 ]; then
   binaries=$*

@@ -23,3 +23,9 @@ The `-O2` release binary measured 280.5 MB/s before and 287.0 MB/s after; the tw
 identical SHA-256, so the 2.3% difference is run variation. A separate macOS arm64 `-Oz` trial measured
 295.2 MB/s (+5.2% against the first `-O2` median). The final build applies `-Oz` only to the Zig Windows
 target; native Windows throughput was not measured.
+
+Update 2026-10-10: the Windows release build no longer uses `-Oz`. The windows-latest benchmark
+(docs/BENCHMARKS.md, Windows measurements) found the `-Oz` build 24-34% slower than an MSYS2 gcc `-O2`
+build on the compute-bound S and M datasets (0.743 s vs 0.554 s; 9.506 s vs 7.642 s). Windows now builds at
+`-O2` (148992 bytes with Zig 0.17.0), and the per-executable budget is raised from 150000 to 160000 bytes
+so the Windows binary is not one byte-count away from failing.

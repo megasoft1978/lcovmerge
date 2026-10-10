@@ -95,7 +95,7 @@ def host_entry(artifact: dict[str, Any]) -> dict[str, Any]:
     }
     if artifact.get("platform") == "windows":
         entry["platform"] = "windows"
-        entry["label"] = (f"{label} (Zig -Oz and MSYS2 UCRT64 GCC -O2)")
+        entry["label"] = (f"{label} (Zig release build and MSYS2 UCRT64 GCC -O2)")
     return entry
 
 
