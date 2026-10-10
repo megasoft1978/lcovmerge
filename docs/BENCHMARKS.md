@@ -46,6 +46,27 @@ The ingester appends or replaces that run under the additive `host_results` fiel
 site data mirror. It leaves the existing macOS host and measurements intact. The workflow runs only on
 `workflow_dispatch`.
 
+## Windows measurements
+
+The manually triggered `Windows benchmark` workflow runs S, M, and L on `windows-latest`. It rebuilds the
+shipped Windows release executable with checksum-verified Zig 0.17.0 and `scripts/build-all.sh`, then builds a
+second UCRT64 executable with MSYS2 GCC at `-O2`. Native Windows Python generates the same S/M/L fixture
+parameters with `tools/gen-lcov.py --benchmark-compatible --checksums`; the generated inputs are shared by both
+binaries. Each binary gets one warmup and then 5 S runs, 3 M runs, and 2 L runs. The JSON and text artifact list
+the median and minimum wall time for each binary. Peak RSS uses Windows `GetProcessMemoryInfo`; it is marked
+unknown if any measured run cannot be sampled. No LCOV comparator is run, and these Windows measurements are a
+separate host entry rather than a cross-platform speed claim.
+
+Download a completed `windows-benchmark-<run-id>-<attempt>` artifact into `.luna-tmp`, then merge it with:
+
+```sh
+python3 -I bench/ingest-ci-results.py .luna-tmp/<download-dir>/benchmark.json
+```
+
+The ingester adds the Windows build comparison as a separately labeled entry under `host_results` in the
+canonical data and site mirror. The workflow runs only on `workflow_dispatch`; trigger it manually when a fresh
+Windows measurement is needed.
+
 ## Real-project validation
 
 The project-derived captures and LCOV comparisons are tracked separately from the generated-fixture benchmark
