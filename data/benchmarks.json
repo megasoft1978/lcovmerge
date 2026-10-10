@@ -745,6 +745,165 @@
           }
         }
       ]
+    },
+    {
+      "entry_schema_version": 1,
+      "id": "github:megasoft1978/lcovmerge:38037042814:1:dcf38969f65591cfe4de9c4f5a6f446f5e7879b1",
+      "label": "windows-latest GitHub-hosted benchmark host (Zig release build and MSYS2 UCRT64 GCC -O2)",
+      "measurement_date": "2026-10-10",
+      "host": {
+        "runner_label": "windows-latest",
+        "os": "Windows-2025Server-10.0.26100-SP0",
+        "kernel": "2025Server",
+        "os_build": "26100",
+        "architecture": "AMD64",
+        "cpu_model": "AMD EPYC 7763 64-Core Processor",
+        "logical_cores": 4,
+        "memory_bytes": 17174360064,
+        "compiler": "Zig 0.17.0; gcc.exe (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0",
+        "zig": "0.17.0",
+        "gcc": "gcc.exe (x86_64-posix-seh-rev1, Built by MinGW-Builds project) 15.2.0",
+        "lcov": "not measured (this run compares lcovmerge builds only)",
+        "rss_tool": "Windows GetProcessMemoryInfo PeakWorkingSetSize"
+      },
+      "source": {
+        "repository": "megasoft1978/lcovmerge",
+        "revision": "dcf38969f65591cfe4de9c4f5a6f446f5e7879b1",
+        "workflow": "Windows benchmark",
+        "run_id": "38037042814",
+        "run_attempt": "1"
+      },
+      "method": {
+        "runner": "bench/run-ci-windows.py",
+        "repeat_counts": {
+          "S": 5,
+          "M": 3,
+          "L": 2
+        },
+        "warmup_count": 1,
+        "wall_time_summary": "median and minimum of measured runs per binary",
+        "rss_summary": "maximum process lifetime PeakWorkingSetSize across measured runs; unknown unless all runs are sampled",
+        "rss_tool": "Windows GetProcessMemoryInfo PeakWorkingSetSize",
+        "timeout_seconds_per_run": 1800,
+        "cache_state": "no explicit cache flush; one warmup per binary; measured order alternates; runner load uncontrolled",
+        "generator": "tools/gen-lcov.py --benchmark-compatible --checksums using native Windows Python",
+        "temporary_data": "under .luna-tmp; generated dataset is removed after measurement"
+      },
+      "tool_labels": {
+        "lcovmerge": "lcovmerge 1.0.0 Zig 0.17.0 -O2 Windows x86_64",
+        "lcovmerge_ucrt64_gcc": "lcovmerge 1.0.0 MSYS2 UCRT64 GCC -O2"
+      },
+      "datasets": [
+        {
+          "name": "S",
+          "input_bytes": 99996906,
+          "shards": 8,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 0.619309,
+              "median_time_s": 0.619309,
+              "min_time_s": 0.61237,
+              "rss_bytes": 4562944,
+              "rss_mib": 4.351562,
+              "rss_display": null,
+              "rss_sample_count": 5,
+              "throughput_mb_s": 161.5,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 0.602799,
+              "median_time_s": 0.602799,
+              "min_time_s": 0.600076,
+              "rss_bytes": 5410816,
+              "rss_mib": 5.160156,
+              "rss_display": null,
+              "rss_sample_count": 5,
+              "throughput_mb_s": 165.9,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 5,
+              "warmup_count": 1
+            }
+          }
+        },
+        {
+          "name": "M",
+          "input_bytes": 1118686233,
+          "shards": 32,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 8.311991,
+              "median_time_s": 8.311991,
+              "min_time_s": 8.292261,
+              "rss_bytes": 6410240,
+              "rss_mib": 6.113281,
+              "rss_display": null,
+              "rss_sample_count": 3,
+              "throughput_mb_s": 134.6,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 8.281179,
+              "median_time_s": 8.281179,
+              "min_time_s": 8.269025,
+              "rss_bytes": 7270400,
+              "rss_mib": 6.933594,
+              "rss_display": null,
+              "rss_sample_count": 3,
+              "throughput_mb_s": 135.1,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 3,
+              "warmup_count": 1
+            }
+          }
+        },
+        {
+          "name": "L",
+          "input_bytes": 4853340843,
+          "shards": 64,
+          "description": "Generated sharded LCOV input.",
+          "results": {
+            "lcovmerge": {
+              "time_s": 351.445061,
+              "median_time_s": 351.445061,
+              "min_time_s": 345.801882,
+              "rss_bytes": 23109632,
+              "rss_mib": 22.039062,
+              "rss_display": null,
+              "rss_sample_count": 2,
+              "throughput_mb_s": 13.8,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            },
+            "lcovmerge_ucrt64_gcc": {
+              "time_s": 346.164651,
+              "median_time_s": 346.164651,
+              "min_time_s": 345.136792,
+              "rss_bytes": 23920640,
+              "rss_mib": 22.8125,
+              "rss_display": null,
+              "rss_sample_count": 2,
+              "throughput_mb_s": 14.0,
+              "status": "OK",
+              "exit_code": 0,
+              "run_count": 2,
+              "warmup_count": 1
+            }
+          }
+        }
+      ],
+      "platform": "windows"
     }
   ]
 }

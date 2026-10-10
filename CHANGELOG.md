@@ -17,7 +17,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Build the Windows release binary with `-O2` instead of `-Oz`; windows-latest benchmarks show 24–34% faster compute-bound S/M workloads. The measured executable is 148,992 bytes, and the per-executable size budget is raised from 150,000 to 160,000 bytes.
+- Build the Windows release binary with `-O2` instead of `-Oz`; on windows-latest, the Zig `-O2` build took 0.619 s (S) and 8.31 s (M) versus 0.743 s and 9.51 s for the `-Oz` build in an earlier run, and matched an MSYS2 gcc `-O2` build within 3% in the same run (different runner instances; I/O-bound L is unchanged by optimization level). The measured executable is 148,992 bytes, and the per-executable size budget is raised from 150,000 to 160,000 bytes.
 - Pin GitHub Action examples to a released tag.
 
 ### Fixed
