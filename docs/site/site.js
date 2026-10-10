@@ -6,7 +6,7 @@
   function activateTab(tab, moveFocus) {
     const tablist = tab.closest('[role="tablist"]');
     const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
-    const wrap = tab.closest(".install-wrap");
+    const wrap = tab.closest(".install-wrap, .tab-wrap");
     tabs.forEach((item) => {
       const selected = item === tab;
       item.setAttribute("aria-selected", String(selected));
@@ -25,7 +25,8 @@
     const match = /mac|iphone|ipad|ipod/i.test(platform)
       ? "tab-macos"
       : (/win/i.test(platform) ? "tab-windows" : (/linux|x11/i.test(platform) ? "tab-linux" : null));
-    const suggestion = match && document.getElementById(match);
+    const suggestedTab = match && document.getElementById(match);
+    const suggestion = tabs.includes(suggestedTab) ? suggestedTab : null;
     const initiallySelected = tabs.find((tab) => tab.getAttribute("aria-selected") === "true");
     activateTab(suggestion || initiallySelected || tabs[0], false);
 

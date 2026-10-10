@@ -6,6 +6,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
+
 ## [1.0.2] - 2026-10-10
 
 ### Fixed

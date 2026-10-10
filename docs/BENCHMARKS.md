@@ -30,6 +30,15 @@ per dataset. Per-command timeout: 30 minutes.
   project-derived validation compares normalized results with LCOV and records genhtml compatibility,
   determinism, and temporary-file sort checks in [real-projects.md](validation/real-projects.md).
 
+## Public CI compatibility investigation
+
+A separate comparison used three public CI datasets: 66 shards totaling 657,966,211 bytes. Strict `lcov -a`
+failed on all three; lcovmerge 1.0.1 completed all three; diagnostic LCOV runs with `--ignore-errors` produced
+normalized record differences on all three. These outcomes are compatibility findings, not a successful
+equivalence check or a performance result. The comparison has not been rerun against lcovmerge 1.0.2 after its
+joined-boundary recovery fix. See [the compatibility notes](COMPATIBILITY.md#what-has-been-verified) for the
+aggregate record-difference counts and scope.
+
 ## Linux measurements
 
 The manually triggered `Linux benchmark` workflow runs S, M, and L on `ubuntu-24.04`, with an optional
@@ -76,6 +85,8 @@ The project-derived captures and LCOV comparisons are tracked separately from th
 table in [the validation report](validation/real-projects.md) and [`data/real-projects.json`](../data/real-projects.json).
 The current real shard set is 11,225,342 bytes. Its 55,482,820-byte `REAL-DERIVED SCALED` run uses re-rooted
 copies to increase path diversity and input size; it is explicitly synthetic scaling, not real project data.
+The separate public-CI compatibility investigation is summarized in [COMPATIBILITY.md](COMPATIBILITY.md); it is
+not part of the generated `REAL` benchmark row or the measured project-derived workload below.
 
 To reproduce a final lcovmerge measurement for M:
 

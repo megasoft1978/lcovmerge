@@ -1,20 +1,24 @@
 # CI and exporter recipes
 
-lcovmerge reads existing LCOV `.info` files. Run it after test jobs have exported coverage; it does not collect raw coverage or generate reports. Export each shard to a distinct file before merging.
+lcovmerge reads existing LCOV `.info` files. Run it after test jobs have exported coverage; it does not collect raw coverage or generate reports. Export each shard to a distinct file.
 
 ## GitHub Actions
 
-Upload one LCOV file from each test job, then download the artifacts and merge them in a final job. Replace the example test patterns and exporter commands with those used by your project.
+This is the canonical complete matrix workflow, mirrored in [README](../README.md#github-actions-matrix). Replace the example test patterns and test command with your project's. Each matrix job must upload one uniquely named artifact containing the `.info` file at the path shown.
 
 ```yaml
 name: coverage
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test-shard:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - shard: unit
@@ -24,41 +28,47 @@ jobs:
     env:
       COVERAGE_FILE: .coverage-${{ matrix.shard }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install coverage
-      - run: |
+      - name: Run tests and export LCOV
+        run: |
           mkdir -p coverage/shards
           python -m coverage run -m unittest discover -s tests -p "${{ matrix.pattern }}"
           python -m coverage lcov -o "coverage/shards/${{ matrix.shard }}.info"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-${{ matrix.shard }}
           path: coverage/shards/${{ matrix.shard }}.info
+          if-no-files-found: error
 
   merge:
     needs: test-shard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: coverage-*
           path: coverage/shards
           merge-multiple: true
-      - name: Merge LCOV
-        uses: megasoft1978/lcovmerge@v1.0.2
+      - name: Merge LCOV shards
+        uses: megasoft1978/lcovmerge@v1.0.2 # For immutable pinning, replace the tag with the reviewed release commit SHA.
         with:
           files: coverage/shards/*.info
           output: coverage/merged.info
           mem-limit: 256M
-      - run: sudo apt-get update && sudo apt-get install -y lcov
-      - run: genhtml coverage/merged.info --output-directory coverage/html
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: merged-coverage
+          path: coverage/merged.info
+          if-no-files-found: error
 ```
 
-Give each upload a distinct artifact name. The workflow syntax and hosted jobs were not exercised in the local documentation audit. See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations), [upload action](https://github.com/actions/upload-artifact), and [download action](https://github.com/actions/download-artifact).
+`download-artifact` flattens the shard files into `coverage/shards/`. The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk. The action verifies its release archive against SHA256SUMS. For immutable pinning, replace `@v1.0.2` with a reviewed full commit SHA and keep `# v1.0.2` as its label. Feed the merged file to your existing report step.
+
+See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations), [upload action](https://github.com/actions/upload-artifact), and [download action](https://github.com/actions/download-artifact).
 
 ## GitLab CI
 

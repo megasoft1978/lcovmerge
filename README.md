@@ -4,60 +4,118 @@
 [![Release v1.0.2](docs/site/badges/release.svg)](https://github.com/megasoft1978/lcovmerge/releases/latest)
 [![MIT License](docs/site/badges/license.svg)](LICENSE)
 
-**Merge existing LCOV .info shards into one file. Keep your collector and report step.**
+**What:** lcovmerge combines LCOV `.info` files—plain-text records of covered lines, functions, and branches—into one file.
+
+**Who:** Use it after parallel test jobs export `.info` files when a later local step requires one file.
+
+**When not:** Skip it if the consumer accepts shards, native merging is available, a hosted service combines reports, or `lcov -a` is already fast enough.
+
+## GitHub Actions matrix
+
+Replace the matrix patterns and test/export command for your project. Each job uploads one uniquely named LCOV artifact. This complete workflow is canonical in [CI and exporter recipes](docs/RECIPES.md#github-actions). The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk.
+
+```yaml
+name: coverage
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test-shard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: unit
+            pattern: "test_unit*.py"
+          - shard: integration
+            pattern: "test_integration*.py"
+    env:
+      COVERAGE_FILE: .coverage-${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install coverage
+      - name: Run tests and export LCOV
+        run: |
+          mkdir -p coverage/shards
+          python -m coverage run -m unittest discover -s tests -p "${{ matrix.pattern }}"
+          python -m coverage lcov -o "coverage/shards/${{ matrix.shard }}.info"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ matrix.shard }}
+          path: coverage/shards/${{ matrix.shard }}.info
+          if-no-files-found: error
+
+  merge:
+    needs: test-shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-*
+          path: coverage/shards
+          merge-multiple: true
+      - name: Merge LCOV shards
+        uses: megasoft1978/lcovmerge@v1.0.2 # For immutable pinning, replace the tag with the reviewed release commit SHA.
+        with:
+          files: coverage/shards/*.info
+          output: coverage/merged.info
+          mem-limit: 256M
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: merged-coverage
+          path: coverage/merged.info
+          if-no-files-found: error
+```
+
+Connect your existing report step to the merged artifact.
 
 ## Try it (Linux x86-64)
 
-Download and verify the release, merge the files your test jobs exported, then keep your report step:
+This fail-closed installer selects a Linux or macOS archive and verifies one checksum before extraction. Windows runtime verification is pending; see [platform limits](docs/LIMITATIONS.md).
 
 ```sh
 set -eu
-asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
+case "$(uname -s):$(uname -m)" in
+  Linux:x86_64) target=linux-x86_64 ;;
+  Linux:aarch64|Linux:arm64) target=linux-aarch64 ;;
+  Darwin:x86_64) target=macos-x86_64 ;;
+  Darwin:arm64) target=macos-arm64 ;;
+  *) printf 'No release archive for %s/%s\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
+esac
+asset="lcovmerge-1.0.2-$target.tar.gz"
 base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
 curl -fL "$base/$asset" -o "$asset"
 curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
-sha256sum -c "$asset.sha256"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c "$asset.sha256"
+else
+  shasum -a 256 -c "$asset.sha256"
+fi
 tar -xzf "$asset"
-./lcovmerge coverage/shard-*.info -o coverage/merged.info
-genhtml coverage/merged.info --output-directory coverage/html
+./lcovmerge --version
 ```
 
-The last line is the existing report step. See [release assets](https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.2). Windows runtime verification is pending a passing Windows CI run; check [platform limits](docs/LIMITATIONS.md) before choosing an archive.
+## Does this fit?
 
-## Does it fit?
+Use lcovmerge only when a later local step requires one file. Otherwise keep the shards, merge native profiles with their tool, use hosted aggregation, or keep `lcov -a` when it is fast enough. Export raw profiles to LCOV first.
 
-Use lcovmerge after test jobs have exported LCOV `.info` files when a later step needs one file. It does not collect raw coverage or generate reports. If your report tool accepts all the files directly, you may not need a separate merge. For raw coverage profiles, run the matching exporter or native merger first.
+## Evidence
 
-## GitHub Actions
+Eight small project-derived captures (0.051–6.091 MB each; 11.225 MB total) passed normalized checks and genhtml on one macOS host. This is small-input compatibility evidence.
 
-After test jobs upload their `.info` artifacts, merge them in a final job:
+Strict LCOV 2.6 failed on three real public CI datasets. lcovmerge merged them, but normalized output differed from LCOV's diagnostic `--ignore-errors` output on all three; not all differences were isolated to documented policy. This is not a compatibility or speedup claim. One bug found in the investigation was fixed in v1.0.2. See the [migration guide](docs/MIGRATING-FROM-LCOV.md) and [record policies](docs/LIMITATIONS.md).
 
-```yaml
-- name: Merge coverage
-  uses: megasoft1978/lcovmerge@v1.0.2
-  with:
-    files: |
-      coverage/unit/*.info
-      coverage/integration/*.info
-    output: coverage/merged.info
-    mem-limit: 256M
-```
+Generated benchmarks use synthetic inputs and lcovmerge build 1.0.0, while the current release is v1.0.2. Outputs were not compared; timings are host-specific, and timeouts are not speedups. See the [benchmark report](docs/BENCHMARKS.md) for method and statuses.
 
-See [CI and exporter recipes](docs/RECIPES.md) for other workflows. The [Action guide](action/README.md) lists inputs and verification details.
-
-For JavaScript monorepos, export LCOV with c8 or nyc and run lcovmerge from the monorepo root so `SF:`
-paths stay package-qualified; see the [JavaScript recipe](docs/RECIPES.md#javascript-with-c8-or-nyc).
-
-## Limits before switching
-
-- `--mem-limit` limits memory reserved for coverage records while sorting, not total process memory. Sorting also needs temporary disk; `--tmpdir` selects its location.
-- With the same inputs, options, and build, output bytes stay stable across input order and worker settings. This does not promise byte-for-byte output matching lcov.
-- lcovmerge is not a drop-in for `lcov -a`. Compare your own reports and review the [migration guide](docs/MIGRATING-FROM-LCOV.md) and [limitations](docs/LIMITATIONS.md) before switching.
-
-## Generated benchmarks
-
-These generated workloads are specific to their recorded host and method. Check run counts, statuses, and caveats in the [benchmark report](docs/BENCHMARKS.md).
+### Generated benchmark records
 
 <!-- markdownlint-disable MD033 -->
 <!-- HERO-PROOF:START -->
@@ -85,9 +143,9 @@ per dataset. Per-command timeout: 30 minutes.
 | PATH-HEAVY (130,000,000) | 2.122 s / 20.23 MiB / 61.3 MB/s / OK | 98.805 s / peak resident memory unavailable for current failed run / n/a / ERROR_1 | 1,800.002 s / 842 MiB sampled in final 308 s; full-run peak resident memory unavailable / n/a / TIMEOUT |
 <!-- BENCHMARKS:END -->
 
-## Project-derived compatibility checks
+### Small project-derived record
 
-This is compatibility evidence from small project-derived captures, not a large production benchmark. See the [validation record](docs/validation/real-projects.md) for scope, exclusions, and capture warnings.
+See the [validation record](docs/validation/real-projects.md) for scope, exclusions, and capture warnings.
 
 <!-- REAL-PROJECTS:START -->
 8 small project-derived LCOV captures were checked on one macOS 27.0 arm64 host. Each project used multiple shards,
@@ -109,9 +167,9 @@ See [the validation record](docs/validation/real-projects.md) for toolchain, cap
 | REAL composite | 11.225 MB · 15 shards | 0.078 s · 20.11 MiB | 1.635 s · 139.55 MiB | PASS / PASS |
 <!-- REAL-PROJECTS:END -->
 
-## External workload context
+### Separate Bazel context
 
-This separate report concerns Bazel's coverage generator; it is not an lcovmerge benchmark.
+This issue concerns Bazel's CoverageOutputGenerator, not lcovmerge; it is not evidence that lcovmerge fixes that generator.
 
 <!-- BAZEL-EVIDENCE:START -->
 Large LCOV .info files can make a merge job the most memory hungry part of a coverage pipeline. The Bazel
@@ -120,14 +178,19 @@ Java heap above 10 GB. It also shows a 745 MB single-file case failing with a he
 reported workload, not a universal result for Bazel.
 <!-- BAZEL-EVIDENCE:END -->
 
+## Limits before switching
+
+- `--mem-limit` budgets record memory, not total RSS; sorting needs temporary disk.
+- The same build and options produce stable bytes across shard order and worker settings; output is not byte-identical to `lcov -a`.
+- lcovmerge merges exported LCOV only. Compare your records and downstream report before switching.
+
 ## More
 
 - [Documentation index](docs/README.md)
 - [Command-line reference](docs/USAGE.md)
-- [Limits and intentional differences](docs/LIMITATIONS.md)
 - [CI and exporter recipes](docs/RECIPES.md)
-- [Build from source](docs/RECIPES.md#build-from-source)
+- [Migration guide](docs/MIGRATING-FROM-LCOV.md)
+- [Limits and intentional differences](docs/LIMITATIONS.md)
 - [Open an issue](https://github.com/megasoft1978/lcovmerge/issues)
 - [MIT license](LICENSE)
-
-Releases include SHA256SUMS, an SBOM, and build provenance; the GitHub Action verifies the selected archive. Manual provenance checks need a `gh` version with `attestation verify` support and a writable Sigstore trust-root cache for `cosign`, or a supplied trust-root file; see [release verification notes](docs/RECIPES.md#release-archives-and-provenance).
+- [Release verification notes](docs/RECIPES.md#release-archives-and-provenance)

@@ -28,10 +28,14 @@ SITE_CHARTS_START = "<!-- SITE-BENCHMARK-CHARTS:START -->"
 SITE_CHARTS_END = "<!-- SITE-BENCHMARK-CHARTS:END -->"
 SITE_RESULTS_START = "<!-- SITE-BENCHMARK-RESULTS:START -->"
 SITE_RESULTS_END = "<!-- SITE-BENCHMARK-RESULTS:END -->"
+SITE_MOBILE_RESULTS_START = "<!-- SITE-BENCHMARK-MOBILE-RESULTS:START -->"
+SITE_MOBILE_RESULTS_END = "<!-- SITE-BENCHMARK-MOBILE-RESULTS:END -->"
 SITE_HOST_RESULTS_START = "<!-- SITE-HOST-RESULTS:START -->"
 SITE_HOST_RESULTS_END = "<!-- SITE-HOST-RESULTS:END -->"
 SITE_METHOD_START = "<!-- SITE-BENCHMARK-METHOD:START -->"
 SITE_METHOD_END = "<!-- SITE-BENCHMARK-METHOD:END -->"
+SITE_SCOPE_START = "<!-- SITE-BENCHMARK-SCOPE:START -->"
+SITE_SCOPE_END = "<!-- SITE-BENCHMARK-SCOPE:END -->"
 
 
 def metric(result):
@@ -329,6 +333,108 @@ def site_results_rows():
     return "\n".join(rows)
 
 
+def mobile_result(tool, elapsed, status, run_note, peak_memory, memory_source,
+                  throughput):
+    return (
+        '<section class="mobile-tool-result">'
+        f'<h4>{html.escape(str(tool))}</h4>'
+        '<p class="mobile-result-meta">'
+        f'<span class="elapsed">Elapsed: {html.escape(str(elapsed))}</span>'
+        f'<span class="status">Status: {html.escape(str(status))}</span>'
+        '</p>'
+        f'<p class="mobile-run-note">Run and memory record: {html.escape(str(run_note))}</p>'
+        '<details><summary>Peak memory and throughput</summary>'
+        '<dl class="mobile-result-details">'
+        f'<dt>Peak resident memory</dt><dd>{html.escape(str(peak_memory))}</dd>'
+        f'<dt>Memory record</dt><dd>{html.escape(str(memory_source))}</dd>'
+        f'<dt>Throughput</dt><dd>{html.escape(str(throughput))}</dd>'
+        '</dl></details></section>'
+    )
+
+
+def primary_host_text():
+    host = DATA["host"]
+    return (f'{host["os"]} · {host["cpu"]} · {host["cores"]} cores · '
+            f'{host["memory_gib"]} GiB RAM')
+
+
+def shard_text(value):
+    return f'{value} shards' if isinstance(value, int) else str(value)
+
+
+def primary_rss_source(key, result):
+    if result.get("status") == "NOT MEASURED":
+        return "Not measured"
+    if result.get("rss_bytes") is None:
+        return plain_copy(result.get("rss_display", "Peak resident memory not reported"))
+    if key == "lcov":
+        return "Earlier recorded peak resident memory; current elapsed-time run did not measure memory"
+    if key == "lcov-result-merger":
+        return "Earlier recorded measurement; run count not reported"
+    hyperfine = DATA["environment"].get("hyperfine", "Hyperfine")
+    return f'Hyperfine {hyperfine} memory_peak_resident; maximum over measured runs'
+
+
+def site_results_mobile():
+    cards = []
+    labels = display_tool_labels()
+    host_text = primary_host_text()
+    for source in DATA["datasets"]:
+        input_bytes = source.get("input_bytes")
+        input_size = f'{input_bytes:,} bytes' if input_bytes is not None else "Input not reported"
+        shards = source.get("shards", "Shard count not reported")
+        description = plain_copy(source.get("description", ""))
+        kind = "Generated" if source["name"] != "REAL" else "Project-derived input not supplied"
+        results = []
+        for key in ("lcovmerge", "lcov", "lcov-result-merger"):
+            result = source["results"][key]
+            elapsed = (seconds_display(result["time_s"])
+                       if result.get("time_s") is not None else result.get("status", "Not reported"))
+            rss = (bytes_display(result["rss_bytes"])
+                   if result.get("rss_bytes") is not None
+                   else plain_copy(result.get("rss_display", "—")))
+            throughput = (f'{result["throughput_mb_s"]:,.1f} MB/s'
+                          if result.get("throughput_mb_s") is not None else "—")
+            run_note = run_count_for(source["name"], key, result)
+            results.append(mobile_result(
+                labels[key], elapsed, result.get("status", "Not reported"), run_note,
+                rss, primary_rss_source(key, result), throughput,
+            ))
+        cards.append(
+            '<article class="benchmark-dataset-card">'
+            f'<h3>Dataset {html.escape(source["name"])} · {html.escape(description)}</h3>'
+            f'<p>Input: {html.escape(input_size)} · {html.escape(str(shards))} · {kind}</p>'
+            f'<p class="benchmark-card-host">Host: {html.escape(host_text)}</p>'
+            f'<div class="mobile-result-list">{"".join(results)}</div>'
+            '</article>'
+        )
+    return "\n".join(cards)
+
+
+def site_benchmark_scope():
+    labels = display_tool_labels()
+    generated = ", ".join(
+        item["name"] for item in DATA["datasets"] if item["name"] != "REAL"
+    )
+    windows_note = ""
+    if any(item.get("platform") == "windows" for item in DATA.get("host_results", [])):
+        windows_note = (
+            " Windows CI benchmark rows are separate and do not establish runtime "
+            "verification of the published Windows release."
+        )
+    return (
+        '<p>Generated inputs: '
+        f'{html.escape(generated)}. Measured lcovmerge build: '
+        f'<strong>{html.escape(labels["lcovmerge"])}</strong>. Comparators: '
+        f'{html.escape(labels["lcov"])} and '
+        f'{html.escape(labels["lcov-result-merger"])}. '
+        f'The release is v{html.escape(VERSION_MATCH.group(1))}; these records do not include '
+        'timings for that release. Generated measurements do not establish a universal speedup '
+        'or output compatibility. The REAL dataset was not measured because no project-derived '
+        f'capture was supplied.{html.escape(windows_note)}</p>'
+    )
+
+
 def site_benchmark_method():
     repeats = ", ".join(f'{name}: {count}' for name, count in DATA["method"]["repeat_counts"].items())
     host = DATA["host"]
@@ -361,14 +467,16 @@ def site_host_results():
         method = entry.get("method") if isinstance(entry.get("method"), dict) else {}
         repeats = method.get("repeat_counts") if isinstance(method.get("repeat_counts"), dict) else {}
         rows = []
+        mobile_cards = []
         for dataset_record in entry.get("datasets", []):
             if not isinstance(dataset_record, dict):
                 continue
             dataset_name = dataset_record.get("name", "Dataset not reported")
             input_bytes = dataset_record.get("input_bytes")
             input_size = f'{input_bytes:,} bytes' if isinstance(input_bytes, int) else "Input not reported"
-            shards = dataset_record.get("shards", "Shard count not reported")
+            shards = shard_text(dataset_record.get("shards", "Shard count not reported"))
             results = dataset_record.get("results") if isinstance(dataset_record.get("results"), dict) else {}
+            mobile_results = []
             for key, result in results.items():
                 if not isinstance(result, dict):
                     continue
@@ -386,6 +494,12 @@ def site_host_results():
                     run_display = "Not measured"
                 else:
                     run_display = f'{run_count} measured' if isinstance(run_count, int) else "Not reported"
+                rss_source = method.get("rss_tool", "Peak memory source not reported")
+                rss_summary = method.get("rss_summary", "")
+                if result.get("rss_bytes") is None:
+                    memory_source = plain_copy(result.get("rss_display", "Peak resident memory not reported"))
+                else:
+                    memory_source = " ".join(part for part in (rss_source, rss_summary) if part)
                 rows.append(
                     '<tr>'
                     f'<th scope="row">{html.escape(str(dataset_name))}</th>'
@@ -398,6 +512,10 @@ def site_host_results():
                     f'<td>{html.escape(str(result.get("status", "Not reported")))}</td>'
                     '</tr>'
                 )
+                mobile_results.append(mobile_result(
+                    tool, elapsed, result.get("status", "Not reported"), run_display,
+                    rss, memory_source, throughput,
+                ))
             if not results:
                 rows.append(
                     '<tr>'
@@ -406,6 +524,20 @@ def site_host_results():
                     '<td>—</td><td>—</td><td>—</td><td>—</td><td>Not reported</td>'
                     f'<td>{html.escape(str(dataset_record.get("status", "Not measured")))}</td></tr>'
                 )
+                mobile_results.append(mobile_result(
+                    "Tool not reported", "—", dataset_record.get("status", "Not measured"),
+                    "Not reported", "—", "Not reported", "—",
+                ))
+            description = plain_copy(dataset_record.get("description", "Generated LCOV input."))
+            kind = "Generated" if description else "Input type not reported"
+            mobile_cards.append(
+                '<article class="benchmark-dataset-card">'
+                f'<h3>Dataset {html.escape(str(dataset_name))} · {html.escape(description)}</h3>'
+                f'<p>Input: {html.escape(input_size)} · {html.escape(str(shards))} · {kind}</p>'
+                f'<p class="benchmark-card-host">Host: {html.escape(host_details)}</p>'
+                f'<div class="mobile-result-list">{"".join(mobile_results)}</div>'
+                '</article>'
+            )
         date = str(entry.get("measurement_date", "date not reported"))
         row_count = len(rows)
         blocks.append(
@@ -413,13 +545,15 @@ def site_host_results():
             f'<summary><strong>{html.escape(str(label))}</strong>'
             f'<span>{row_count} rows · measured {html.escape(date)} · separate measurement</span></summary>'
             f'<p>Host: {html.escape(host_details)}. This result set stays separate from the primary comparison.</p>'
-            f'<div class="table-wrap" role="region" tabindex="0" aria-label="Additional host results {entry_index}">'
+            f'<div class="table-wrap desktop-benchmark-table" role="region" tabindex="0" aria-label="Additional host results {entry_index}">'
             '<table class="benchmark-table">'
             '<caption>Dataset results for this host; each row includes its own tool, run count, and status.</caption>'
             '<thead><tr><th scope="col">Dataset</th><th scope="col">Input</th><th scope="col">Tool and build</th>'
             '<th scope="col">Elapsed</th><th scope="col">Peak resident memory</th><th scope="col">Throughput</th>'
             '<th scope="col">Runs</th><th scope="col">Status</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table></div></details>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>'
+            f'<div class="benchmark-mobile-list" aria-label="Additional host result cards {entry_index}">'
+            f'{"".join(mobile_cards)}</div></details>'
         )
     if not blocks:
         return ""
@@ -554,6 +688,16 @@ def replace_site_host_results(path, content):
     replace_named_section(path, SITE_HOST_RESULTS_START, SITE_HOST_RESULTS_END, content)
 
 
+def render_site_benchmarks(path):
+    replace_named_section(path, SITE_CHARTS_START, SITE_CHARTS_END, chart())
+    replace_named_section(path, SITE_RESULTS_START, SITE_RESULTS_END, site_results_rows())
+    replace_named_section(path, SITE_MOBILE_RESULTS_START, SITE_MOBILE_RESULTS_END,
+                          site_results_mobile())
+    replace_named_section(path, SITE_METHOD_START, SITE_METHOD_END, site_benchmark_method())
+    replace_named_section(path, SITE_SCOPE_START, SITE_SCOPE_END, site_benchmark_scope())
+    replace_site_host_results(path, site_host_results())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -561,7 +705,17 @@ def main():
         action="store_true",
         help="update README and site data without changing docs/BENCHMARKS.md",
     )
+    parser.add_argument(
+        "--site-only",
+        action="store_true",
+        help="update generated sections in docs/site/benchmarks.html only",
+    )
     args = parser.parse_args()
+
+    benchmark_page = ROOT / "docs/site/benchmarks.html"
+    if args.site_only:
+        render_site_benchmarks(benchmark_page)
+        return
 
     replace_section(ROOT / "README.md", readme_table())
     replace_named_section(ROOT / "README.md", "<!-- BENCH-CONTEXT:START -->", "<!-- BENCH-CONTEXT:END -->", context())
@@ -573,11 +727,7 @@ def main():
     replace_named_section(index, HERO_START, HERO_END, hero_proof())
     replace_named_section(index, "<!-- HERO-CARD:START -->", "<!-- HERO-CARD:END -->", hero_card())
 
-    benchmark_page = ROOT / "docs/site/benchmarks.html"
-    replace_named_section(benchmark_page, SITE_CHARTS_START, SITE_CHARTS_END, chart())
-    replace_named_section(benchmark_page, SITE_RESULTS_START, SITE_RESULTS_END, site_results_rows())
-    replace_named_section(benchmark_page, SITE_METHOD_START, SITE_METHOD_END, site_benchmark_method())
-    replace_site_host_results(benchmark_page, site_host_results())
+    render_site_benchmarks(benchmark_page)
 
     if not args.readme_site_only:
         replace_section(ROOT / "docs/BENCHMARKS.md", full_table())
