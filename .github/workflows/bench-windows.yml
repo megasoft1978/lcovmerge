@@ -20,6 +20,7 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          path-type: inherit
           install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
 
       - name: Install checksum-verified Zig 0.17.0

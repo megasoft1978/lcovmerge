@@ -76,7 +76,7 @@ jobs:
           $scoopShimDir = Join-Path $env:SCOOP 'shims'
           Add-Content -LiteralPath $env:GITHUB_PATH -Value $scoopShimDir
           $env:PATH = "$scoopShimDir;$env:PATH"
-          & (Join-Path $scoopShimDir 'scoop.ps1') version
+          & (Join-Path $scoopShimDir 'scoop.ps1') help *> $null
           if (-not $?) { throw 'Pinned Scoop did not run.' }
 
       - name: Download the published release and generate manifest
