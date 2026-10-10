@@ -7,8 +7,8 @@ for platform in linux/amd64 linux/arm64; do
     tag=$(printf '%s' "$platform" | tr '/' '-')
     log="$root/docs/validation/docker-$tag.txt"
     case "$platform" in
-        linux/amd64) static_binary=dist/lcovmerge-1.0.1-linux-x86_64 ;;
-        linux/arm64) static_binary=dist/lcovmerge-1.0.1-linux-aarch64 ;;
+        linux/amd64) static_binary=dist/lcovmerge-1.0.2-linux-x86_64 ;;
+        linux/arm64) static_binary=dist/lcovmerge-1.0.2-linux-aarch64 ;;
     esac
     set +e
     docker run --rm --platform "$platform" \

@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$version = if ($env:LCOVMERGE_VERSION) { $env:LCOVMERGE_VERSION.TrimStart('v') } else { '1.0.1' }
+$version = if ($env:LCOVMERGE_VERSION) { $env:LCOVMERGE_VERSION.TrimStart('v') } else { '1.0.2' }
 if ($version -notmatch '^[A-Za-z0-9.+-]+$') {
     throw "Invalid LCOVMERGE_VERSION: $version"
 }

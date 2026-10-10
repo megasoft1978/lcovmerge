@@ -21,7 +21,7 @@ REPOSITORY = "megasoft1978/lcovmerge"
 
 
 def release_coordinates() -> tuple[str, str, str]:
-    version = os.environ.get("INPUT_VERSION", "1.0.1").strip().removeprefix("v")
+    version = os.environ.get("INPUT_VERSION", "1.0.2").strip().removeprefix("v")
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.+-"
     if not version or any(character not in allowed for character in version):
         raise SystemExit("Invalid version input")

@@ -6,6 +6,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-10
+
 ### Fixed
 
 - Recover a tracefile line where `end_of_record` is joined directly to `SF:`/`KF:` (seen in a public CI artifact): the following rows now go to the new source instead of the previous one, with a warning.

@@ -33,7 +33,7 @@
     "name": "lcovmerge",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS; Windows runtime verification pending",
-    "softwareVersion": "1.0.1",
+    "softwareVersion": "1.0.2",
     "description": "C11 command-line tool that combines existing LCOV .info files. Its memory setting limits memory reserved for coverage records while sorting; total process memory can be higher, and sorting uses temporary disk. It does not collect coverage or generate reports.",
     "license": "https://opensource.org/license/mit",
     "url": "https://megasoft1978.github.io/lcovmerge/",
@@ -67,7 +67,7 @@
         <h1 id="hero-title">Merge existing LCOV shards after your test jobs.</h1>
         <p class="hero-copy">Turn existing .info files into one LCOV file. Keep your collector and report step.</p>
         <div class="hero-actions">
-          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Download v1.0.1</a>
+          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.2">Download v1.0.2</a>
           <a class="action-link" href="docs.html#github-actions">Use in GitHub Actions</a>
         </div>
         <div class="quick-merge card" aria-labelledby="quick-merge-title">
@@ -148,8 +148,8 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
               <h3>Linux · x86-64</h3>
               <p>For Linux ARM64, choose its matching archive from the release page.</p>
               <pre class="code-block" data-copy-label="Copy Linux download and checksum commands"><code>set -eu
-asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
 curl -fL "$base/$asset" -o "$asset"
 curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 grep " $asset$" SHA256SUMS | sha256sum -c -
@@ -159,10 +159,10 @@ tar -xzf "$asset"
             <div class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
               <h3>macOS · Apple silicon or Intel</h3>
               <pre class="code-block" data-copy-label="Copy macOS download and checksum commands"><code>set -eu
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
 case "$(uname -m)" in
-  arm64|aarch64) asset=lcovmerge-1.0.1-macos-arm64.tar.gz ;;
-  x86_64|amd64) asset=lcovmerge-1.0.1-macos-x86_64.tar.gz ;;
+  arm64|aarch64) asset=lcovmerge-1.0.2-macos-arm64.tar.gz ;;
+  x86_64|amd64) asset=lcovmerge-1.0.2-macos-x86_64.tar.gz ;;
   *) echo "Unsupported Mac architecture: $(uname -m)" &gt;&amp;2; exit 1 ;;
 esac
 curl -fL "$base/$asset" -o "$asset"
@@ -174,8 +174,8 @@ tar -xzf "$asset"
             <div class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
               <h3>Windows · not yet verified on a Windows host</h3>
               <p>The release archive is available, but runtime behavior still needs a Windows host run.</p>
-              <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
-$base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1"
+              <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.2-windows-x86_64.zip"
+$base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
 Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
 $entry = Get-Content SHA256SUMS | Where-Object { ($_ -split '\s+', 2)[1].TrimStart('*') -eq $asset }
@@ -234,7 +234,7 @@ Expand-Archive $asset -DestinationPath .\lcovmerge
 
   <footer class="site-footer">
     <div class="shell footer-row">
-      <p>lcovmerge 1.0.1 · MIT License</p>
+      <p>lcovmerge 1.0.2 · MIT License</p>
       <div class="footer-links"><a href="docs.html">Usage</a><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a><a href="https://github.com/megasoft1978/lcovmerge/releases/latest">Release files</a><a href="https://github.com/megasoft1978/lcovmerge/issues">Issues</a></div>
     </div>
   </footer>

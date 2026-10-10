@@ -49,7 +49,7 @@ jobs:
           path: coverage/shards
           merge-multiple: true
       - name: Merge LCOV
-        uses: megasoft1978/lcovmerge@v1.0.1
+        uses: megasoft1978/lcovmerge@v1.0.2
         with:
           files: coverage/shards/*.info
           output: coverage/merged.info
@@ -93,8 +93,8 @@ merge-coverage:
       set -eu
       apt-get update
       apt-get install -y --no-install-recommends curl lcov
-      asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
-      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+      asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
+      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
       curl -fL "$base/$asset" -o "$asset"
       curl -fL "$base/SHA256SUMS" -o SHA256SUMS
       awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -156,8 +156,8 @@ pipeline {
         unstash 'lcov-integration'
         sh '''
           set -eu
-          asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
-          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+          asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
+          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
           curl -fL "$base/$asset" -o "$asset"
           curl -fL "$base/SHA256SUMS" -o SHA256SUMS
           awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -361,11 +361,11 @@ The container writes into the mounted working directory. The temporary directory
 set -eu
 mkdir -p coverage
 
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.1 \
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.2 \
   --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
 ```
 
-The v1.0.1 arm64 container command passed in the local audit; other container platforms were not exercised there. See the [container registry](https://github.com/megasoft1978/lcovmerge/pkgs/container/lcovmerge).
+The v1.0.2 arm64 container command passed in the local audit; other container platforms were not exercised there. See the [container registry](https://github.com/megasoft1978/lcovmerge/pkgs/container/lcovmerge).
 
 ## Report and upload consumers
 

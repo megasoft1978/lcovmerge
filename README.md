@@ -1,7 +1,7 @@
 # lcovmerge
 
 [![CI](https://github.com/megasoft1978/lcovmerge/actions/workflows/ci.yml/badge.svg)](https://github.com/megasoft1978/lcovmerge/actions/workflows/ci.yml)
-[![Release v1.0.1](docs/site/badges/release.svg)](https://github.com/megasoft1978/lcovmerge/releases/latest)
+[![Release v1.0.2](docs/site/badges/release.svg)](https://github.com/megasoft1978/lcovmerge/releases/latest)
 [![MIT License](docs/site/badges/license.svg)](LICENSE)
 
 **Merge existing LCOV .info shards into one file. Keep your collector and report step.**
@@ -12,8 +12,8 @@ Download and verify the release, merge the files your test jobs exported, then k
 
 ```sh
 set -eu
-asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
+asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
 curl -fL "$base/$asset" -o "$asset"
 curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -23,7 +23,7 @@ tar -xzf "$asset"
 genhtml coverage/merged.info --output-directory coverage/html
 ```
 
-The last line is the existing report step. See [release assets](https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1). Windows runtime verification is pending a passing Windows CI run; check [platform limits](docs/LIMITATIONS.md) before choosing an archive.
+The last line is the existing report step. See [release assets](https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.2). Windows runtime verification is pending a passing Windows CI run; check [platform limits](docs/LIMITATIONS.md) before choosing an archive.
 
 ## Does it fit?
 
@@ -35,7 +35,7 @@ After test jobs upload their `.info` artifacts, merge them in a final job:
 
 ```yaml
 - name: Merge coverage
-  uses: megasoft1978/lcovmerge@v1.0.1
+  uses: megasoft1978/lcovmerge@v1.0.2
   with:
     files: |
       coverage/unit/*.info
