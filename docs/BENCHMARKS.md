@@ -23,8 +23,35 @@ per dataset. Per-command timeout: 30 minutes.
 - Apple `/usr/bin/time -l` could not query `kern.clockrate` under the host policy. lcovmerge RSS therefore comes
   from hyperfine. Successful LCOV RSS values in the table are the previous canonical measurements and were not
   refreshed in this run; PATH-HEAVY current-run RSS is unavailable.
-- Benchmark outputs were not compared pairwise against LCOV. Merge semantics and determinism are checked by the
-  golden, oracle, lcov differential, and determinism test suites.
+- The generated-fixture table below is not a pairwise semantic comparison against LCOV. The separate
+  project-derived validation compares normalized results with LCOV and records genhtml compatibility,
+  determinism, and external-sort checks in [real-projects.md](validation/real-projects.md).
+
+## Linux measurements
+
+The manually triggered `Linux benchmark` workflow runs S, M, and L on `ubuntu-24.04`, with an optional
+PATH-HEAVY run. Each tool gets one hyperfine warmup and repeat measurements. On Linux, peak RSS comes from GNU
+`/usr/bin/time -v` for each measured run. The workflow artifact contains host metadata and aggregate JSON and
+text reports; generated tracefiles stay in the runner's ignored `.luna-tmp` directory and are removed by the
+benchmark runner.
+
+After running the workflow, download its `linux-benchmark-<run-id>-<attempt>` artifact into an isolated directory
+under `.luna-tmp`, then merge the aggregate JSON with:
+
+```sh
+python3 -I bench/ingest-ci-results.py .luna-tmp/<download-dir>/benchmark.json
+```
+
+The ingester appends or replaces that run under the additive `host_results` field in the canonical data and the
+site data mirror. It leaves the existing macOS host and measurements intact. The workflow runs only on
+`workflow_dispatch`.
+
+## Real-project validation
+
+The project-derived captures and LCOV comparisons are tracked separately from the generated-fixture benchmark
+table in [the validation report](validation/real-projects.md) and [`data/real-projects.json`](../data/real-projects.json).
+The current real shard set is 11,225,342 bytes. Its 55,482,820-byte `REAL-DERIVED SCALED` run uses re-rooted
+copies to increase path diversity and input size; it is explicitly synthetic scaling, not real project data.
 
 To reproduce a final lcovmerge measurement for M:
 
@@ -88,8 +115,8 @@ observed command variation for the requested values; they do not measure externa
 <!-- BENCH-CAVEATS:START -->
 - Measurements cover one macOS arm64 host. Exact SoC model was unavailable in the sandbox; results are not a
   cross-platform claim.
-- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived
-  capture was available.
+- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. The `REAL` row in this table is unmeasured; the
+  separate project-derived runs are recorded in the real-project validation report.
 - lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts
   are listed per workload. Cache warmups were used, but no explicit cache flush was applied.
 - lcov 2.6 ran once per dataset after the baseline merge. Its PATH-HEAVY run exited with status 1 after 98.805

@@ -6,6 +6,8 @@ Subpath fetches: index.html, docs.html, benchmarks.html, site.css, site.js, and 
 Missing nested route: returned HTTP 404 with the custom 404 page.
 Chromium 106.0.5219.0 with a virtual-time budget loaded the benchmark table and its canonical JSON values: M input size 1,118,686,233 bytes, 337.4 MB/s, ERROR_1, TIMEOUT, and NOT MEASURED statuses. It also displayed the distinction between lcovmerge job-count runs and one run per comparison tool.
 
+Superseded 2026-10-09: the M throughput value of 337.4 MB/s in this QA snapshot is superseded by the refreshed 320.7 MB/s paired result in data/benchmarks.json and docs/validation/benchmark-final-M.txt. The historical snapshot remains unchanged.
+
 Lighthouse 13.5.0 using Chromium against local /lcovmerge/ routes:
   index.html: performance 100, accessibility 100, best-practices 100, SEO 100
   docs.html: performance 100, accessibility 100, best-practices 100, SEO 100

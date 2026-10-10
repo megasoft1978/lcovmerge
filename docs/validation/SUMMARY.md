@@ -16,6 +16,8 @@ Validation was run from this release-candidate tree on 2026-10-09. The host was 
 | Website | PASS | Lighthouse reported 100/100 for performance, accessibility, best practices, and SEO on index, docs, and benchmarks pages. `/lcovmerge/` subpath assets/data work, the nested not-found route returns 404, and Pages uploads `docs/site`. See [site QA](site-qa.txt). |
 | Source hygiene | PASS | The final checks include Markdown lint, local link validation, man lint, shell/YAML checks, `git diff --check`, and scans for personal paths, email addresses, tokens, and AI attribution. External links to this unpublished repository cannot resolve until the owner publishes it. |
 
+Superseded 2026-10-09: the 337.4 MB/s M result above is superseded by the refreshed 320.7 MB/s paired result recorded in [`data/benchmarks.json`](../../data/benchmarks.json) and [benchmark-final-M.txt](benchmark-final-M.txt). The historical table is retained as recorded.
+
 ## Benchmark matrix
 
 Input sizes are exact byte counts; decimal MB/s is bytes divided by 1,000,000 and elapsed wall time. RSS is peak resident memory from `/usr/bin/time`. The PATH-HEAVY npm process timed out, so it has no completed-run peak RSS; a one-second sample reached 841,888 KiB before it was stopped. The XL-single npm tool exited with status 1. lcov exited with status 1 on PATH-HEAVY. These errors are retained as measurements rather than converted into throughput.
