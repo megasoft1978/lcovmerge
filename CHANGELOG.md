@@ -6,6 +6,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Recover a tracefile line where `end_of_record` is joined directly to `SF:`/`KF:` (seen in a public CI artifact): the following rows now go to the new source instead of the previous one, with a warning.
+
 ### Changed
 
 - Make temporary-run errors name `--tmpdir` and state that it must exist and be writable; output temporary-file errors include the OS reason and parent-directory hint.
