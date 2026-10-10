@@ -214,7 +214,7 @@ def main():
 
     markdown_files = []
     for doc in sorted(ROOT.rglob("*.md")):
-        if any(part in {".git", "node_modules", ".luna-tmp", ".cache"} for part in doc.parts):
+        if any(part in {".git", "node_modules", ".luna-tmp", ".cache"} for part in doc.relative_to(ROOT).parts):
             continue
         markdown_files.append(doc)
         text = markdown_without_fences(doc.read_text(errors="replace"))

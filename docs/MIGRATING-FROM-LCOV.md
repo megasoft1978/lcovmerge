@@ -38,7 +38,7 @@ Use the same LCOV files with both programs and keep the outputs separate. This e
 set -eu
 work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-compare.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-python3 tools/gen-lcov.py --out "$work/shards" --shards 2 --files 4 --lines 80 --seed 1 --benchmark-compatible
+python3 tools/gen-lcov.py --out "$work/shards" --shards 2 --files 4 --lines 80 --seed 1 --benchmark-compatible --lcov-valid
 lcov -a "$work/shards/shard-0000.info" -a "$work/shards/shard-0001.info" -o "$work/lcov.info"
 ./bin/lcovmerge "$work"/shards/shard-*.info -o "$work/lcovmerge.info" --strict-checksum
 ```
@@ -53,7 +53,7 @@ This source-checkout example tests fixture generation and the lcovmerge CLI only
 set -eu
 work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-smoke.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-python3 tools/gen-lcov.py --out "$work/shards" --shards 2 --files 4 --lines 80 --seed 1 --benchmark-compatible
+python3 tools/gen-lcov.py --out "$work/shards" --shards 2 --files 4 --lines 80 --seed 1 --benchmark-compatible --lcov-valid
 ./bin/lcovmerge "$work"/shards/shard-*.info -o "$work/merged.info" --stats
 ```
 
