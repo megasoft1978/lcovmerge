@@ -246,7 +246,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=pathlib.Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--zig-binary", type=pathlib.Path,
-                        default=ROOT / "dist" / "lcovmerge-1.0.0-windows-x86_64.exe")
+                        default=ROOT / "dist" / "lcovmerge-1.0.1-windows-x86_64.exe")
     parser.add_argument("--gcc-binary", type=pathlib.Path,
                         default=ROOT / "bin" / "lcovmerge-ucrt64-gcc.exe")
     parser.add_argument("--zig-compiler", default="zig.exe",
@@ -419,8 +419,8 @@ def main() -> int:
             "temporary_data": "under .luna-tmp; generated dataset is removed after measurement",
         },
         "tool_labels": {
-            "lcovmerge": "lcovmerge 1.0.0 Zig 0.17.0 -O2 Windows x86_64",
-            "lcovmerge_ucrt64_gcc": "lcovmerge 1.0.0 MSYS2 UCRT64 GCC -O2",
+            "lcovmerge": "lcovmerge 1.0.1 Zig 0.17.0 -O2 Windows x86_64",
+            "lcovmerge_ucrt64_gcc": "lcovmerge 1.0.1 MSYS2 UCRT64 GCC -O2",
         },
         "datasets": datasets,
         "text_report": "benchmark.txt",

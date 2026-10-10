@@ -6,6 +6,26 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-10
+
+### Added
+
+- Add Linux and Windows benchmark workflows and publish the recorded hosted-runner results.
+- Add a Scoop installation smoke test to CI.
+- Refresh the README and site with a category-first introduction, and add an FAQ, migration guide, and CI recipes.
+- Record soak validation with `SOAK=1`, five million fuzz executions, and AddressSanitizer stress.
+
+### Changed
+
+- Build the Windows release binary with `-O2` instead of `-Oz`; windows-latest benchmarks show 24–34% faster compute-bound S/M workloads. The measured executable is 148,992 bytes, and the per-executable size budget is raised from 150,000 to 160,000 bytes.
+- Pin GitHub Action examples to a released tag.
+
+### Fixed
+
+- Correct the man page's `--tmpdir` example.
+
+No CLI behavior changes in this release.
+
 ## [1.0.0] - 2026-10-09
 
 ### Added

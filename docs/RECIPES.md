@@ -100,8 +100,8 @@ merge-coverage:
   before_script:
     - apt-get update
     - apt-get install -y --no-install-recommends curl lcov
-    - asset=lcovmerge-1.0.0-linux-x86_64.tar.gz
-    - base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+    - asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+    - base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
     - curl -fL "$base/$asset" -o "$asset"
     - curl -fL "$base/SHA256SUMS" -o SHA256SUMS
     - grep " $asset$" SHA256SUMS | sha256sum -c -
@@ -160,8 +160,8 @@ pipeline {
         unstash 'lcov-unit'
         unstash 'lcov-integration'
         sh '''
-          asset=lcovmerge-1.0.0-linux-x86_64.tar.gz
-          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+          asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
           curl -fL "$base/$asset" -o "$asset"
           curl -fL "$base/SHA256SUMS" -o SHA256SUMS
           grep " $asset$" SHA256SUMS | sha256sum -c -

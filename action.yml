@@ -17,7 +17,7 @@ inputs:
   version:
     description: Release version to download, without or with a leading v.
     required: false
-    default: 1.0.0
+    default: 1.0.1
 outputs:
   summary:
     description: Summary text emitted by lcovmerge --stats.

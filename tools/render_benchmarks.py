@@ -4,12 +4,21 @@
 import argparse
 import html
 import json
+import re
 import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "data/benchmarks.json").read_text())
 REAL_DATA = json.loads((ROOT / "data/real-projects.json").read_text())
+VERSION_MATCH = re.search(
+    r'^#define LCOVMERGE_VERSION "([^"]+)"$',
+    (ROOT / "include/version.h").read_text(),
+    re.MULTILINE,
+)
+if VERSION_MATCH is None:
+    raise SystemExit("LCOVMERGE_VERSION is missing from include/version.h")
+CURRENT_LCOVMERGE_LABEL = f"lcovmerge {VERSION_MATCH.group(1)}"
 START = "<!-- BENCHMARKS:START -->"
 END = "<!-- BENCHMARKS:END -->"
 HERO_START = "<!-- HERO-PROOF:START -->"
@@ -80,9 +89,15 @@ def context():
                          break_on_hyphens=False)
 
 
+def display_tool_labels():
+    labels = DATA["tool_labels"].copy()
+    labels["lcovmerge"] = CURRENT_LCOVMERGE_LABEL
+    return labels
+
+
 def readme_table():
     wanted = {"M", "L", "XL-single", "PATH-HEAVY"}
-    labels = DATA["tool_labels"]
+    labels = display_tool_labels()
     rows = [
         f'| Dataset (input bytes) | {labels["lcovmerge"]} | {labels["lcov"]} | '
         f'{labels["lcov-result-merger"]} |',
@@ -101,7 +116,7 @@ def readme_table():
 
 
 def full_table():
-    labels = DATA["tool_labels"]
+    labels = display_tool_labels()
     rows = [
         f'| Dataset (input bytes) | {labels["lcovmerge"]} | {labels["lcov"]} | '
         f'{labels["lcov-result-merger"]} |',
@@ -171,11 +186,11 @@ def bytes_display(value):
 
 
 def hero_proof():
-    return '''<p class="eyebrow">LCOV tracefile merge · C11 · MIT</p>
+    return f'''<p class="eyebrow">LCOV tracefile merge · C11 · MIT</p>
         <h1>Merge existing LCOV shards with bounded record memory.</h1>
         <p class="hero-copy">Merge existing <code>.info</code> files into deterministic output. Keep your collector and report generator.</p>
         <div class="actions">
-          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">Download v1.0.0</a>
+          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v{VERSION_MATCH.group(1)}">Download v{VERSION_MATCH.group(1)}</a>
           <a class="button secondary" href="docs.html#github-actions">GitHub Action</a>
         </div>
         <p class="hero-note">The <code>--mem-limit</code> budget covers the record arena, not total RSS or temporary disk. lcovmerge is not a drop-in for <code>lcov -a</code>. Read <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits &amp; semantics</a>.</p>'''
@@ -194,7 +209,7 @@ def hero_card():
         <div class="metric-grid">
           <div class="metric">
             <strong data-benchmark-value="datasets.0.results.0.seconds_display">{seconds_display(lcovmerge["time_s"])}</strong>
-            <span>{html.escape(DATA["tool_labels"]["lcovmerge"])} · median of {merge_runs} measured runs</span>
+            <span>{html.escape(CURRENT_LCOVMERGE_LABEL)} · median of {merge_runs} measured runs</span>
             <span class="metric-detail">{bytes_display(lcovmerge["rss_bytes"])} peak RSS</span>
           </div>
           <div class="metric">
@@ -225,6 +240,7 @@ def chart(dataset_name, metric_name):
     is_time = metric_name == "time"
     metric_label = "elapsed time" if is_time else "peak resident memory"
     values = []
+    labels = display_tool_labels()
     for key, result in source["results"].items():
         value = result["time_s"] if is_time else result["rss_bytes"]
         values.append((key, result, value))
@@ -246,7 +262,7 @@ def chart(dataset_name, metric_name):
         f'<ul class="bar-chart" aria-label="{html.escape(source["name"])} dataset {html.escape(metric_label)} results">'
     ]
     for key, result, value in values:
-        label = DATA["tool_labels"].get(key, key)
+        label = labels.get(key, key)
         if key == "lcovmerge":
             run_text = f'{merge_runs} run(s)' if merge_runs else "run count not reported"
         elif key == "lcov" and not is_time:
@@ -299,6 +315,7 @@ def chart(dataset_name, metric_name):
 def chart_text_alternative(metric_name):
     source = dataset("M")
     phrases = []
+    labels = display_tool_labels()
     for key in ("lcovmerge", "lcov", "lcov-result-merger"):
         result = source["results"][key]
         value = result["time_s"] if metric_name == "time" else result["rss_bytes"]
@@ -318,7 +335,7 @@ def chart_text_alternative(metric_name):
             run_text = f'{DATA["method"]["comparison_runs_per_tool"]} time run(s)'
         elif key == "lcov-result-merger":
             run_text = "prior canonical measurement; run count not reported"
-        phrases.append(f'{DATA["tool_labels"][key]} {display} · {result["status"]} · {run_text}')
+        phrases.append(f'{labels[key]} {display} · {result["status"]} · {run_text}')
     label = "elapsed time" if metric_name == "time" else "peak RSS"
     return (f'{source["name"]} {label}, generated input on {DATA["host"]["os"]} '
             f'{DATA["host"]["cpu"]}, measured {DATA["measured_on"]}: ' + "; ".join(phrases) + ".")
@@ -327,6 +344,7 @@ def chart_text_alternative(metric_name):
 def medium_results_rows():
     source = dataset("M")
     rows = []
+    labels = display_tool_labels()
     for key in ("lcovmerge", "lcov", "lcov-result-merger"):
         result = source["results"][key]
         elapsed = seconds_display(result["time_s"]) if result["time_s"] is not None else result["status"]
@@ -343,7 +361,7 @@ def medium_results_rows():
                            'RSS: prior canonical, count unknown')
         primary = " class=\"tool-primary\"" if key == "lcovmerge" else ""
         rows.append(
-            f'<tr><th scope="row"{primary}>{html.escape(DATA["tool_labels"][key])}</th>'
+            f'<tr><th scope="row"{primary}>{html.escape(labels[key])}</th>'
             f'<td class="table-numeric">{html.escape(elapsed)}</td>'
             f'<td class="table-numeric">{html.escape(rss)}</td>'
             f'<td class="table-numeric">{html.escape(throughput)}</td>'
@@ -386,6 +404,7 @@ def run_count_for(dataset_name, key, result):
 
 def site_results_rows():
     rows = []
+    labels = display_tool_labels()
     for source in DATA["datasets"]:
         keys = ("lcovmerge", "lcov", "lcov-result-merger")
         for index, key in enumerate(keys):
@@ -404,7 +423,7 @@ def site_results_rows():
                           if result.get("throughput_mb_s") is not None else "—")
             primary = ' class="tool-primary"' if key == "lcovmerge" else ""
             cells.extend([
-                f'<th scope="row"{primary}>{html.escape(DATA["tool_labels"][key])}</th>',
+                f'<th scope="row"{primary}>{html.escape(labels[key])}</th>',
                 f'<td class="table-numeric">{html.escape(elapsed)}</td>',
                 f'<td class="table-numeric">{html.escape(rss)}</td>',
                 f'<td class="table-numeric">{html.escape(throughput)}</td>',
@@ -611,7 +630,7 @@ def site_benchmarks():
     """Map canonical measurements to the schema consumed by docs/site/site.js."""
     ids = {"M": "medium", "L": "large", "XL-single": "single_file"}
     order = {"M": 0, "L": 1, "XL-single": 2, "S": 3, "PATH-HEAVY": 4, "REAL": 5}
-    labels = DATA["tool_labels"]
+    labels = display_tool_labels()
     result_keys = (("lcovmerge", "lcovmerge"), ("lcov", "lcov"),
                    ("lcov-result-merger", "lcov-result-merger"))
     datasets = []

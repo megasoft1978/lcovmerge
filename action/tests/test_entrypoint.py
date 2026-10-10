@@ -24,7 +24,7 @@ SPEC.loader.exec_module(entrypoint)
 
 
 class ReleaseCoordinatesTests(unittest.TestCase):
-    def coordinates(self, runner_os: str, runner_arch: str, version: str = "v1.0.0"):
+    def coordinates(self, runner_os: str, runner_arch: str, version: str = "v1.0.1"):
         with patch.dict(
             os.environ,
             {"INPUT_VERSION": version, "RUNNER_OS": runner_os, "RUNNER_ARCH": runner_arch},
@@ -34,31 +34,31 @@ class ReleaseCoordinatesTests(unittest.TestCase):
 
     def test_release_asset_names_match_all_supported_runner_targets(self) -> None:
         expected = {
-            ("Linux", "X64"): "lcovmerge-1.0.0-linux-x86_64.tar.gz",
-            ("Linux", "ARM64"): "lcovmerge-1.0.0-linux-aarch64.tar.gz",
-            ("macOS", "X64"): "lcovmerge-1.0.0-macos-x86_64.tar.gz",
-            ("macOS", "ARM64"): "lcovmerge-1.0.0-macos-arm64.tar.gz",
-            ("Windows", "X64"): "lcovmerge-1.0.0-windows-x86_64.zip",
+            ("Linux", "X64"): "lcovmerge-1.0.1-linux-x86_64.tar.gz",
+            ("Linux", "ARM64"): "lcovmerge-1.0.1-linux-aarch64.tar.gz",
+            ("macOS", "X64"): "lcovmerge-1.0.1-macos-x86_64.tar.gz",
+            ("macOS", "ARM64"): "lcovmerge-1.0.1-macos-arm64.tar.gz",
+            ("Windows", "X64"): "lcovmerge-1.0.1-windows-x86_64.zip",
         }
         for (runner_os, runner_arch), asset in expected.items():
             with self.subTest(runner_os=runner_os, runner_arch=runner_arch):
                 version, actual_asset, base_url = self.coordinates(runner_os, runner_arch)
-                self.assertEqual(version, "1.0.0")
+                self.assertEqual(version, "1.0.1")
                 self.assertEqual(actual_asset, asset)
                 self.assertEqual(
                     base_url,
-                    "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0",
+                    "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1",
                 )
 
-    def test_defaults_to_v1_0_0_when_version_input_is_unset(self) -> None:
+    def test_defaults_to_v1_0_1_when_version_input_is_unset(self) -> None:
         with patch.dict(os.environ, {"RUNNER_OS": "Linux", "RUNNER_ARCH": "X64"}, clear=True):
             version, asset, _ = entrypoint.release_coordinates()
-        self.assertEqual(version, "1.0.0")
-        self.assertEqual(asset, "lcovmerge-1.0.0-linux-x86_64.tar.gz")
+        self.assertEqual(version, "1.0.1")
+        self.assertEqual(asset, "lcovmerge-1.0.1-linux-x86_64.tar.gz")
 
     def test_rejects_invalid_version_and_unsupported_runner(self) -> None:
         with self.assertRaises(SystemExit):
-            self.coordinates("Linux", "X64", "../1.0.0")
+            self.coordinates("Linux", "X64", "../1.0.1")
         with self.assertRaises(SystemExit):
             self.coordinates("Windows", "ARM64")
 
@@ -99,7 +99,7 @@ class ArchiveVerificationTests(unittest.TestCase):
     def test_verifies_sha256_checksum_and_rejects_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            asset = "lcovmerge-1.0.0-linux-x86_64.tar.gz"
+            asset = "lcovmerge-1.0.1-linux-x86_64.tar.gz"
             archive = root / asset
             sums = root / "SHA256SUMS"
             contents = b"synthetic archive fixture"
@@ -134,7 +134,7 @@ class ArchiveVerificationTests(unittest.TestCase):
                 info.size = len(tar_binary)
                 archive.addfile(info, io.BytesIO(tar_binary))
             extracted_tar = entrypoint.extract_binary(
-                "lcovmerge-1.0.0-linux-x86_64.tar.gz", tar_path, root / "lcovmerge"
+                "lcovmerge-1.0.1-linux-x86_64.tar.gz", tar_path, root / "lcovmerge"
             )
             self.assertEqual(extracted_tar.read_bytes(), tar_binary)
 
@@ -143,7 +143,7 @@ class ArchiveVerificationTests(unittest.TestCase):
             with zipfile.ZipFile(zip_path, "w") as archive:
                 archive.writestr("lcovmerge.exe", zip_binary)
             extracted_zip = entrypoint.extract_binary(
-                "lcovmerge-1.0.0-windows-x86_64.zip",
+                "lcovmerge-1.0.1-windows-x86_64.zip",
                 zip_path,
                 root / "lcovmerge.exe",
             )
@@ -157,7 +157,7 @@ class ArchiveVerificationTests(unittest.TestCase):
                 archive.writestr("other.exe", b"not the expected executable")
             with self.assertRaisesRegex(SystemExit, "Release archive is missing lcovmerge.exe"):
                 entrypoint.extract_binary(
-                    "lcovmerge-1.0.0-windows-x86_64.zip",
+                    "lcovmerge-1.0.1-windows-x86_64.zip",
                     archive_path,
                     root / "lcovmerge.exe",
                 )

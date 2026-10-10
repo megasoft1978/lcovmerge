@@ -172,7 +172,7 @@ def main() -> int:
             "cache_state": "no explicit cache flush; one warmup per command; runner load uncontrolled",
         },
         "tool_labels": {
-            "lcovmerge": "lcovmerge 1.0.0 built from checkout",
+            "lcovmerge": "lcovmerge 1.0.1 built from checkout",
             "lcov": host_metadata()["lcov"],
         },
         "datasets": datasets,

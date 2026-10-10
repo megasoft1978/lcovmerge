@@ -37,7 +37,7 @@
       "shards": "32 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": 3.488279,
           "seconds_display": "3.488279 s",
           "peak_rss_mib": 5.125,
@@ -76,7 +76,7 @@
       "shards": "64 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": 27.723422,
           "seconds_display": "27.723422 s",
           "peak_rss_mib": 25.0625,
@@ -115,7 +115,7 @@
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": 1.455709,
           "seconds_display": "1.455709 s",
           "peak_rss_mib": 2.28125,
@@ -154,7 +154,7 @@
       "shards": "8 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": 0.259979,
           "seconds_display": "0.259979 s",
           "peak_rss_mib": 2.953125,
@@ -193,7 +193,7 @@
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": 2.121826,
           "seconds_display": "2.121826 s",
           "peak_rss_mib": 20.234375,
@@ -232,7 +232,7 @@
       "shards": "not supplied",
       "results": [
         {
-          "tool": "lcovmerge 1.0.0",
+          "tool": "lcovmerge 1.0.1",
           "seconds": null,
           "seconds_display": "NOT MEASURED",
           "peak_rss_mib": null,

@@ -90,7 +90,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path ./.luna-tmp | Out-Null
           python -I bench/run-ci-windows.py `
             --output-dir .luna-tmp/windows-benchmark-artifact `
-            --zig-binary dist/lcovmerge-1.0.0-windows-x86_64.exe `
+            --zig-binary dist/lcovmerge-1.0.1-windows-x86_64.exe `
             --gcc-binary bin/lcovmerge-ucrt64-gcc.exe
 
       - name: Clean up Zig download and install

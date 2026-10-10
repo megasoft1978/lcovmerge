@@ -41,7 +41,7 @@ The release image is published at GitHub Container Registry. Run it from the pro
 workspace mounted so it can read inputs and write the merged file:
 
 ```sh
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.0 \
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.1 \
   --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
 ```
 

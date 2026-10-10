@@ -33,7 +33,7 @@
     "name": "lcovmerge",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Linux, macOS; Windows CI-verified only",
-    "softwareVersion": "1.0.0",
+    "softwareVersion": "1.0.1",
     "description": "C11 command-line merger for existing LCOV .info tracefiles. Writes deterministic output with a configurable record-memory budget; does not collect coverage or generate reports.",
     "license": "https://opensource.org/license/mit",
     "url": "https://megasoft1978.github.io/lcovmerge/",
@@ -66,7 +66,7 @@
         <h1>Merge existing LCOV shards with bounded record memory.</h1>
         <p class="hero-copy">Merge existing <code>.info</code> files into deterministic output. Keep your collector and report generator.</p>
         <div class="actions">
-          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">Download v1.0.0</a>
+          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Download v1.0.1</a>
           <a class="button secondary" href="docs.html#github-actions">GitHub Action</a>
         </div>
         <p class="hero-note">The <code>--mem-limit</code> budget covers the record arena, not total RSS or temporary disk. lcovmerge is not a drop-in for <code>lcov -a</code>. Read <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits &amp; semantics</a>.</p>
@@ -86,7 +86,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
         <div class="metric-grid">
           <div class="metric">
             <strong data-benchmark-value="datasets.0.results.0.seconds_display">3.488279 s</strong>
-            <span>lcovmerge 1.0.0 · median of 5 measured runs</span>
+            <span>lcovmerge 1.0.1 · median of 5 measured runs</span>
             <span class="metric-detail">5,373,952 B peak RSS</span>
           </div>
           <div class="metric">
@@ -215,7 +215,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
           <p class="eyebrow">Get started</p>
           <h2 id="install-title">Install the binary or use your CI action.</h2>
           <p>Choose an operating system first, or use the reusable GitHub Action when your shards are workflow artifacts. The browser suggests a tab when its platform is available; all choices remain visible.</p>
-          <p class="small-note">Direct release: <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">lcovmerge v1.0.0 assets and SHA256SUMS ↗</a>.</p>
+          <p class="small-note">Direct release: <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">lcovmerge v1.0.1 assets and SHA256SUMS ↗</a>.</p>
         </div>
         <div class="install-wrap">
           <div class="install-tabs" role="tablist" aria-label="Choose an installation method">
@@ -232,23 +232,23 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
             <section class="install-panel" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
               <h3>Linux · static musl binary</h3>
               <p>For a quick Linux x86-64 install, download the release archive, verify it, and run the binary.</p>
-              <pre><code>asset=lcovmerge-1.0.0-linux-x86_64.tar.gz
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+              <pre><code>asset=lcovmerge-1.0.1-linux-x86_64.tar.gz
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
 curl -fL "$base/$asset" -o "$asset"
 curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 grep " $asset$" SHA256SUMS | sha256sum -c -
 tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
-              <p class="small-note">Choose the matching <code>linux-x86_64</code> or <code>linux-aarch64</code> archive and its checksum from the <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">v1.0.0 release page ↗</a>.</p>
+              <p class="small-note">Choose the matching <code>linux-x86_64</code> or <code>linux-aarch64</code> archive and its checksum from the <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">v1.0.1 release page ↗</a>.</p>
             </section>
             <section class="install-panel" id="panel-macos" role="tabpanel" aria-labelledby="tab-macos" tabindex="0" hidden>
               <h3>macOS binary</h3>
               <p>Download the release archive for your Mac, then verify and unpack it:</p>
               <pre><code>set -eu
-base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0
+base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1
 case "$(uname -m)" in
-  arm64|aarch64) asset=lcovmerge-1.0.0-macos-arm64.tar.gz ;;
-  x86_64|amd64) asset=lcovmerge-1.0.0-macos-x86_64.tar.gz ;;
+  arm64|aarch64) asset=lcovmerge-1.0.1-macos-arm64.tar.gz ;;
+  x86_64|amd64) asset=lcovmerge-1.0.1-macos-x86_64.tar.gz ;;
   *) echo "Unsupported Mac architecture: $(uname -m)" &gt;&amp;2; exit 1 ;;
 esac
 curl -fL "$base/$asset" -o "$asset"
@@ -256,13 +256,13 @@ curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 grep " $asset$" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
-              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">Open the v1.0.0 release ↗</a> · Archive names use <code>macos-arm64</code> or <code>macos-x86_64</code>; the command verifies the selected archive against <code>SHA256SUMS</code>.</p>
+              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Open the v1.0.1 release ↗</a> · Archive names use <code>macos-arm64</code> or <code>macos-x86_64</code>; the command verifies the selected archive against <code>SHA256SUMS</code>.</p>
             </section>
             <section class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
               <h3>Windows binary</h3>
               <p>Download the x86_64 zip, verify its checksum, and extract it to a directory on your PATH. Windows validation is CI-only.</p>
-              <pre data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.0-windows-x86_64.zip"
-$base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.0"
+              <pre data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
+$base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
 Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
 $entry = Get-Content SHA256SUMS | Where-Object { ($_ -split '\s+', 2)[1].TrimStart('*') -eq $asset }
@@ -272,7 +272,7 @@ $actual = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "SHA256 checksum mismatch" }
 Expand-Archive $asset -DestinationPath .\lcovmerge
 .\lcovmerge\lcovmerge.exe --version</code></pre>
-              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.0">Browse v1.0.0 release assets ↗</a>. Keep the checksum step when downloading the archive manually.</p>
+              <p class="small-note"><a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.1">Browse v1.0.1 release assets ↗</a>. Keep the checksum step when downloading the archive manually.</p>
             </section>
             <section class="install-panel" id="panel-homebrew" role="tabpanel" aria-labelledby="tab-homebrew" tabindex="0" hidden>
               <h3>Homebrew</h3>
@@ -291,7 +291,7 @@ scoop install lcovmerge</code></pre>
               <h3>Docker · GitHub Container Registry</h3>
               <p>Release tags publish a multi-architecture image. Mount the workspace so it can read shards and write the result.</p>
               <pre><code>docker run --rm -v "$PWD:/work" -w /work \
-  ghcr.io/megasoft1978/lcovmerge:v1.0.0 \
+  ghcr.io/megasoft1978/lcovmerge:v1.0.1 \
   --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info</code></pre>
               <p class="small-note">The image runs lcovmerge directly and has a writable <code>/tmp</code> for sort runs. <a href="https://github.com/megasoft1978/lcovmerge/pkgs/container/lcovmerge">Browse container versions ↗</a></p>
             </section>
@@ -397,14 +397,14 @@ cd lcovmerge</code></pre>
         <p data-chart-status role="status" aria-live="polite">The chart and exact-value table are included in this page; JavaScript may refresh the values from <code>data/benchmarks.json</code>.</p>
         <div class="dataset-charts">
           <div class="chart-card"><h3>Elapsed time</h3><p>Lower is faster · seconds</p><div data-chart="time" data-dataset="medium"><!-- CHART-M:TIME:START -->
-<ul class="bar-chart" aria-label="M dataset elapsed time results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.0</span><span class="bar-chart-value">3.488279 s · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:2.403%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">50.542 s · OK · 1 time run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:34.815%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">145.171 s · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 145.171 seconds"><span>0.0 s</span><span>73 s</span><span>145 s</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
+<ul class="bar-chart" aria-label="M dataset elapsed time results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.1</span><span class="bar-chart-value">3.488279 s · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:2.403%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">50.542 s · OK · 1 time run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:34.815%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">145.171 s · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 145.171 seconds"><span>0.0 s</span><span>73 s</span><span>145 s</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
 <!-- CHART-M:TIME:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:TIME-ALT:START -->
-M elapsed time, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.0 3.488279 s · OK · 5 runs; lcov 2.6 50.542 s · OK · 1 time run(s); lcov-result-merger 6.0.0 145.171 s · OK · prior canonical measurement; run count not reported.
+M elapsed time, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.1 3.488279 s · OK · 5 runs; lcov 2.6 50.542 s · OK · 1 time run(s); lcov-result-merger 6.0.0 145.171 s · OK · prior canonical measurement; run count not reported.
 <!-- CHART-M:TIME-ALT:END --></p></div>
           <div class="chart-card"><h3>Peak resident memory</h3><p>Lower is less memory · axis in MiB, exact values in bytes</p><div data-chart="rss" data-dataset="medium"><!-- CHART-M:RSS:START -->
-<ul class="bar-chart" aria-label="M dataset peak resident memory results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.0</span><span class="bar-chart-value">5,373,952 B · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:0.215%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">639,844,352 B · OK · prior canonical RSS; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:25.618%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">2,497,675,264 B · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 2,381.969 MiB"><span>0.0 MiB</span><span>1,191 MiB</span><span>2,382 MiB</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
+<ul class="bar-chart" aria-label="M dataset peak resident memory results"><li class="bar-chart-item lcovmerge"><div class="bar-chart-label"><span class="bar-chart-tool">lcovmerge 1.0.1</span><span class="bar-chart-value">5,373,952 B · OK · 5 run(s)</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:0.215%"></span></div></li><li class="bar-chart-item lcov"><div class="bar-chart-label"><span class="bar-chart-tool">lcov 2.6</span><span class="bar-chart-value">639,844,352 B · OK · prior canonical RSS; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:25.618%"></span></div></li><li class="bar-chart-item lcov-result-merger"><div class="bar-chart-label"><span class="bar-chart-tool">lcov-result-merger 6.0.0</span><span class="bar-chart-value">2,497,675,264 B · OK · prior canonical measurement; run count not reported</span></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div></li></ul><div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to 2,381.969 MiB"><span>0.0 MiB</span><span>1,191 MiB</span><span>2,382 MiB</span></div><p class="chart-context">Dataset M · 1,118,686,233 bytes · 32 shards · host macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox) · measured 2026-10-09. lcovmerge: 5 measured run(s); lcov: 1 run(s); lcov RSS: prior canonical where available; run count not reported; lcov-result-merger: prior canonical measurement, run count not reported. <a href="benchmarks.html#method-title">Method</a>.</p>
 <!-- CHART-M:RSS:END --></div><div class="chart-legend" aria-hidden="true"><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcovmerge)"></i>lcovmerge</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov)"></i>lcov</span><span class="legend-key"><i class="legend-swatch" style="--swatch:var(--bar-lcov-result-merger)"></i>lcov-result-merger</span></div><p class="chart-text-alt"><!-- CHART-M:RSS-ALT:START -->
-M peak RSS, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.0 5,373,952 B · OK · 5 runs; lcov 2.6 639,844,352 B · OK · prior canonical RSS; run count not reported; lcov-result-merger 6.0.0 2,497,675,264 B · OK · prior canonical measurement; run count not reported.
+M peak RSS, generated input on macOS 27.0 arm64 Apple silicon (exact model unavailable in this sandbox), measured 2026-10-09: lcovmerge 1.0.1 5,373,952 B · OK · 5 runs; lcov 2.6 639,844,352 B · OK · prior canonical RSS; run count not reported; lcov-result-merger 6.0.0 2,497,675,264 B · OK · prior canonical measurement; run count not reported.
 <!-- CHART-M:RSS-ALT:END --></p></div>
         </div>
         <div class="table-wrap">
@@ -414,7 +414,7 @@ M: 1,118,686,233 generated input bytes across 32 shards; host macOS 27.0 arm64 A
 <!-- MEDIUM-CAPTION:END --></caption>
             <thead><tr><th scope="col">Tool</th><th scope="col">Elapsed time</th><th scope="col">Peak RSS</th><th scope="col">Throughput</th><th scope="col">Runs</th><th scope="col">Status</th></tr></thead>
             <tbody id="medium-results-body" data-results-dataset="medium"><!-- MEDIUM-RESULTS:START -->
-<tr><th scope="row" class="tool-primary">lcovmerge 1.0.0</th><td class="table-numeric">3.488279 s</td><td class="table-numeric">5,373,952 B</td><td class="table-numeric">320.7 MB/s</td><td>5 measured</td><td>OK</td></tr>
+<tr><th scope="row" class="tool-primary">lcovmerge 1.0.1</th><td class="table-numeric">3.488279 s</td><td class="table-numeric">5,373,952 B</td><td class="table-numeric">320.7 MB/s</td><td>5 measured</td><td>OK</td></tr>
 <tr><th scope="row">lcov 2.6</th><td class="table-numeric">50.542 s</td><td class="table-numeric">639,844,352 B</td><td class="table-numeric">22.1 MB/s</td><td>Time: 1 run; RSS: prior canonical, count unknown</td><td>OK</td></tr>
 <tr><th scope="row">lcov-result-merger 6.0.0</th><td class="table-numeric">145.171 s</td><td class="table-numeric">2,497,675,264 B</td><td class="table-numeric">7.7 MB/s</td><td>Prior canonical; count unknown</td><td>OK</td></tr>
 <!-- MEDIUM-RESULTS:END --></tbody>
@@ -590,7 +590,7 @@ M: 1,118,686,233 generated input bytes across 32 shards; host macOS 27.0 arm64 A
 
   <footer class="site-footer">
     <div class="shell footer-row">
-      <p>lcovmerge 1.0.0 · MIT License</p>
+      <p>lcovmerge 1.0.1 · MIT License</p>
       <div class="footer-links"><a href="docs.html">Docs</a><a href="benchmarks.html">Benchmarks</a><a href="https://github.com/megasoft1978/lcovmerge">Source on GitHub ↗</a></div>
     </div>
   </footer>
