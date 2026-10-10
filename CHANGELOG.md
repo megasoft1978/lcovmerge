@@ -15,6 +15,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Add a local S/M benchmark reproduction bundle with exact commands, resource measurements, and normalized LCOV comparison.
 - Add the opt-in `tools/gen-lcov.py --lcov-valid` mode, which emits function starts on in-range `DA` lines while preserving the existing default and benchmark-compatible output.
 
 ## [1.0.1] - 2026-10-10
