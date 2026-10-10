@@ -10,6 +10,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Make temporary-run errors name `--tmpdir` and state that it must exist and be writable; output temporary-file errors include the OS reason and parent-directory hint.
 - Include unmatched file patterns in GitHub Action no-match errors.
+- Clarify pending Windows host verification and add JavaScript monorepo and temporary-directory
+  examples to the site usage guide.
 
 ### Added
 

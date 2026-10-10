@@ -46,6 +46,9 @@ After test jobs upload their `.info` artifacts, merge them in a final job:
 
 See [CI and exporter recipes](docs/RECIPES.md) for other workflows. The [Action guide](action/README.md) lists inputs and verification details.
 
+For JavaScript monorepos, export LCOV with c8 or nyc and run lcovmerge from the monorepo root so `SF:`
+paths stay package-qualified; see the [JavaScript recipe](docs/RECIPES.md#javascript-with-c8-or-nyc).
+
 ## Limits before switching
 
 - `--mem-limit` limits memory reserved for coverage records while sorting, not total process memory. Sorting also needs temporary disk; `--tmpdir` selects its location.

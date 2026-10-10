@@ -32,7 +32,7 @@
     "@type": "SoftwareApplication",
     "name": "lcovmerge",
     "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS; Windows CI-verified only",
+    "operatingSystem": "Linux, macOS; Windows runtime verification pending",
     "softwareVersion": "1.0.1",
     "description": "C11 command-line tool that combines existing LCOV .info files. Its memory setting limits memory reserved for coverage records while sorting; total process memory can be higher, and sorting uses temporary disk. It does not collect coverage or generate reports.",
     "license": "https://opensource.org/license/mit",
@@ -172,8 +172,8 @@ tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
             </div>
             <div class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
-              <h3>Windows · CI-verified only</h3>
-              <p>Windows runtime behavior has not been verified on a Windows host.</p>
+              <h3>Windows · not yet verified on a Windows host</h3>
+              <p>The release archive is available, but runtime behavior still needs a Windows host run.</p>
               <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.1-windows-x86_64.zip"
 $base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.1"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
