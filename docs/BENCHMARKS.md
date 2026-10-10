@@ -115,8 +115,8 @@ observed command variation for the requested values; they do not measure externa
 <!-- BENCH-CAVEATS:START -->
 - Measurements cover one macOS arm64 host. Exact SoC model was unavailable in the sandbox; results are not a
   cross-platform claim.
-- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. The `REAL` row in this table is unmeasured; the
-  separate project-derived runs are recorded in the real-project validation report.
+- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived
+  capture was available.
 - lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts
   are listed per workload. Cache warmups were used, but no explicit cache flush was applied.
 - lcov 2.6 ran once per dataset after the baseline merge. Its PATH-HEAVY run exited with status 1 after 98.805

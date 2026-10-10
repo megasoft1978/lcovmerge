@@ -9,7 +9,16 @@
       "lcovmerge_comparison": "PASS with LCOV consistency override",
       "project": "libpng",
       "repro_status": "PASS",
-      "synthetic_repro": ".luna-tmp/repros/lcov-branch-line-inconsistent.info"
+      "synthetic_repro": "generated transiently under .luna-tmp and removed after validation"
+    },
+    {
+      "capture": "FAILED: no .gcda files found in the configured CMake build directory",
+      "commit": "cfbfb65047e85e6b08af65fe9cdbcf68e9ad496a",
+      "commit_date": "2025-07-16",
+      "ctest": "returned 0 in 0.01 s",
+      "project": "curl",
+      "reason": "excluded because this configuration produced no coverage counters",
+      "tag": "curl-8_15_0"
     }
   ],
   "external_sort_method": "34 inputs per project; 8 MiB -j1 compared with LCOV, reverse order and 32 MiB -j4 compared bytewise",
@@ -26,12 +35,14 @@
   "measurement_method": "time.perf_counter and isolated resource.getrusage(RUSAGE_CHILDREN); /usr/bin/time -l blocked: sysctl kern.clockrate access denied",
   "method_notes": [
     "Lua used documented _port=true mode, which skips upstream nonportable tests.",
-    "Each project used two independent full-suite captures as shards.",
+    "Projects use the capture_runs count pinned in the manifest; SQLite's full test suite was captured once because one run took several minutes.",
+    "LCOV capture and comparison runs use --ignore-errors inconsistent for SQLite and libarchive after the pinned Apple gcov toolchain emitted capture-consistency errors.",
     "Only Apple Clang was available; gcc reports the same Apple Clang version.",
     "External-sort stress uses 34 inputs, exceeding the 32-input direct-path limit.",
+    "REAL-DERIVED SCALED re-roots the captured shards under distinct synthetic SF prefixes only when needed to reach 50 MB and exceed 32 inputs.",
     "Output record presentation order may differ from LCOV by design (docs/LIMITATIONS.md); comparisons normalize SF paths and compare keyed semantic records."
   ],
-  "overall": "PASS",
+  "overall": "PASS WITH TEST EXCLUSIONS",
   "projects": [
     {
       "commit": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
@@ -40,25 +51,26 @@
       "genhtml": "PASS",
       "input_mb": 0.18,
       "lcov": {
-        "peak_rss_mib": 42.7,
-        "wall_seconds": 0.136
+        "peak_rss_mib": 42.42,
+        "wall_seconds": 0.108
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
         "peak_rss_mib": 4.08,
-        "wall_seconds": 0.008
+        "wall_seconds": 0.005
       },
       "lcovmerge_output_mb": 0.091,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 4.2,
-        "wall_seconds": 0.088
+        "peak_rss_mib": 3.31,
+        "wall_seconds": 0.065
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "zlib",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2"
     },
     {
@@ -66,27 +78,28 @@
       "commit_date": "2024-06-13",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.578,
+      "input_mb": 0.579,
       "lcov": {
-        "peak_rss_mib": 47.11,
-        "wall_seconds": 0.206
+        "peak_rss_mib": 46.78,
+        "wall_seconds": 0.173
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
         "peak_rss_mib": 6.77,
-        "wall_seconds": 0.01
+        "wall_seconds": 0.008
       },
       "lcovmerge_output_mb": 0.293,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 5.8,
-        "wall_seconds": 0.216
+        "peak_rss_mib": 4.67,
+        "wall_seconds": 0.192
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "lua",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2 (portable mode; upstream skips nonportable tests)"
     },
     {
@@ -94,27 +107,28 @@
       "commit_date": "2024-05-13",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.202,
+      "input_mb": 0.203,
       "lcov": {
-        "peak_rss_mib": 43.05,
-        "wall_seconds": 0.178
+        "peak_rss_mib": 42.83,
+        "wall_seconds": 0.116
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.41,
-        "wall_seconds": 0.007
+        "peak_rss_mib": 4.22,
+        "wall_seconds": 0.004
       },
-      "lcovmerge_output_mb": 0.102,
+      "lcovmerge_output_mb": 0.103,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.95,
-        "wall_seconds": 0.088
+        "peak_rss_mib": 3.41,
+        "wall_seconds": 0.069
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "cjson",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2"
     },
     {
@@ -122,27 +136,28 @@
       "commit_date": "2024-09-15",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.209,
+      "input_mb": 0.21,
       "lcov": {
-        "peak_rss_mib": 43.05,
-        "wall_seconds": 0.169
+        "peak_rss_mib": 42.95,
+        "wall_seconds": 0.116
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.41,
-        "wall_seconds": 0.007
+        "peak_rss_mib": 4.28,
+        "wall_seconds": 0.005
       },
       "lcovmerge_output_mb": 0.106,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 4.3,
-        "wall_seconds": 0.123
+        "peak_rss_mib": 3.44,
+        "wall_seconds": 0.075
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "json-c",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2"
     },
     {
@@ -150,27 +165,28 @@
       "commit_date": "2020-06-01",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.05,
+      "input_mb": 0.051,
       "lcov": {
-        "peak_rss_mib": 40.91,
-        "wall_seconds": 0.139
+        "peak_rss_mib": 40.88,
+        "wall_seconds": 0.093
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 3.11,
-        "wall_seconds": 0.03
+        "peak_rss_mib": 2.86,
+        "wall_seconds": 0.003
       },
       "lcovmerge_output_mb": 0.025,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.42,
-        "wall_seconds": 0.03
+        "peak_rss_mib": 2.8,
+        "wall_seconds": 0.022
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "libyaml",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2"
     },
     {
@@ -180,56 +196,160 @@
       "genhtml": "PASS",
       "input_mb": 0.281,
       "lcov": {
-        "peak_rss_mib": 43.91,
-        "wall_seconds": 0.157
+        "peak_rss_mib": 43.73,
+        "wall_seconds": 0.129
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
         "peak_rss_mib": 4.47,
-        "wall_seconds": 0.006
+        "wall_seconds": 0.005
       },
       "lcovmerge_output_mb": 0.141,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 4.06,
-        "wall_seconds": 0.097
+        "peak_rss_mib": 3.55,
+        "wall_seconds": 0.08
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
       "project": "tinyxml2",
       "shards": 2,
+      "tag": null,
       "test_groups": "PASS x2"
     },
     {
-      "commit": "six pinned commits",
-      "commit_date": null,
+      "commit": "8ed5e7365e6f12f427910188bbf6b254daad2ef6",
+      "commit_date": "2025-07-30",
+      "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 1.5,
+      "input_mb": 6.091,
       "lcov": {
-        "peak_rss_mib": 56.42,
-        "wall_seconds": 0.398
+        "peak_rss_mib": 90.41,
+        "wall_seconds": 0.898
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 10.08,
-        "wall_seconds": 0.021
+        "peak_rss_mib": 16.38,
+        "wall_seconds": 0.07
       },
-      "lcovmerge_output_mb": 0.757,
+      "lcovmerge_output_mb": 6.092,
+      "mem_limit_8m": "PASS",
+      "mem_limit_8m_input_shards": 34,
+      "mem_limit_8m_measurement": {
+        "peak_rss_mib": 6.33,
+        "wall_seconds": 3.443
+      },
+      "order_jobs_determinism": "PASS",
+      "path_rewrite_checks": "PASS",
+      "project": "sqlite",
+      "shards": 1,
+      "tag": "version-3.50.4",
+      "test_groups": "PASS x1"
+    },
+    {
+      "commit": "9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf",
+      "commit_date": "2025-06-01",
+      "external_sort_order_jobs": "PASS",
+      "genhtml": "PASS",
+      "input_mb": 3.631,
+      "lcov": {
+        "peak_rss_mib": 78.28,
+        "wall_seconds": 0.58
+      },
+      "lcov_comparison": "PASS",
+      "lcovmerge": {
+        "peak_rss_mib": 16.83,
+        "wall_seconds": 0.036
+      },
+      "lcovmerge_output_mb": 1.839,
+      "mem_limit_8m": "PASS",
+      "mem_limit_8m_input_shards": 34,
+      "mem_limit_8m_measurement": {
+        "peak_rss_mib": 5.72,
+        "wall_seconds": 1.385
+      },
+      "order_jobs_determinism": "PASS",
+      "path_rewrite_checks": "PASS",
+      "project": "libarchive",
+      "shards": 2,
+      "tag": "v3.8.1",
+      "test_groups": "PASS x2; 2 known platform/toolchain tests excluded"
+    },
+    {
+      "commit": "8 pinned commits",
+      "commit_date": null,
+      "genhtml": "PASS",
+      "input_mb": 11.225,
+      "lcov": {
+        "peak_rss_mib": 139.55,
+        "wall_seconds": 1.635
+      },
+      "lcov_comparison": "PASS",
+      "lcovmerge": {
+        "peak_rss_mib": 20.11,
+        "wall_seconds": 0.078
+      },
+      "lcovmerge_output_mb": 8.69,
       "mem_limit_8m": "per-project runs PASS",
       "mem_limit_8m_input_shards": 0,
       "mem_limit_8m_measurement": null,
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "n/a",
       "project": "REAL composite",
-      "shards": 12,
+      "shards": 15,
+      "tag": null,
       "test_groups": "PASS"
     }
   ],
+  "real_derived_scaled": {
+    "external_sort": "PASS (8 MiB, --jobs 1, more than 32 inputs)",
+    "genhtml": "not run for synthetic SF prefixes; actual REAL composite was checked",
+    "input_bytes": 55482820,
+    "label": "REAL-DERIVED SCALED",
+    "lcov": {
+      "peak_rss_mib": 454.27,
+      "wall_seconds": 8.091
+    },
+    "lcov_comparison": "PASS",
+    "lcov_throughput_mb_s": 6.9,
+    "lcovmerge": {
+      "peak_rss_mib": 19.42,
+      "wall_seconds": 0.433
+    },
+    "lcovmerge_throughput_mb_s": 128.2,
+    "order_jobs_determinism": "PASS",
+    "output_bytes": 43109245,
+    "prefix_count": 5,
+    "scaled": true,
+    "scaling_reason": "real captures were below 50 MB; re-rooted copies raise the measured input size",
+    "shards": 75,
+    "source_real_input_bytes": 11225342,
+    "source_real_shards": 15
+  },
   "schema_version": 1,
+  "test_exclusions": [
+    {
+      "commit": "9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf",
+      "project": "libarchive",
+      "tag": "v3.8.1",
+      "tests": [
+        {
+          "reason": "observed archive_read_data error -30 and CRC mismatch on macOS arm64",
+          "test": "libarchive_test_read_format_7zip_lzma2_riscv"
+        },
+        {
+          "reason": "observed setuid/setgid bits cleared on files created by the macOS test run",
+          "test": "libarchive_test_write_disk_perms"
+        }
+      ]
+    }
+  ],
   "warnings": [
     "Apple gcov lacks function begin/end line exclusion support.",
     "LCOV consistency checks were bypassed for instrumented C++ metadata.",
+    "LCOV inconsistent checks were bypassed for a DA record with no gcov branch data in libarchive.",
+    "LCOV inconsistent checks were bypassed for duplicate function metadata in SQLite's generated amalgamation.",
     "Other non-fatal LCOV capture warning.",
     "tinyxml2 capture bypassed inconsistent function-boundary checks."
   ]

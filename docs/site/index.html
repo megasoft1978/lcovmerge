@@ -343,19 +343,21 @@ M: 1,118,686,233 generated input bytes across 32 shards; RSS is peak resident me
 <div class="section-heading">
           <p class="eyebrow">Project-derived captures · small inputs</p>
           <h2 id="real-projects-title">Tested on real projects.</h2>
-          <p>6 small project-derived captures, with 2 independently captured shards per project, were compared with LCOV 2.6. Each input was 0.050–0.578 MB; the composite was 1.500 MB across 12 shards. These are useful compatibility checks, not large production workloads.</p>
+          <p>8 small project-derived captures, with multiple independently captured shards per project, were compared with LCOV 2.6. Each input was 0.051–6.091 MB; the composite was 11.225 MB across 15 shards. These are useful compatibility checks, not large production workloads.</p>
         </div>
         <div class="table-wrap">
           <table class="benchmark-table real-project-table">
             <caption>Aggregated measurements on macOS 27.0 arm64; elapsed time / peak RSS.</caption>
             <thead><tr><th scope="col">Project</th><th scope="col">Input</th><th scope="col">lcovmerge</th><th scope="col">LCOV 2.6</th><th scope="col">Semantic comparison / genhtml</th></tr></thead>
-            <tbody><tr><th scope="row">zlib</th><td class="table-numeric">0.180 MB · 2 shards</td><td class="table-numeric">0.008 s / 4.08 MiB</td><td class="table-numeric">0.136 s / 42.70 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">lua</th><td class="table-numeric">0.578 MB · 2 shards</td><td class="table-numeric">0.010 s / 6.77 MiB</td><td class="table-numeric">0.206 s / 47.11 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">cjson</th><td class="table-numeric">0.202 MB · 2 shards</td><td class="table-numeric">0.007 s / 4.41 MiB</td><td class="table-numeric">0.178 s / 43.05 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">json-c</th><td class="table-numeric">0.209 MB · 2 shards</td><td class="table-numeric">0.007 s / 4.41 MiB</td><td class="table-numeric">0.169 s / 43.05 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">libyaml</th><td class="table-numeric">0.050 MB · 2 shards</td><td class="table-numeric">0.030 s / 3.11 MiB</td><td class="table-numeric">0.139 s / 40.91 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">tinyxml2</th><td class="table-numeric">0.281 MB · 2 shards</td><td class="table-numeric">0.006 s / 4.47 MiB</td><td class="table-numeric">0.157 s / 43.91 MiB</td><td>PASS / PASS</td></tr>
-<tr><th scope="row">REAL composite</th><td class="table-numeric">1.500 MB · 12 shards</td><td class="table-numeric">0.021 s / 10.08 MiB</td><td class="table-numeric">0.398 s / 56.42 MiB</td><td>PASS / PASS</td></tr></tbody>
+            <tbody><tr><th scope="row">zlib</th><td class="table-numeric">0.180 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.08 MiB</td><td class="table-numeric">0.108 s / 42.42 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">lua</th><td class="table-numeric">0.579 MB · 2 shards</td><td class="table-numeric">0.008 s / 6.77 MiB</td><td class="table-numeric">0.173 s / 46.78 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">cjson</th><td class="table-numeric">0.203 MB · 2 shards</td><td class="table-numeric">0.004 s / 4.22 MiB</td><td class="table-numeric">0.116 s / 42.83 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">json-c</th><td class="table-numeric">0.210 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.28 MiB</td><td class="table-numeric">0.116 s / 42.95 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">libyaml</th><td class="table-numeric">0.051 MB · 2 shards</td><td class="table-numeric">0.003 s / 2.86 MiB</td><td class="table-numeric">0.093 s / 40.88 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">tinyxml2</th><td class="table-numeric">0.281 MB · 2 shards</td><td class="table-numeric">0.005 s / 4.47 MiB</td><td class="table-numeric">0.129 s / 43.73 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">sqlite</th><td class="table-numeric">6.091 MB · 1 shards</td><td class="table-numeric">0.070 s / 16.38 MiB</td><td class="table-numeric">0.898 s / 90.41 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">libarchive</th><td class="table-numeric">3.631 MB · 2 shards</td><td class="table-numeric">0.036 s / 16.83 MiB</td><td class="table-numeric">0.580 s / 78.28 MiB</td><td>PASS / PASS</td></tr>
+<tr><th scope="row">REAL composite</th><td class="table-numeric">11.225 MB · 15 shards</td><td class="table-numeric">0.078 s / 20.11 MiB</td><td class="table-numeric">1.635 s / 139.55 MiB</td><td>PASS / PASS</td></tr></tbody>
           </table>
         </div>
         <p class="small-note">All individual project checks passed normalized record comparisons and genhtml. The separate 34-input external-sort, reverse-order and job-determinism checks passed. Lua used portable test mode; capture warnings and method details are documented in <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">the real-project validation record ↗</a>. Measurements cover one macOS 27.0 arm64 host.</p>

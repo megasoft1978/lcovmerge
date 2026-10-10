@@ -146,8 +146,8 @@ benchmark report](docs/BENCHMARKS.md) for tool versions, run counts, methodology
 ## Tested on real projects (small inputs)
 
 <!-- REAL-PROJECTS:START -->
-6 small project-derived LCOV captures were checked on one macOS 27.0 arm64 host. Each project used 2 shards,
-with inputs from 0.050 MB to 0.578 MB; the composite was 1.500 MB across 12 shards. These are
+8 small project-derived LCOV captures were checked on one macOS 27.0 arm64 host. Each project used multiple shards,
+with inputs from 0.051 MB to 6.091 MB; the composite was 11.225 MB across 15 shards. These are
 small compatibility checks, not large production workloads. Normalized record comparisons and genhtml
 passed for each project. The separate 34-input external-sort and order/job determinism checks passed.
 Lua used portable test mode. See [the validation record](docs/validation/real-projects.md) for toolchain,
@@ -155,13 +155,15 @@ capture warnings, and method details.
 
 | Project | Input | lcovmerge time / peak RSS | LCOV 2.6 time / peak RSS | Comparison / genhtml |
 | --- | ---: | ---: | ---: | --- |
-| zlib | 0.180 MB · 2 shards | 0.008 s · 4.08 MiB | 0.136 s · 42.70 MiB | PASS / PASS |
-| lua | 0.578 MB · 2 shards | 0.010 s · 6.77 MiB | 0.206 s · 47.11 MiB | PASS / PASS |
-| cjson | 0.202 MB · 2 shards | 0.007 s · 4.41 MiB | 0.178 s · 43.05 MiB | PASS / PASS |
-| json-c | 0.209 MB · 2 shards | 0.007 s · 4.41 MiB | 0.169 s · 43.05 MiB | PASS / PASS |
-| libyaml | 0.050 MB · 2 shards | 0.030 s · 3.11 MiB | 0.139 s · 40.91 MiB | PASS / PASS |
-| tinyxml2 | 0.281 MB · 2 shards | 0.006 s · 4.47 MiB | 0.157 s · 43.91 MiB | PASS / PASS |
-| REAL composite | 1.500 MB · 12 shards | 0.021 s · 10.08 MiB | 0.398 s · 56.42 MiB | PASS / PASS |
+| zlib | 0.180 MB · 2 shards | 0.005 s · 4.08 MiB | 0.108 s · 42.42 MiB | PASS / PASS |
+| lua | 0.579 MB · 2 shards | 0.008 s · 6.77 MiB | 0.173 s · 46.78 MiB | PASS / PASS |
+| cjson | 0.203 MB · 2 shards | 0.004 s · 4.22 MiB | 0.116 s · 42.83 MiB | PASS / PASS |
+| json-c | 0.210 MB · 2 shards | 0.005 s · 4.28 MiB | 0.116 s · 42.95 MiB | PASS / PASS |
+| libyaml | 0.051 MB · 2 shards | 0.003 s · 2.86 MiB | 0.093 s · 40.88 MiB | PASS / PASS |
+| tinyxml2 | 0.281 MB · 2 shards | 0.005 s · 4.47 MiB | 0.129 s · 43.73 MiB | PASS / PASS |
+| sqlite | 6.091 MB · 1 shards | 0.070 s · 16.38 MiB | 0.898 s · 90.41 MiB | PASS / PASS |
+| libarchive | 3.631 MB · 2 shards | 0.036 s · 16.83 MiB | 0.580 s · 78.28 MiB | PASS / PASS |
+| REAL composite | 11.225 MB · 15 shards | 0.078 s · 20.11 MiB | 1.635 s · 139.55 MiB | PASS / PASS |
 <!-- REAL-PROJECTS:END -->
 
 <!-- BAZEL-EVIDENCE:START -->
