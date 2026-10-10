@@ -40,11 +40,11 @@
     <header class="page-intro">
       <p class="eyebrow">Measured results</p>
       <h1>Benchmark data, with its limits in view.</h1>
-      <p>These results compare generated LCOV inputs on one machine. They are a data point, not a promise about every report, tool version, or system.</p>
+      <p>These results compare generated LCOV inputs on the hosts recorded with each measurement. They are data points, not a promise about every report, tool version, or system.</p>
     </header>
     <div class="page-body">
       <div class="callout">
-        <p><strong>Method summary:</strong> Host, cache state, run counts, input descriptions, and measurement status come from <code>data/benchmarks.json</code>. Read those details alongside each result; this page does not imply cross-platform performance.</p>
+        <p><strong>Method summary:</strong> Host, cache state, run counts, input descriptions, and measurement status come from <code>data/benchmarks.json</code>. Compare results only within their recorded host and dataset.</p>
       </div>
 
       <section aria-labelledby="charts-title">
@@ -79,10 +79,23 @@
         <p class="bench-note">The complete measured results are loaded from the benchmark data file.</p>
       </section>
 
+      <section id="additional-host-results" aria-labelledby="additional-host-results-title" hidden>
+        <h2 id="additional-host-results-title">Additional host results</h2>
+        <p id="host-result-context">Host, date, input, and measurement details are loaded from the benchmark data file.</p>
+        <div class="table-wrap">
+          <table class="benchmark-table" id="host-results-table">
+            <caption>Measurements from additional recorded hosts. Times and RSS are shown per dataset and tool.</caption>
+            <thead><tr><th scope="col">Host</th><th scope="col">Date</th><th scope="col">Dataset</th><th scope="col">Input</th><th scope="col">Tool</th><th scope="col">Elapsed</th><th scope="col">Peak RSS</th><th scope="col">Throughput</th><th scope="col">Status</th></tr></thead>
+            <tbody id="host-results-body"></tbody>
+          </table>
+        </div>
+        <p class="small-note">Each row retains the host and run status reported by the benchmark artifact. A failed, skipped, or timed-out result is not a successful speed comparison.</p>
+      </section>
+
       <section aria-labelledby="method-title">
         <h2 id="method-title">Methodology</h2>
         <ul>
-          <li id="benchmark-method">Machine, cache state and per-tool run counts are loaded from the benchmark data file.</li>
+          <li id="benchmark-method">Primary-host machine, cache state and per-tool run counts are loaded from the benchmark data file; additional host results appear separately when available.</li>
           <li id="benchmark-inputs">Dataset names, input sizes, shard counts, and descriptions load from the benchmark data file.</li>
           <li>Measurements: elapsed wall time and peak resident memory.</li>
           <li id="benchmark-tools">Compared tools load from the benchmark data file.</li>

@@ -78,7 +78,7 @@ the selected release and verifies its SHA-256 checksum before running it.
 
 ```yaml
 - name: Merge coverage
-  uses: megasoft1978/lcovmerge@v1
+  uses: megasoft1978/lcovmerge@v1.0.0
   with:
     files: |
       coverage/unit/*.info
@@ -105,8 +105,8 @@ docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.0 \
 
 Formula and manifest templates live in the repository. The release workflow opens a package-update pull
 request when its tap token is configured; package-manager installation depends on that update being merged.
-The [Homebrew/Scoop tap](https://github.com/megasoft1978/homebrew-tap) currently carries v1.0.0. The Homebrew
-install is tested on macOS arm64; the Scoop manifest has not been run on Windows yet. Install with:
+The [Homebrew/Scoop tap](https://github.com/megasoft1978/homebrew-tap) currently carries v1.0.0. The
+repository does not record a Homebrew or Scoop installation test. Install with:
 
 ```sh
 brew install megasoft1978/tap/lcovmerge

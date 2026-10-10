@@ -38,7 +38,7 @@ jobs:
           pattern: coverage-*
           path: coverage-shards
           merge-multiple: true
-      - uses: megasoft1978/lcovmerge@v1
+      - uses: megasoft1978/lcovmerge@v1.0.0
         with:
           files: coverage-shards/*.info
           output: coverage/merged.info

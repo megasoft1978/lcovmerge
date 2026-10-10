@@ -51,6 +51,7 @@
     .then((data) => {
       updateBenchmarkValues(data);
       renderBenchmarkTable(data);
+      renderHostResults(data);
       updateBenchmarkMethod(data);
       chartTargets.forEach((target) => drawChart(target, data));
     })
@@ -171,6 +172,65 @@
     if (medium && inputLabel) inputLabel.textContent = `${medium.name} (${medium.shards})`;
   }
 
+  function renderHostResults(data) {
+    const section = document.querySelector("#additional-host-results");
+    const body = document.querySelector("#host-results-body");
+    if (!section || !body) return;
+    const entries = Array.isArray(data.host_results) ? data.host_results : [];
+    const rows = [];
+    function cell(row, value, heading) {
+      const element = document.createElement(heading ? "th" : "td");
+      if (heading) element.scope = "row";
+      element.textContent = value;
+      row.append(element);
+    }
+    function bytes(value) {
+      return typeof value === "number" ? `${new Intl.NumberFormat("en-US").format(value)} B` : "—";
+    }
+    function input(dataset) {
+      const size = typeof dataset.input_bytes === "number" ? bytes(dataset.input_bytes) : "Input not reported";
+      const shards = typeof dataset.shards === "number" ? `${dataset.shards} shards` : (dataset.shards || "shard count not reported");
+      return `${size}; ${shards}`;
+    }
+    function addRow(entry, dataset, tool, result) {
+      const row = document.createElement("tr");
+      const host = entry.label || entry.host?.runner_label || entry.host?.os || "Host not reported";
+      cell(row, host);
+      cell(row, entry.measurement_date || "Date not reported");
+      cell(row, dataset.name || "Dataset not reported", true);
+      cell(row, input(dataset));
+      cell(row, tool);
+      cell(row, typeof result.time_s === "number" ? `${result.time_s.toFixed(3)} s` : (result.status || "—"));
+      cell(row, bytes(result.rss_bytes));
+      cell(row, typeof result.throughput_mb_s === "number" ? `${result.throughput_mb_s.toFixed(1)} MB/s` : "—");
+      cell(row, result.status || "Not reported");
+      rows.push(row);
+    }
+    entries.forEach((entry) => {
+      if (!entry || !Array.isArray(entry.datasets)) return;
+      entry.datasets.forEach((dataset) => {
+        const results = dataset && dataset.results && typeof dataset.results === "object" ? dataset.results : {};
+        const keys = Object.keys(results);
+        if (!keys.length) {
+          addRow(entry, dataset || {}, "—", { status: dataset?.status || "Not measured" });
+          return;
+        }
+        keys.forEach((key) => {
+          const result = results[key] || {};
+          const label = entry.tool_labels?.[key] || key;
+          addRow(entry, dataset, label, result);
+        });
+      });
+    });
+    body.replaceChildren(...rows);
+    section.hidden = rows.length === 0;
+    const context = document.querySelector("#host-result-context");
+    if (context && entries.length) {
+      const labels = entries.map((entry) => `${entry.label || "Host not reported"} (${entry.measurement_date || "date not reported"})`);
+      context.textContent = `Additional host records: ${labels.join("; ")}. Their source and measurement details are retained in the benchmark data file.`;
+    }
+  }
+
   function updateBenchmarkMethod(data) {
     const method = document.querySelector("#benchmark-method");
     const caption = document.querySelector("#benchmark-caption");
@@ -184,7 +244,8 @@
       const runCounts = Object.entries(data.repeat_counts || {})
         .map(([name, count]) => `${name}: ${count}`)
         .join(", ");
-      method.textContent = `Machine: ${data.machine} (${data.environment.os}); cache: ${data.cache}; lcovmerge runs by dataset: ${runCounts}. Each comparison tool ran ${data.comparison_runs_per_tool} time(s) per dataset. Measured ${data.measured_on}.`;
+      const additionalHosts = Array.isArray(data.host_results) ? data.host_results.length : 0;
+      method.textContent = `Primary host: ${data.machine} (${data.environment.os}); cache: ${data.cache}; lcovmerge runs by dataset: ${runCounts}. Each comparison tool ran ${data.comparison_runs_per_tool} time(s) per dataset. Measured ${data.measured_on}. Additional host result sets: ${additionalHosts}.`;
     }
     if (caption && data.measured_on) {
       caption.textContent = `Elapsed time and peak resident memory from ${data.machine}; measured ${data.measured_on}.`;
