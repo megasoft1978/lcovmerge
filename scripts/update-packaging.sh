@@ -49,10 +49,8 @@ win_x64=$(hash_for "lcovmerge-$version-windows-x86_64.zip")
 
 formula="$repo_root/packaging/homebrew/lcovmerge.rb"
 scoop="$repo_root/packaging/scoop/lcovmerge.json"
-scratch_dir="$repo_root/.luna-tmp"
-mkdir -p "$scratch_dir"
-formula_tmp=$(mktemp "$scratch_dir/lcovmerge-homebrew.XXXXXX")
-scoop_tmp=$(mktemp "$scratch_dir/lcovmerge-scoop.XXXXXX")
+formula_tmp=$(mktemp "${TMPDIR:-/tmp}/lcovmerge-homebrew.XXXXXX")
+scoop_tmp=$(mktemp "${TMPDIR:-/tmp}/lcovmerge-scoop.XXXXXX")
 trap 'rm -f "$formula_tmp" "$scoop_tmp"' EXIT HUP INT TERM
 
 awk \
