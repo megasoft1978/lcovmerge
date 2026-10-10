@@ -1,51 +1,11 @@
-host=macOS 27.0 arm64; logical_cpus=18; memory_bytes=68719476736; exact SoC model unavailable
-compiler=Apple clang 21.0.0
-tools=hyperfine 2.0.0; lcov 2.6-0
-fixture_generator=tools/gen-lcov.py --benchmark-compatible; PATH-HEAVY=tools/gen-path-heavy.py
-temporary_data=TMPDIR=./.luna-tmp; generated inputs removed after the measurements
-baseline_binary=HEAD lcovmerge source compiled with -O2 strict warning flags
-final_binary=working tree lcovmerge source compiled with -O2 strict warning flags
-measurement=baseline/final paired on one generated fixture; hyperfine wall-time median; RSS maximum across measured runs
-warmups/runs=S 3/10; M 1/5; L 1/2; XL-single 1/5; PATH-HEAVY 1/5
-lcov=one bench/run.py measurement per dataset; RSS wrapper blocked by host policy
-cache_state=no cache flush; machine load uncontrolled
-
-S: input_bytes=99996906 shards=8 shards
-  baseline: median_s=0.264305 throughput_mb_s=378.3 peak_rss_bytes=3096576 runs=10
-  final:    median_s=0.259979 throughput_mb_s=384.6 peak_rss_bytes=3096576 runs=10
-  speedup_vs_baseline=1.017x (+1.7%)
-  lcov_2_6_time_s=5.317 speedup_vs_lcov=20.45x status=OK
-  lcov_prior_peak_rss_bytes=240943104
-
-M: input_bytes=1118686233 shards=32 shards
-  baseline: median_s=3.591969 throughput_mb_s=311.4 peak_rss_bytes=5390336 runs=5
-  final:    median_s=3.488279 throughput_mb_s=320.7 peak_rss_bytes=5373952 runs=5
-  speedup_vs_baseline=1.030x (+3.0%)
-  lcov_2_6_time_s=50.542 speedup_vs_lcov=14.49x status=OK
-  lcov_prior_peak_rss_bytes=639844352
-
-L: input_bytes=4853340843 shards=64 shards
-  baseline: median_s=28.922665 throughput_mb_s=167.8 peak_rss_bytes=31801344 runs=2
-  final:    median_s=27.723422 throughput_mb_s=175.1 peak_rss_bytes=26279936 runs=2
-  speedup_vs_baseline=1.043x (+4.3%)
-  lcov_2_6_time_s=203.235 speedup_vs_lcov=7.33x status=OK
-  lcov_prior_peak_rss_bytes=1499709440
-
-XL-single: input_bytes=744992058 shards=1 file
-  baseline: median_s=1.429299 throughput_mb_s=521.2 peak_rss_bytes=2359296 runs=5
-  final:    median_s=1.455709 throughput_mb_s=511.8 peak_rss_bytes=2392064 runs=5
-  speedup_vs_baseline=0.982x (-1.8%)
-  lcov_2_6_time_s=37.803 speedup_vs_lcov=25.97x status=OK
-  lcov_prior_peak_rss_bytes=3751149568
-
-PATH-HEAVY: input_bytes=130000000 shards=1 file
-  baseline: median_s=2.232275 throughput_mb_s=58.2 peak_rss_bytes=21331968 runs=5
-  final:    median_s=2.121826 throughput_mb_s=61.3 peak_rss_bytes=21217280 runs=5
-  speedup_vs_baseline=1.052x (+5.2%)
-  lcov_2_6_time_s=98.805 speedup_vs_lcov=n/a status=ERROR_1 exit_code=1
-  lcov_prior_peak_rss_bytes=None
-
-Memory gate: all final lcovmerge peak RSS samples were below 32 MiB; highest was L at 26,279,936 B (25.06 MiB).
-The fresh LCOV PATH-HEAVY command exited 1 after 98.805 s; no speedup is claimed for that failed run.
-Successful LCOV peak RSS values above are retained from the prior canonical measurements; the current run could not query RSS.
-lcov-result-merger was unavailable in this run. REAL was not supplied.
+host=macOS-27.0-arm64-arm-64bit
+timeout_seconds=1800
+fixture_generator=tools/gen-lcov.py --benchmark-compatible
+temporary_data=under TMPDIR; generated inputs removed automatically
+measurement_source=hyperfine 2 runs after one warmup; wall time is median; RSS is max measured sample
+rss_source=hyperfine memory_peak_resident
+measurement_date=2026-10-10
+S: shards=8 input_bytes=99996906
+S (lcovmerge-default): input_bytes=99996906 wall_seconds=0.259 throughput=385.6 MB/s status=OK Maximum resident set size: 3129344 bytes
+S (lcov): skipped by request
+S (lcov-result-merger): unavailable
