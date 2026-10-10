@@ -43,8 +43,31 @@ files.
 - [ ] Verify one archive with `gh attestation verify` and verify `SHA256SUMS` with the published `SHA256SUMS.sigstore.json` bundle.
 - [ ] Run `lcovmerge --version` and a representative merge on each supported runtime platform.
 - [ ] Confirm README download commands and man-page installation instructions.
-- [ ] Update Homebrew, Scoop, Docker, install-script, or GitHub Action instructions only if those distribution
-channels actually exist.
+- [ ] Regenerate the Homebrew formula and Scoop manifest from the published release checksums, then run the
+  Scoop smoke workflow for that release. See [Scoop packaging](../packaging/scoop/README.md).
 - [ ] Record any known issues and open follow-up tasks for unsupported features.
+
+## Scoop release validation
+
+`packaging/scoop/lcovmerge.json` is the manifest template. Download the release's `SHA256SUMS` into a
+release-specific directory under `.luna-tmp/`, then run `scripts/update-packaging.sh CHECKSUMS VERSION` from a
+clean checkout. The script renders both package manifests in place. Review the generated Windows URL and hash
+before the package update is published.
+
+The release workflow can open a package update pull request to `megasoft1978/homebrew-tap` when `TAP_TOKEN` is
+configured; that repository contains both the Homebrew formula and Scoop bucket manifest. After the manifest is
+updated, run the `Scoop smoke` workflow from GitHub Actions and enter the published version without its leading
+`v`. Pull requests touching `packaging/scoop/**` or `scripts/update-packaging.sh` also run the smoke workflow
+against v1.0.0 by default.
+
+The smoke workflow downloads the official Scoop installer at commit
+`1e2f334083d609986d8c8bc9e31ae8e87c39fab4` and verifies SHA-256
+`94f983b190438311e006b957db7c8422709e0ba62a6c2ac04e278164108f2512` before running it. It checks out Scoop
+core at the pinned v0.6.0 commit `e6aa3b366bdee8ed138c1e0f7b85192ebdd35d0f`, verifies the release ZIP against
+the published `SHA256SUMS`, exercises Scoop's `checkver` and forced autoupdate on the generated manifest, and
+installs the manifest from a temporary local bucket. The CI trust boundary is the pinned
+[ScoopInstaller/Install](https://github.com/ScoopInstaller/Install) bootstrap plus the pinned
+[ScoopInstaller/Scoop](https://github.com/ScoopInstaller/Scoop) core; the lcovmerge ZIP is independently
+verified against the release checksum file.
 
 For the exact release-note install and provenance commands, see the generated `RELEASE_NOTES.md`. Repository-level branch protection, Dependabot, Discussions, homepage, social-preview, CODEOWNERS, and `TAP_TOKEN` settings are documented in [REPO-SETTINGS.md](REPO-SETTINGS.md).
