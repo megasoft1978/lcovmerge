@@ -1,69 +1,77 @@
 # FAQ
 
-## Does lcovmerge collect coverage?
+## What does lcovmerge do?
 
-No. It merges LCOV tracefiles that another tool has already produced. Use gcov/lcov, grcov, Jest/Istanbul,
-pytest-cov, or another collector to create `.info` files, then merge those files with lcovmerge.
+It merges existing LCOV `.info` tracefiles into one canonical tracefile. It does not collect raw coverage or
+render a report. See [where it fits](RECIPES.md).
 
-## Does it replace lcov?
+## Should I merge the files before running genhtml?
 
-No. lcov includes capture, filtering, extraction, summaries, and report workflows. lcovmerge focuses on
-merging existing LCOV tracefiles. Keep `genhtml` or another report tool after the merge. See the
-[comparison](COMPARISON.md).
+Only if you need a single tracefile artifact or a downstream consumer expects one path. `genhtml` can consume
+multiple tracefiles; check whether your current report command already handles the shards you have.
 
-## Is the output identical to `lcov -a`?
+## Is lcovmerge a drop-in replacement for lcov -a?
 
-No. lcovmerge writes canonicalized LCOV output and has documented differences in record ordering, summary
-recalculation, checksum conflicts, function aliases, branches, MC/DC-shaped records, and unknown records.
-The output is not guaranteed to be byte-identical to lcov's output. Keep `lcov -a` when you depend on lcov's
-specific behavior, testcase semantics, configuration, or MC/DC handling. See
-[limitations and intentional differences](LIMITATIONS.md).
+No. It has a narrower job and intentional differences in record ordering, summaries, checksums, function
+aliases, branches, MC/DC-shaped rows, and unknown records. Read the [migration guide](MIGRATING-FROM-LCOV.md)
+and [limitations](LIMITATIONS.md). Keep `lcov -a` when you depend on its behavior.
+
+## Is the output identical to lcov -a?
+
+No. lcovmerge canonicalizes records and recomputes summary rows. It does not promise byte-identical output or
+identical semantics for every tracefile. The migration guide explains how to compare your own records and
+reports before switching.
+
+## Does it collect raw coverage?
+
+No. It accepts already-exported LCOV tracefiles. Use the collector or native raw-profile merge for `.gcda`,
+`.profraw`, nyc JSON, Coverage.py data, Go profiles, or JaCoCo execution data, then use lcovmerge only if
+multiple LCOV files need to become one. See the [export recipes](RECIPES.md#export-to-lcov-then-merge).
+
+## Is total memory capped by --mem-limit?
+
+No. `--mem-limit` is a record-arena budget for external-sort workers. Parser and I/O buffers, merge bookkeeping,
+threads, allocator state, and the C runtime contribute to process RSS. External sorting also uses temporary
+disk space for runs and intermediate passes. Choose a suitable temporary directory and leave disk headroom.
 
 ## Is output deterministic?
 
 With the same inputs, options, and build, lcovmerge emits byte-identical output regardless of input order or
-the selected `-j` value. This makes it easier to compare and cache the output of repeatable CI runs.
-
-## Is total memory capped by `--mem-limit`?
-
-No. `--mem-limit` caps the record arena. Process overhead, parser and I/O buffers, merge bookkeeping, thread
-stacks, and allocator state add to total RSS. External sorting also needs temporary disk space proportional
-to input and intermediate runs; select a `--tmpdir` with enough free space.
+the selected `-j` value. This is a lcovmerge determinism guarantee; it does not mean output bytes match lcov.
 
 ## Can I merge CI shards?
 
-Yes. Upload each shard's `.info` file as a CI artifact, then merge those artifacts in a final job. The
-[integrations guide](INTEGRATIONS.md) includes GitHub Actions, GitLab, Bazel, and CMake examples. The
-[reusable GitHub Action](../action/README.md) can download and verify the release binary for you.
+Yes. Have each test job export a separate `.info` artifact, download those files into one final job, then run
+lcovmerge. The [recipes](RECIPES.md) include GitHub Actions, GitLab, Jenkins, CMake, and Bazel examples. The
+[reusable GitHub Action](../action/README.md) downloads a release binary and verifies its checksum.
 
 ## Can I send the result to genhtml, Codecov, Coveralls, or SonarQube?
 
-lcovmerge writes an LCOV tracefile. Pass it to `genhtml`, Codecov, or a Coveralls integration that accepts
-LCOV. SonarQube accepts LCOV for some analyzers, including JavaScript/TypeScript, Dart, and Rust. Its C/C++
-analyzer uses gcov or llvm-cov reports, so an LCOV file is not a replacement for those inputs. See the
-[uploader notes](INTEGRATIONS.md#coverage-report-consumers).
+lcovmerge writes an LCOV tracefile. Pass it to `genhtml` or to a consumer configured to accept LCOV. Some
+uploaders also accept separate files, so a merged file is only needed when your pipeline requires one. For
+SonarQube, supported formats depend on the language analyzer; its C/C++ analyzer expects gcov or llvm-cov
+reports rather than LCOV. See [consumer notes](INTEGRATIONS.md#coverage-report-consumers).
 
-## Does `--jobs` parallelize one large input file?
+## What if shard source paths differ?
 
-No. `--jobs` controls concurrent external-sort run generation across input files. Already-sorted regular
-files use a single-threaded stream merge, and one input file cannot be parsed by multiple workers. The merge
-stage is single-threaded.
+Use `--rebase OLD=NEW` for a leading build-root mapping or `--prefix-strip PREFIX` to remove a common leading
+path. Review the rewritten `SF:` paths before publishing a report. See [path options](USAGE.md#--rebase-oldnew).
 
-## How do I handle different checkout roots?
+## Does --jobs parallelize one large input file?
 
-Pass one `--rebase OLD=NEW` mapping per old root. Use `--prefix-strip` when a common leading path should be
-removed. Review the resulting `SF:` names before generating or publishing a report.
+No. `--jobs` controls external-sort run generation across input files. The direct stream path is single-threaded,
+and a single input file is not split between workers.
 
-## When should I not use lcovmerge?
+## Is Windows runtime behavior verified?
 
-Keep your current tool when you need raw coverage collection, MC/DC semantic accounting, exact `lcov -a`
-behavior, testcase-aware reporting, or a merge job that cannot spare temporary disk space. See
-[all documented limitations](LIMITATIONS.md).
+The repository has a Windows implementation and release target, but runtime verification remains pending a
+passing Windows CI run. Cross-build evidence is not the same as runtime evidence; see
+[action/README.md](../action/README.md).
 
 ## What do the exit codes mean?
 
-`0` means success, `1` means command-line usage error, `2` means input or LCOV format error, and `3` means an
-I/O or allocation error. See [the CLI reference](USAGE.md#exit-status).
+`0` means success, `1` means a command-line usage error, `2` means an input or tracefile format error, and
+`3` means an I/O, temporary-file, allocation, or interruption error. See the [CLI reference](USAGE.md#exit-status).
 
 ## How do I report a security issue?
 

@@ -1,5 +1,9 @@
 # Limitations and intentional differences
 
+lcovmerge is a merge-stage utility for existing LCOV tracefiles. It is not a drop-in replacement for
+`lcov -a`: compare the behaviors below against your inputs and consumers before switching. See the
+[migration guide](MIGRATING-FROM-LCOV.md) for flag mapping and a data-check procedure.
+
 ## LCOV semantic differences
 
 - Output is canonicalized: SF paths, TN rows, FNL/FNA groups, legacy functions, FNDA rows, then DA, BRDA, MC/DC, and extension rows. Each numeric record family is sorted by its LCOV key (including line number). LCOV tools may preserve input order or choose a different presentation order. Input summary rows are discarded and recomputed; output includes MCF/MCH rows even when no MC/DC rows exist.
@@ -16,7 +20,7 @@ The record field definitions and MC/DC behavior were checked against the LCOV 2.
 ## Input and operational bounds
 
 - Maximum input line: 1 MiB. Maximum @listfile nesting: 8. Maximum workers: 32, with an 8 MiB minimum arena budget per worker.
-- --mem-limit bounds worker record arenas, not total process RSS. Up to 24 MiB of the setting is reserved for parser lines, I/O buffers, merge bookkeeping, thread stacks, allocator metadata, and runtime/library state, while preserving at least 8 MiB per worker.
+- `--mem-limit` is a record-arena budget for external-sort workers, not a hard cap on total process RSS. Parser and I/O buffers, merge bookkeeping, thread stacks, allocator metadata, and runtime/library state use additional memory. Temporary sort runs and intermediate passes also need disk space; the memory setting does not cap it. The minimum worker arena is 8 MiB per job.
 - External sorting consumes temporary disk space proportional to input plus intermediate runs. A named run file is necessary because the merge performs bounded-fan-in passes and reopens runs. --tmpdir selects their directory. Files are created privately on POSIX and removed on success, handled errors, and caught POSIX interruptions (SIGINT, SIGTERM, and SIGHUP). SIGKILL or power loss can leave named run files behind.
 - On POSIX, lcovmerge ignores SIGPIPE so a write to a closed pipe reports EPIPE and follows the normal I/O-failure cleanup path. This returns status 3.
 - Output sent to stdout with `-o -` cannot be rolled back. A later caught signal or write failure can leave partial output in the stream, even though temporary files are cleaned up.

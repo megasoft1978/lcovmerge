@@ -1,11 +1,11 @@
 # lcovmerge GitHub Action
 
-Use `megasoft1978/lcovmerge@v1` to merge LCOV tracefiles in a workflow. The action downloads the matching release archive and checks it against that release's `SHA256SUMS` before running it.
+Use `megasoft1978/lcovmerge@v1.0.0` to merge LCOV tracefiles in a workflow. The action downloads the matching release archive and checks it against that release's `SHA256SUMS` before running it.
 
 ```yaml
 - name: Merge coverage
   id: merge
-  uses: megasoft1978/lcovmerge@v1
+  uses: megasoft1978/lcovmerge@v1.0.0
   with:
     files: |
       coverage/unit/*.info

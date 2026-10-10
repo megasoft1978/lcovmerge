@@ -4,12 +4,16 @@
 
 1. **Streaming parse.** Inputs are regular-file checked before selecting the direct path. Each stream uses a 64 KiB I/O block and a reusable line buffer. Lines are capped at 1 MiB and checked for NUL and valid UTF-8. Parsing validates recognized rows and rewrites/filters SF paths before records enter the merge.
 2. **Sorted-input merge.** For up to 32 regular files whose rewritten record streams are already in canonical order, the parser feeds a tournament-tree merge directly. DA and BRDA rows use dedicated fast parsers; other records use the common parser. Queue rows refer to the current input buffer until consumed. The previous sort key is retained separately, and the attempt stages output in the destination directory. If a stream is out of order or the bounded direct-path budget is exceeded, staged output and buffered diagnostics are discarded before the external-sort path starts.
-3. **Bounded external sort.** The fallback parses files into a compact array plus string arena. At the worker's arena threshold, qsort orders a chunk only if its rows arrived out of canonical order. Sorted rows serialize to temporary runs. Worker budgets share the configured --mem-limit after reserving up to 24 MiB for non-arena process memory; each active worker still receives at least 8 MiB.
+3. **Bounded external sort.** The fallback parses files into a compact array plus string arena. At the worker's arena threshold, qsort orders a chunk only if its rows arrived out of canonical order. Sorted rows serialize to temporary runs. The sizing rule reserves up to 24 MiB of the configured --mem-limit value from worker chunks for anticipated non-arena overhead; the minimum 8 MiB arena per active worker takes precedence for smaller settings.
 4. **K-way merge and emit.** Tournament/heap merges combine sorted runs with bounded fan-in, writing intermediate runs as needed. Per-key counts are combined as rows stream through the merge. Function, branch, MC/DC, and line summaries are recomputed. File output is staged in the destination directory and renamed only after all reads, writes, closes, and summary emission succeed. Output to stdout (`-o -`) is streamed and cannot be rolled back if a later signal or write failure occurs.
 
 ## Memory model
 
-The default 64 MiB setting bounds the per-worker row arrays and arenas. Up to 24 MiB is held back from the worker chunk budget for parser/writer buffers, merge bookkeeping, thread stacks, and runtime state, while preserving at least 8 MiB per active worker. The program also uses a bounded merge fan-in, path/argument lists, and small bookkeeping structures. Merge readers allocate a small buffer for ordinary records and grow it only when a stored record requires it. RSS includes these buffers and the C runtime; temporary disk use scales with parsed input and intermediate merge passes.
+The default `--mem-limit` value of 64 MiB is a record-arena budget for external-sort workers, not a total RSS
+cap. The sizing rule can hold back up to 24 MiB from worker chunks for anticipated parser/writer buffers, merge
+bookkeeping, thread stacks, and runtime state; the 8 MiB minimum per active worker takes precedence for small
+settings. Actual process RSS also includes these buffers, merge readers, the C runtime, and allocator state.
+Temporary disk use is separate and scales with parsed input and intermediate merge passes.
 
 Rows are limited by the 1 MiB input-line cap. Inputs with many unique records use more sorted runs and temporary I/O, not an input-sized heap. Counts saturate at UINT64_MAX. The --mem-limit option accepts 8 MiB or greater and binary K/M/G suffixes.
 
@@ -25,4 +29,4 @@ The comparator orders first by rewritten SF path, then record class and typed ke
 
 ## Limits
 
-The CLI supports at most 32 workers, at least 8 MiB per worker, and listfile nesting depth 8. One input line is limited to 1 MiB. Shell wildcard expansion is delegated to the caller's shell. The worker pool distributes whole input files, so a single very large input file cannot use multiple parser workers. See LIMITATIONS.md for LCOV semantic differences and unsupported behavior.
+The CLI supports at most 32 workers, at least 8 MiB per worker, and listfile nesting depth 8. One input line is limited to 1 MiB. Shell wildcard expansion is delegated to the caller's shell. The worker pool distributes whole input files, so a single very large input file cannot use multiple parser workers. See [LIMITATIONS.md](LIMITATIONS.md) for LCOV semantic differences and [MIGRATING-FROM-LCOV.md](MIGRATING-FROM-LCOV.md) for migration checks.
