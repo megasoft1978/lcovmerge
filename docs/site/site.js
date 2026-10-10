@@ -20,6 +20,12 @@
       });
       if (moveFocus) tab.focus();
     }
+    const platform = navigator.platform || "";
+    const platformTab = /mac/i.test(platform)
+      ? "tab-macos"
+      : (/win/i.test(platform) ? "tab-windows" : (/linux|x11/i.test(platform) ? "tab-linux" : null));
+    const suggestedTab = platformTab && document.getElementById(platformTab);
+    if (suggestedTab) activateTab(suggestedTab, false);
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => activateTab(tab, false));
       tab.addEventListener("keydown", (event) => {
@@ -57,27 +63,41 @@
     })
     .catch(() => {
       document.querySelectorAll("[data-chart-status]").forEach((el) => {
-        const hasStaticChart = Array.from(document.querySelectorAll('[data-chart]')).some((target) => target.querySelector("svg"));
+        const hasStaticChart = Array.from(document.querySelectorAll('[data-chart]')).some((target) => target.querySelector(".bar-chart"));
         el.textContent = hasStaticChart
-          ? "Showing the benchmark figures included in this page; live refresh could not load."
-          : "Benchmark data could not be loaded.";
+          ? "The live JSON refresh failed; the server-rendered charts and results remain available below."
+          : "The live JSON refresh failed; use the canonical benchmark data link for current results.";
       });
     });
 
   function addCopyButtons() {
+    let status = document.querySelector("#copy-status");
+    if (!status) {
+      status = document.createElement("span");
+      status.id = "copy-status";
+      status.className = "sr-only";
+      status.setAttribute("aria-live", "polite");
+      status.setAttribute("aria-atomic", "true");
+      document.body.append(status);
+    }
     document.querySelectorAll("pre > code").forEach((code) => {
       const pre = code.parentElement;
       if (pre.querySelector(".copy-button")) return;
       pre.classList.add("copyable");
+      const context = pre.closest(".install-panel, .quick-merge, .command-card") || pre.closest("section");
+      const heading = context && context.querySelector("h2, h3");
+      const label = pre.dataset.copyLabel || (heading ? `Copy ${heading.textContent.trim()} commands` : "Copy example commands");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "copy-button";
       button.textContent = "Copy";
-      button.setAttribute("aria-label", "Copy code block");
-      button.setAttribute("aria-live", "polite");
+      button.setAttribute("aria-label", label);
       button.addEventListener("click", async () => {
         const copied = await copyText(code.textContent || "");
-        button.textContent = copied ? "Copied" : "Select text to copy";
+        button.textContent = copied ? "Copied" : "Copy failed";
+        status.textContent = copied
+          ? `${label.replace(/^Copy /, "")} copied.`
+          : `Could not copy ${label.replace(/^Copy /, "").toLowerCase()}. Select the text and copy it manually.`;
         window.setTimeout(() => { button.textContent = "Copy"; }, 1800);
       });
       pre.append(button);
@@ -155,6 +175,25 @@
           throughputCell.className = "table-numeric";
           throughputCell.textContent = result.throughput_display || "—";
           row.append(throughputCell);
+          const runCell = document.createElement("td");
+          const runCount = result.status === "NOT MEASURED"
+            ? null
+            : (result.tool.startsWith("lcovmerge")
+              ? data.repeat_counts?.[dataset.name]
+              : (result.tool.startsWith("lcov-result-merger") ? null : data.comparison_runs_per_tool));
+          if (result.status === "NOT MEASURED") {
+            runCell.textContent = "Not measured";
+          } else if (result.tool.startsWith("lcov-result-merger")) {
+            runCell.textContent = "Prior canonical; count unknown";
+          } else if (result.tool.startsWith("lcov ")) {
+            const timeCount = typeof runCount === "number" ? runCount : "unknown";
+            runCell.textContent = result.peak_rss_mib !== null
+              ? `Time: ${timeCount} run(s); RSS: prior canonical, count unknown`
+              : `Time: ${timeCount} run(s); RSS unavailable for current failed run`;
+          } else {
+            runCell.textContent = typeof runCount === "number" && runCount > 0 ? `${runCount} measured` : "Not measured";
+          }
+          row.append(runCell);
           const statusCell = document.createElement("td");
           statusCell.textContent = result.status || "Not measured";
           row.append(statusCell);
@@ -165,79 +204,111 @@
     });
     const medium = data.datasets.find((item) => item.id === "medium");
     const note = document.querySelector("#medium-note");
-    const caption = document.querySelector("#medium-caption");
-    const inputLabel = document.querySelector("#sharded-input-label");
     if (medium && note) note.firstChild.textContent = `${medium.name}: ${medium.input_size}; ${medium.shards}. `;
-    if (medium && caption) caption.textContent = `${medium.name} (${medium.input_size}; ${medium.shards}); RSS is peak resident memory.`;
-    if (medium && inputLabel) inputLabel.textContent = `${medium.name} (${medium.shards})`;
   }
 
   function renderHostResults(data) {
     const section = document.querySelector("#additional-host-results");
-    const body = document.querySelector("#host-results-body");
-    if (!section || !body) return;
+    const container = document.querySelector("#host-results-container");
+    if (!section || !container) return;
     const entries = Array.isArray(data.host_results) ? data.host_results : [];
-    const rows = [];
-    function cell(row, value, heading) {
+    const blocks = [];
+    function cell(row, value, heading, scope) {
       const element = document.createElement(heading ? "th" : "td");
-      if (heading) element.scope = "row";
-      element.textContent = value;
+      if (heading) element.scope = scope || "row";
+      element.textContent = String(value);
       row.append(element);
     }
-    function bytes(value) {
-      return typeof value === "number" ? `${new Intl.NumberFormat("en-US").format(value)} B` : "—";
-    }
-    function input(dataset) {
-      const size = typeof dataset.input_bytes === "number" ? bytes(dataset.input_bytes) : "Input not reported";
-      const shards = typeof dataset.shards === "number" ? `${dataset.shards} shards` : (dataset.shards || "shard count not reported");
-      return `${size}; ${shards}`;
-    }
-    function addRow(entry, dataset, tool, result) {
-      const row = document.createElement("tr");
-      const host = entry.label || entry.host?.runner_label || entry.host?.os || "Host not reported";
-      cell(row, host);
-      cell(row, entry.measurement_date || "Date not reported");
-      cell(row, dataset.name || "Dataset not reported", true);
-      cell(row, input(dataset));
-      cell(row, tool);
-      cell(row, typeof result.time_s === "number" ? `${result.time_s.toFixed(3)} s` : (result.status || "—"));
-      cell(row, bytes(result.rss_bytes));
-      cell(row, typeof result.throughput_mb_s === "number" ? `${result.throughput_mb_s.toFixed(1)} MB/s` : "—");
-      cell(row, result.status || "Not reported");
-      rows.push(row);
+    function bytes(value, fallback) {
+      return typeof value === "number" ? `${new Intl.NumberFormat("en-US").format(value)} B` : (fallback || "—");
     }
     entries.forEach((entry) => {
       if (!entry || !Array.isArray(entry.datasets)) return;
+      const host = entry.host && typeof entry.host === "object" ? entry.host : {};
+      const label = entry.label || host.runner_label || host.os || "Host not reported";
+      const hostDetails = [host.os, host.kernel, host.cpu_model].filter(Boolean).join(" · ") || "Host details not reported";
+      const block = document.createElement("div");
+      block.className = "host-result-block";
+      const heading = document.createElement("h3");
+      heading.textContent = label;
+      block.append(heading);
+      const context = document.createElement("p");
+      context.textContent = `Host: ${hostDetails} · measured ${entry.measurement_date || "date not reported"}. This host is reported separately from the primary comparison.`;
+      block.append(context);
+      const wrapper = document.createElement("div");
+      wrapper.className = "table-wrap";
+      const table = document.createElement("table");
+      table.className = "benchmark-table";
+      const caption = document.createElement("caption");
+      caption.textContent = `Dataset results for ${label}.`;
+      table.append(caption);
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Dataset", "Input", "Tool", "Elapsed", "Peak RSS", "Throughput", "Runs", "Status"].forEach((item) => cell(headRow, item, true, "col"));
+      head.append(headRow);
+      table.append(head);
+      const body = document.createElement("tbody");
+      const repeats = entry.method && entry.method.repeat_counts && typeof entry.method.repeat_counts === "object"
+        ? entry.method.repeat_counts
+        : {};
       entry.datasets.forEach((dataset) => {
         const results = dataset && dataset.results && typeof dataset.results === "object" ? dataset.results : {};
         const keys = Object.keys(results);
+        const inputSize = typeof dataset.input_bytes === "number" ? bytes(dataset.input_bytes) : "Input not reported";
+        const shardCount = typeof dataset.shards === "number" ? `${dataset.shards} shards` : (dataset.shards || "Shard count not reported");
         if (!keys.length) {
-          addRow(entry, dataset || {}, "—", { status: dataset?.status || "Not measured" });
+          const row = document.createElement("tr");
+          cell(row, dataset.name || "Dataset not reported", true);
+          cell(row, `${inputSize}; ${shardCount}`);
+          cell(row, "—");
+          cell(row, "—");
+          cell(row, "—");
+          cell(row, "—");
+          cell(row, "Not measured");
+          cell(row, dataset.status || "Not measured");
+          body.append(row);
           return;
         }
         keys.forEach((key) => {
           const result = results[key] || {};
           const label = entry.tool_labels?.[key] || key;
-          addRow(entry, dataset, label, result);
+          const row = document.createElement("tr");
+          cell(row, dataset.name || "Dataset not reported", true);
+          cell(row, `${inputSize}; ${shardCount}`);
+          cell(row, label);
+          cell(row, typeof result.time_s === "number" ? `${result.time_s.toFixed(3)} s` : (result.status || "—"));
+          cell(row, bytes(result.rss_bytes, result.rss_display));
+          cell(row, typeof result.throughput_mb_s === "number" ? `${result.throughput_mb_s.toFixed(1)} MB/s` : "—");
+          const runCount = result.run_count ?? repeats[dataset.name];
+          const runDisplay = ["NOT MEASURED", "SKIPPED"].includes(result.status)
+            ? "Not measured"
+            : (typeof runCount === "number" ? `${runCount} measured` : "Not reported");
+          cell(row, runDisplay);
+          cell(row, result.status || "Not reported");
+          body.append(row);
         });
       });
+      table.append(body);
+      wrapper.append(table);
+      block.append(wrapper);
+      blocks.push(block);
     });
-    body.replaceChildren(...rows);
-    section.hidden = rows.length === 0;
-    const context = document.querySelector("#host-result-context");
-    if (context && entries.length) {
-      const labels = entries.map((entry) => `${entry.label || "Host not reported"} (${entry.measurement_date || "date not reported"})`);
-      context.textContent = `Additional host records: ${labels.join("; ")}. Their source and measurement details are retained in the benchmark data file.`;
+    container.replaceChildren();
+    if (blocks.length) {
+      const title = document.createElement("h2");
+      title.id = "additional-host-results-title";
+      title.textContent = "Additional host results";
+      const note = document.createElement("p");
+      note.textContent = "Each additional host is grouped by its recorded label and remains separate from the primary-host comparison above.";
+      container.append(title, note, ...blocks);
     }
+    section.hidden = blocks.length === 0;
   }
 
   function updateBenchmarkMethod(data) {
     const method = document.querySelector("#benchmark-method");
-    const caption = document.querySelector("#benchmark-caption");
     const inputSummary = document.querySelector("#benchmark-inputs");
     const toolSummary = document.querySelector("#benchmark-tools");
-    const heroContext = document.querySelector("#hero-benchmark-context");
-    const medium = data.datasets.find((item) => item.id === "medium");
     const inputLabels = data.datasets.map((item) => `${item.name}: ${item.input_size}, ${item.shards}`);
     const toolLabels = [...new Set(data.datasets.flatMap((item) => item.results.map((result) => result.tool)))];
     if (method && data.measured_on) {
@@ -245,10 +316,7 @@
         .map(([name, count]) => `${name}: ${count}`)
         .join(", ");
       const additionalHosts = Array.isArray(data.host_results) ? data.host_results.length : 0;
-      method.textContent = `Primary host: ${data.machine} (${data.environment.os}); cache: ${data.cache}; lcovmerge runs by dataset: ${runCounts}. Each comparison tool ran ${data.comparison_runs_per_tool} time(s) per dataset. Measured ${data.measured_on}. Additional host result sets: ${additionalHosts}.`;
-    }
-    if (caption && data.measured_on) {
-      caption.textContent = `Elapsed time and peak resident memory from ${data.machine}; measured ${data.measured_on}.`;
+      method.textContent = `Primary host: ${data.environment.os} ${data.environment.architecture}, ${data.machine}; measured ${data.measured_on}. lcovmerge run counts by dataset: ${runCounts}. lcov elapsed time ran ${data.comparison_runs_per_tool} time(s) on each measured dataset; REAL was not measured. Successful lcov RSS and lcov-result-merger values are prior canonical measurements; their run counts are not reported. Cache and machine-load limits: ${data.cache}. Additional host result sets: ${additionalHosts}.`;
     }
     if (inputSummary) {
       inputSummary.textContent = `Datasets and inputs: ${inputLabels.join("; ")}.`;
@@ -256,22 +324,6 @@
     if (toolSummary) {
       toolSummary.textContent = `Tools in the current data: ${toolLabels.join(", ")}.`;
     }
-    if (heroContext && data.measured_on) {
-      heroContext.textContent = `Measured ${data.measured_on} on ${data.machine}; run counts and cache state are listed with the results.`;
-    }
-    if (medium && data.measured_on) {
-      const homeCaption = document.querySelector("#home-benchmark-caption");
-      if (homeCaption) homeCaption.textContent = `${medium.name} · ${medium.input_size} · ${medium.shards}; measurements from ${data.machine} on ${data.measured_on}.`;
-    }
-  }
-
-  const ns = "http://www.w3.org/2000/svg";
-
-  function svgNode(name, attributes, text) {
-    const node = document.createElementNS(ns, name);
-    Object.entries(attributes || {}).forEach(([key, value]) => node.setAttribute(key, String(value)));
-    if (text !== undefined) node.textContent = text;
-    return node;
   }
 
   function toolClass(tool) {
@@ -286,52 +338,64 @@
     if (!dataset) return;
     const metric = target.dataset.chart;
     const isTime = metric === "time";
+    const metricLabel = isTime ? "elapsed time" : "peak resident memory";
     const values = dataset.results.map((result) => isTime ? result.seconds : result.peak_rss_mib).filter((value) => typeof value === "number");
     const max = Math.max(1, ...values);
-    const width = 760;
-    const left = 174;
-    const right = 116;
-    const top = 9;
-    const rowHeight = 37;
-    const height = top + dataset.results.length * rowHeight + 12;
-    const barWidth = width - left - right;
-    const titleId = `${dataset.id}-${metric}-chart-title`;
-    const descId = `${dataset.id}-${metric}-chart-desc`;
-    const metricLabel = isTime ? "elapsed time" : "peak resident memory";
-    const descriptions = dataset.results.map((result) => {
-      const value = isTime ? result.seconds_display : result.rss_display;
-      return `${result.tool}: ${value || result.status || "Not reported"}.`;
-    }).join(" ");
-    const svg = svgNode("svg", { class: "benchmark-chart", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-labelledby": `${titleId} ${descId}` });
-    svg.appendChild(svgNode("title", { id: titleId }, `${dataset.name} ${metricLabel} by tool`));
-    svg.appendChild(svgNode("desc", { id: descId }, `${dataset.name} is ${dataset.description} ${descriptions}`));
-    const gridCount = 4;
-    for (let index = 0; index <= gridCount; index += 1) {
-      const x = left + (barWidth * index / gridCount);
-      svg.appendChild(svgNode("line", { x1: x, y1: top, x2: x, y2: height - 9, class: "chart-gridline" }));
-      const axisValue = max * index / gridCount;
-      const axisLabel = isTime ? `${axisValue.toFixed(axisValue < 10 ? 1 : 0)} s` : `${axisValue.toFixed(axisValue < 10 ? 1 : 0)} MiB`;
-      svg.appendChild(svgNode("text", { x, y: height - 1, "text-anchor": "middle", class: "chart-muted" }, axisLabel));
-    }
-    dataset.results.forEach((result, index) => {
-      const y = top + index * rowHeight + 7;
-      const label = result.tool.replace("lcov-result-merger", "lcov-result-merger");
-      svg.appendChild(svgNode("text", { x: left - 10, y: y + 13, "text-anchor": "end" }, label));
+    const context = target.querySelector(".chart-context");
+    const contextCopy = context ? context.cloneNode(true) : null;
+    const list = document.createElement("ul");
+    list.className = "bar-chart";
+    list.setAttribute("aria-label", `${dataset.name} ${metricLabel} results`);
+    dataset.results.forEach((result) => {
       const value = isTime ? result.seconds : result.peak_rss_mib;
       const display = isTime ? result.seconds_display : result.rss_display;
-      if (typeof value === "number") {
-        const widthValue = value / max * barWidth;
-        const colorClass = toolClass(result.tool);
-        svg.appendChild(svgNode("rect", { x: left, y, width: widthValue, height: 21, rx: 4, class: `bar ${colorClass}` }));
-        svg.appendChild(svgNode("circle", { cx: left + widthValue, cy: y + 10.5, r: 3, class: `bar-marker ${colorClass}` }));
-        const labelWidth = display.length * 6.4;
-        const nearRight = left + widthValue + labelWidth + 8 > width;
-        const labelX = nearRight ? width - 5 : left + widthValue + 8;
-        svg.appendChild(svgNode("text", { x: labelX, y: y + 15, "text-anchor": nearRight ? "end" : "start" }, display));
-      } else {
-        svg.appendChild(svgNode("text", { x: left + 8, y: y + 14, class: "chart-muted" }, display || result.status || "Not reported"));
+      const item = document.createElement("li");
+      item.className = `bar-chart-item ${toolClass(result.tool)}`;
+      const label = document.createElement("div");
+      label.className = "bar-chart-label";
+      const tool = document.createElement("span");
+      tool.className = "bar-chart-tool";
+      tool.textContent = result.tool;
+      const resultLabel = document.createElement("span");
+      resultLabel.className = "bar-chart-value";
+      let runText;
+      if (result.tool.startsWith("lcovmerge")) {
+        const count = data.repeat_counts?.[dataset.name];
+        runText = typeof count === "number" && count > 0 ? `${count} run(s)` : "run count not reported";
+      } else if (result.tool.startsWith("lcov ") && !isTime) {
+        runText = typeof value === "number"
+          ? "prior canonical RSS; run count not reported"
+          : "current failed run; RSS unavailable";
+      } else if (result.tool.startsWith("lcov ")) {
+        runText = `${data.comparison_runs_per_tool} time run(s)`;
+      } else if (result.tool.startsWith("lcov-result-merger")) {
+        runText = "prior canonical measurement; run count not reported";
       }
+      resultLabel.textContent = `${display || result.status || "Not reported"} · ${result.status || "Status not reported"} · ${runText}`;
+      label.append(tool, resultLabel);
+      const track = document.createElement("div");
+      track.className = "bar-track";
+      track.setAttribute("aria-hidden", "true");
+      const fill = document.createElement("span");
+      fill.className = "bar-fill";
+      if (typeof value === "number") fill.style.width = `${Math.max(0, value / max * 100)}%`;
+      track.append(fill);
+      item.append(label, track);
+      list.append(item);
     });
-    target.replaceChildren(svg);
+    const axis = document.createElement("div");
+    axis.className = "bar-axis";
+    axis.setAttribute("role", "img");
+    axis.setAttribute("aria-label", `Zero-based scale from 0 to ${max.toFixed(3)} ${isTime ? "seconds" : "MiB"}`);
+    for (let index = 0; index <= 2; index += 1) {
+      const tick = max * index / 2;
+      const label = document.createElement("span");
+      label.textContent = isTime
+        ? `${tick < 10 ? tick.toFixed(1) : Math.round(tick)} s`
+        : `${tick < 10 ? tick.toFixed(1) : Math.round(tick)} MiB`;
+      axis.append(label);
+    }
+    target.replaceChildren(list, axis);
+    if (contextCopy) target.append(contextCopy);
   }
 })();
