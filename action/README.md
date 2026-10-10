@@ -1,11 +1,11 @@
 # lcovmerge GitHub Action
 
-Use `megasoft1978/lcovmerge@v1.0.0` to merge LCOV tracefiles in a workflow. The action downloads the matching release archive and checks it against that release's `SHA256SUMS` before running it.
+Use `megasoft1978/lcovmerge@v1.0.1` to merge LCOV tracefiles in a workflow. The action downloads the matching release archive and checks it against that release's `SHA256SUMS` before running it.
 
 ```yaml
 - name: Merge coverage
   id: merge
-  uses: megasoft1978/lcovmerge@v1.0.0
+  uses: megasoft1978/lcovmerge@v1.0.1
   with:
     files: |
       coverage/unit/*.info
@@ -26,4 +26,4 @@ See the [CLI usage reference](../docs/USAGE.md) for exact prefix rules, branch d
 
 The action selects binaries for GitHub-hosted Linux and macOS runners on x86_64/arm64, and Windows x86_64. Windows runtime verification is pending a passing Windows CI run; local checks cover the PE format and cross-build, and a Wine run is recorded separately. The merge summary comes from `lcovmerge --stats`.
 
-The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. It uses the repository action with the published v1.0.0 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. Treat hosted runtime verification as complete only after those workflow jobs pass.
+The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. It uses the repository action with the published v1.0.1 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. Treat hosted runtime verification as complete only after those workflow jobs pass.

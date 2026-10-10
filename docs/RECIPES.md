@@ -54,7 +54,7 @@ jobs:
           path: coverage/shards
           merge-multiple: true
       - name: Merge LCOV
-        uses: megasoft1978/lcovmerge@v1.0.0
+        uses: megasoft1978/lcovmerge@v1.0.1
         with:
           files: coverage/shards/*.info
           output: coverage/merged.info

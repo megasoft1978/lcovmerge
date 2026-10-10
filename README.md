@@ -74,7 +74,7 @@ For GitHub Actions, pin the reusable action to the verified release tag:
 
 ```yaml
 - name: Merge coverage
-  uses: megasoft1978/lcovmerge@v1.0.0
+  uses: megasoft1978/lcovmerge@v1.0.1
   with:
     files: |
       coverage/unit/*.info

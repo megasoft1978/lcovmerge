@@ -10,7 +10,7 @@ on:
       release_version:
         description: Published lcovmerge version to install (without the leading v)
         required: true
-        default: '1.0.0'
+        default: '1.0.1'
         type: string
 
 permissions:
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LCOVMERGE_VERSION: ${{ github.event.inputs.release_version || '1.0.0' }}
+  LCOVMERGE_VERSION: ${{ github.event.inputs.release_version || '1.0.1' }}
   TMPDIR: ${{ github.workspace }}/.luna-tmp
   TMP: ${{ github.workspace }}/.luna-tmp
   TEMP: ${{ github.workspace }}/.luna-tmp

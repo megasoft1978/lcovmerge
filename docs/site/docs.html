@@ -138,7 +138,7 @@ lcovmerge @coverage-files.txt -o coverage/merged.info</code></pre>
           pattern: coverage-*
           path: coverage-shards
           merge-multiple: true
-      - uses: megasoft1978/lcovmerge@v1.0.0
+      - uses: megasoft1978/lcovmerge@v1.0.1
         with:
           files: coverage-shards/*.info
           output: coverage/merged.info

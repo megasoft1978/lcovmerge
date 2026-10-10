@@ -10,7 +10,7 @@ release archive and checks it against that release's `SHA256SUMS` before executi
 
 ```yaml
 - name: Merge coverage
-  uses: megasoft1978/lcovmerge@v1.0.0
+  uses: megasoft1978/lcovmerge@v1.0.1
   with:
     files: |
       coverage/unit/*.info
