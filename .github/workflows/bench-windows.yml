@@ -1,0 +1,117 @@
+name: Windows benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark on windows-latest
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up MSYS2 UCRT64 and GCC
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
+
+      - name: Install checksum-verified Zig 0.17.0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scratchDir = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp'
+          $downloadDir = Join-Path $scratchDir 'zig-0.17.0-download'
+          $extractDir = Join-Path $scratchDir 'zig-0.17.0-install'
+          $archive = Join-Path $downloadDir 'zig-x86_64-windows-0.17.0.zip'
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          Invoke-WebRequest `
+            -Uri 'https://ziglang.org/download/0.17.0/zig-x86_64-windows-0.17.0.zip' `
+            -OutFile $archive
+          $expected = 'b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428'
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Zig archive checksum mismatch: expected $expected, got $actual"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extractDir -Force
+          $zigDir = Join-Path $extractDir 'zig-x86_64-windows-0.17.0'
+          if (-not (Test-Path (Join-Path $zigDir 'zig.exe'))) {
+            throw 'Verified Zig archive did not contain zig.exe at the expected path'
+          }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $zigDir
+          Write-Host "Installed checksum-verified Zig 0.17.0 at $zigDir"
+
+      - name: Build Zig release targets, including shipped Windows -Oz binary
+        shell: msys2 {0}
+        env:
+          TMPDIR: ./.luna-tmp
+        run: |
+          set -eu
+          mkdir -p .luna-tmp
+          scripts/build-all.sh
+
+      - name: Build MSYS2 UCRT64 GCC -O2 comparison binary
+        shell: msys2 {0}
+        env:
+          TMPDIR: ./.luna-tmp
+        run: |
+          set -eu
+          mkdir -p .luna-tmp bin
+          commit=$(git rev-parse --short=12 HEAD)
+          set -- \
+            -Iinclude \
+            -O2 \
+            -std=c11 \
+            -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+            -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+            -ffunction-sections -fdata-sections \
+            "-DLCOVMERGE_GIT_COMMIT=\"$commit\""
+          gcc "$@" -static src/lcovmerge.c src/platform_win32.c -municode \
+            -Wl,--gc-sections -Wl,-s -o bin/lcovmerge-ucrt64-gcc.exe
+          gcc --version | head -n 1
+
+      - name: Run repeatable Windows benchmarks
+        shell: pwsh
+        env:
+          BENCH_RUNNER_LABEL: windows-latest
+          TMPDIR: ./.luna-tmp
+          TMP: ${{ github.workspace }}\.luna-tmp
+          TEMP: ${{ github.workspace }}\.luna-tmp
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path ./.luna-tmp | Out-Null
+          python -I bench/run-ci-windows.py `
+            --output-dir .luna-tmp/windows-benchmark-artifact `
+            --zig-binary dist/lcovmerge-1.0.0-windows-x86_64.exe `
+            --gcc-binary bin/lcovmerge-ucrt64-gcc.exe
+
+      - name: Clean up Zig download and install
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scratchDir = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp'
+          foreach ($name in @('zig-0.17.0-download', 'zig-0.17.0-install')) {
+            $path = Join-Path $scratchDir $name
+            if (Test-Path $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Upload JSON and text results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .luna-tmp/windows-benchmark-artifact/benchmark.json
+            .luna-tmp/windows-benchmark-artifact/benchmark.txt
+          if-no-files-found: error
+          retention-days: 90

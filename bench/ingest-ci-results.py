@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge a Linux CI benchmark artifact into the canonical benchmark data."""
+"""Merge a Linux or Windows CI benchmark artifact into canonical benchmark data."""
 
 from __future__ import annotations
 
@@ -28,6 +28,9 @@ def load_json(path: pathlib.Path) -> dict[str, Any]:
 def validate_artifact(artifact: dict[str, Any]) -> None:
     if artifact.get("schema_version") != 1:
         raise SystemExit("unsupported benchmark artifact schema_version")
+    platform_name = artifact.get("platform")
+    if platform_name not in (None, "windows"):
+        raise SystemExit(f"unsupported benchmark artifact platform: {platform_name}")
     required_host = ("runner_label", "os", "kernel", "cpu_model", "logical_cores",
                      "memory_bytes", "compiler", "lcov")
     host = artifact.get("host")
@@ -50,6 +53,15 @@ def validate_artifact(artifact: dict[str, Any]) -> None:
             raise SystemExit(f"dataset {dataset['name']} has no input byte count")
         if not isinstance(dataset.get("results"), dict):
             raise SystemExit(f"dataset {dataset['name']} has no tool results")
+        if platform_name == "windows":
+            results = dataset["results"]
+            for tool in ("lcovmerge", "lcovmerge_ucrt64_gcc"):
+                if not isinstance(results.get(tool), dict):
+                    raise SystemExit(f"Windows dataset {dataset['name']} has no {tool} result")
+                result = results[tool]
+                for key in ("time_s", "min_time_s", "throughput_mb_s", "status", "exit_code"):
+                    if key not in result:
+                        raise SystemExit(f"Windows {tool} result for {dataset['name']} is missing {key}")
 
 
 def entry_id(artifact: dict[str, Any]) -> str:
@@ -70,7 +82,7 @@ def host_entry(artifact: dict[str, Any]) -> dict[str, Any]:
     source = artifact["source"]
     provider = "GitHub-hosted" if source.get("run_id") else "local"
     label = f"{host['runner_label']} {provider} benchmark host"
-    return {
+    entry = {
         "entry_schema_version": 1,
         "id": entry_id(artifact),
         "label": label,
@@ -81,6 +93,10 @@ def host_entry(artifact: dict[str, Any]) -> dict[str, Any]:
         "tool_labels": artifact.get("tool_labels", {}),
         "datasets": artifact["datasets"],
     }
+    if artifact.get("platform") == "windows":
+        entry["platform"] = "windows"
+        entry["label"] = (f"{label} (Zig -Oz and MSYS2 UCRT64 GCC -O2)")
+    return entry
 
 
 def merge_entry(document: dict[str, Any], entry: dict[str, Any]) -> None:
@@ -114,7 +130,7 @@ def write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact", type=pathlib.Path,
-                        help="benchmark.json from the Linux benchmark workflow artifact")
+                        help="benchmark.json from a Linux or Windows benchmark workflow artifact")
     parser.add_argument("--data", type=pathlib.Path, default=DEFAULT_DATA,
                         help="canonical benchmark JSON path")
     parser.add_argument("--site-data", type=pathlib.Path, default=DEFAULT_SITE_DATA,
