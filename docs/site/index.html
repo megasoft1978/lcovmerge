@@ -32,7 +32,7 @@
     "@type": "SoftwareApplication",
     "name": "lcovmerge",
     "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS; Windows runtime verification pending",
+    "operatingSystem": "Linux, macOS, Windows",
     "softwareVersion": "1.0.2",
     "description": "C11 command-line tool that combines existing LCOV .info files. Its memory setting limits memory reserved for coverage records while sorting; total process memory can be higher, and sorting uses temporary disk. It does not collect coverage or generate reports.",
     "license": "https://opensource.org/license/mit",
@@ -70,7 +70,7 @@
             <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.0.2">Get lcovmerge v1.0.2</a>
             <a class="action-link" href="#workflow-code">See the GitHub Actions job <span aria-hidden="true">↓</span></a>
           </div>
-          <p class="hero-meta">Keep your collector and report tool. MIT licensed. Windows runtime verification is pending.</p>
+          <p class="hero-meta">Keep your collector and report tool. MIT licensed. Windows is CI-verified on GitHub-hosted windows-latest.</p>
         </div>
 
         <figure class="hero-art" aria-labelledby="coverage-flow-title">
@@ -298,7 +298,7 @@ lcov --summary coverage/lcovmerge.info</code></pre>
         <div class="section-heading">
           <p class="eyebrow">Get the binary</p>
           <h2 id="install-title">Install and verify v1.0.2.</h2>
-          <p>Linux and macOS release binaries are available. The Windows archive is available; runtime verification on a Windows host is pending.</p>
+          <p>Linux, macOS, and Windows release binaries are available. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.</p>
           <p class="install-assurance">Each command checks the downloaded archive against the published SHA256SUMS file before extraction.</p>
         </div>
 
@@ -306,7 +306,7 @@ lcov --summary coverage/lcovmerge.info</code></pre>
           <div class="install-tabs" role="tablist" aria-label="Choose an operating system">
             <button id="tab-linux" type="button" role="tab" aria-selected="true" aria-controls="panel-linux" tabindex="0">Linux</button>
             <button id="tab-macos" type="button" role="tab" aria-selected="false" aria-controls="panel-macos" tabindex="-1">macOS</button>
-            <button id="tab-windows" type="button" role="tab" aria-selected="false" aria-controls="panel-windows" tabindex="-1">Windows<span class="sr-only">, runtime verification pending</span></button>
+            <button id="tab-windows" type="button" role="tab" aria-selected="false" aria-controls="panel-windows" tabindex="-1">Windows<span class="sr-only">, verified in CI</span></button>
           </div>
           <div class="install-content">
             <div class="install-panel" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux" tabindex="0">
@@ -339,8 +339,8 @@ tar -xzf "$asset"
 ./lcovmerge --version</code></pre>
             </div>
             <div class="install-panel" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows" tabindex="0" hidden>
-              <h3>Windows · runtime verification pending</h3>
-              <p>The release archive is available. A cross-built executable and CI tests are not a Windows-host runtime check.</p>
+              <h3>Windows · verified in CI</h3>
+              <p>The Windows x86-64 release archive is available. See <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md#verification-status">platform limits</a> for current coverage.</p>
               <pre class="code-block" data-copy-label="Copy Windows download and checksum commands"><code>$asset = "lcovmerge-1.0.2-windows-x86_64.zip"
 $base = "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
@@ -398,7 +398,7 @@ end_of_record</code></pre>
           </div>
           <div class="limit-item">
             <h3>Files and platforms</h3>
-            <p>Input must already be LCOV <code>.info</code>. One large input file is not split across parser workers. Windows runtime verification is pending a Windows-host run.</p>
+            <p>Input must already be LCOV <code>.info</code>. One large input file is not split across parser workers. Large Windows dataset timings are disk-bound CI numbers, not general desktop performance estimates.</p>
           </div>
         </div>
 

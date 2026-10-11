@@ -1,4 +1,4 @@
 Windows cross-build validation
 Date: 2026-10-09
 Source commit: 374e245db05c
-The Makefile Windows source-selection branch was cross-built from macOS with Zig 0.17.0 for x86_64-windows-gnu. PE32+ header and x86_64 machine type validation passed. The executable passed the Wine suite in [wine.txt](wine.txt). Native Windows CI is still required before documenting Windows runtime as CI-verified.
+The Makefile Windows source-selection branch was cross-built from macOS with Zig 0.17.0 for x86_64-windows-gnu. PE32+ header and x86_64 machine type validation passed. The executable passed the Wine suite in [wine.txt](wine.txt). Current verification: Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.

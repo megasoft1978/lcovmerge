@@ -28,11 +28,11 @@ lcovmerge merges already-exported LCOV `.info` files. It does not collect raw co
 
 - Performance depends on the recorded host, dataset, measured build, and method. Consult [`data/benchmarks.json`](../data/benchmarks.json) and the [benchmark report](BENCHMARKS.md) for run counts, statuses, and caveats. Failed or timed-out runs are not successful speed comparisons.
 - Already-sorted regular files use a one-worker streaming path. `-j` applies when lcovmerge writes temporary sorted files; a timing difference on the streaming path does not show worker scaling. The benchmark record identifies host and input type.
-- Linux release binaries are statically linked against musl. macOS binaries dynamically link Apple's `libSystem.B.dylib`. Windows uses Windows system APIs. Windows runtime verification is pending a passing Windows CI run; a Windows cross-build or release archive alone is not runtime validation.
+- Linux release binaries are statically linked against musl. macOS binaries dynamically link Apple's `libSystem.B.dylib`. Windows uses Windows system APIs. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.
 - The generated benchmark set's `REAL` case is not measured when no project-derived capture is available for that run. Separate small project-derived compatibility checks are documented in the [validation report](validation/real-projects.md). Measurement tools and resident-memory availability differ by host; check the recorded method before comparing results.
 
 Benchmark and dependency evidence: [benchmark results](validation/benchmark.txt), [macOS dependencies](validation/macos-dependencies.txt), and [cross-build checks](validation/cross-build.txt).
 
 ## Verification status
 
-Platform and performance claims are limited to evidence recorded under `docs/validation/`. A Windows PE cross-build does not establish runtime behavior. See the [release and package notes](RECIPES.md#release-archives-and-provenance) for the local audit status of Windows, Homebrew, and Scoop installation paths.
+Platform and performance claims are limited to evidence recorded under `docs/validation/`. A Windows PE cross-build alone does not establish runtime behavior; see the current Windows CI scope above. See the [release and package notes](RECIPES.md#release-archives-and-provenance) for the local audit status of Homebrew and Scoop installation paths.

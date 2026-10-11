@@ -75,7 +75,8 @@ parameters with `tools/gen-lcov.py --benchmark-compatible --checksums`; the gene
 binaries. Each binary gets one warmup and then 5 S runs, 3 M runs, and 2 L runs. The JSON and text artifact list
 the median and minimum wall time for each binary. Peak resident memory uses Windows `GetProcessMemoryInfo`; it is marked
 unknown if any measured run cannot be sampled. No LCOV comparator is run, and these Windows measurements are a
-separate host entry rather than a cross-platform speed claim.
+separate host entry rather than a cross-platform speed claim. The large-dataset timings are disk-bound CI numbers
+that describe this runner and I/O path, not Windows desktop performance generally.
 
 Download a completed `windows-benchmark-<run-id>-<attempt>` artifact into `.luna-tmp`, then merge it with:
 

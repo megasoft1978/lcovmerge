@@ -64,8 +64,53 @@ def check_public_compatibility_copy(text, source):
         raise AssertionError(f"{source} compatibility summary is missing: {', '.join(missing)}")
 
 
+def check_stale_windows_verification_copy(root):
+    stale_patterns = (
+        re.compile(r"windows runtime verification is pending", re.IGNORECASE),
+        re.compile(r"windows runtime verification pending", re.IGNORECASE),
+        re.compile(r"runtime verification on a windows host is pending", re.IGNORECASE),
+        re.compile(r"windows runtime verification remains pending", re.IGNORECASE),
+        re.compile(r"native windows runtime remains pending", re.IGNORECASE),
+        re.compile(r"native windows ci is still required", re.IGNORECASE),
+        re.compile(r"windows runtime documentation therefore remains conditional", re.IGNORECASE),
+        re.compile(r"do not establish runtime verification of the published windows release", re.IGNORECASE),
+        re.compile(r"has not been runtime-verified on a windows host", re.IGNORECASE),
+        re.compile(r"hosted runtime verification as complete only after", re.IGNORECASE),
+        re.compile(r"clarify pending windows host verification", re.IGNORECASE),
+    )
+    roots = (
+        root / "README.md",
+        root / "CHANGELOG.md",
+        root / "action",
+        root / "docs",
+        root / "man",
+        root / "packaging",
+    )
+    paths = []
+    for base in roots:
+        if base.is_file():
+            paths.append(base)
+        elif base.is_dir():
+            paths.extend(
+                path for path in base.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".md", ".html", ".txt", ".1"}
+            )
+
+    matches = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for pattern in stale_patterns:
+            for match in pattern.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                matches.append(f"{path.relative_to(root)}:{line}")
+    if matches:
+        raise AssertionError("stale Windows verification copy: " + ", ".join(matches))
+    print(f"windows_verification_copy=PASS files={len(paths)}")
+
+
 def main():
     root = Path(sys.argv[1]).resolve()
+    check_stale_windows_verification_copy(root)
     renderer = load_renderer(root)
     page_path = root / "docs" / "site" / "benchmarks.html"
     page = page_path.read_text(encoding="utf-8")

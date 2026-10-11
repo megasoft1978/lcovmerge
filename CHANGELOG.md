@@ -10,6 +10,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
 - Update public-CI compatibility evidence with the 2026-10-11 rerun on lcovmerge 1.0.2 and its aggregate normalized-difference scope.
+- Update Windows platform notes to current CI scope: Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.
 
 ## [1.0.2] - 2026-10-10
 
@@ -21,7 +22,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Make temporary-run errors name `--tmpdir` and state that it must exist and be writable; output temporary-file errors include the OS reason and parent-directory hint.
 - Include unmatched file patterns in GitHub Action no-match errors.
-- Clarify pending Windows host verification and add JavaScript monorepo and temporary-directory
+- Document Windows host-verification limits and add JavaScript monorepo and temporary-directory
   examples to the site usage guide.
 
 ### Added

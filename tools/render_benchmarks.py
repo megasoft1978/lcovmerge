@@ -36,6 +36,13 @@ SITE_METHOD_START = "<!-- SITE-BENCHMARK-METHOD:START -->"
 SITE_METHOD_END = "<!-- SITE-BENCHMARK-METHOD:END -->"
 SITE_SCOPE_START = "<!-- SITE-BENCHMARK-SCOPE:START -->"
 SITE_SCOPE_END = "<!-- SITE-BENCHMARK-SCOPE:END -->"
+WINDOWS_VERIFICATION_SENTENCE = (
+    "Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
+    "and shipped Zig binary pass the full suite and smoke tests, and separate generated-input "
+    "benchmark runs are recorded; physical desktops, other Windows versions and real-user reports "
+    "remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are "
+    "disk-bound CI numbers."
+)
 
 
 def metric(result):
@@ -418,10 +425,7 @@ def site_benchmark_scope():
     )
     windows_note = ""
     if any(item.get("platform") == "windows" for item in DATA.get("host_results", [])):
-        windows_note = (
-            " Windows CI benchmark rows are separate and do not establish runtime "
-            "verification of the published Windows release."
-        )
+        windows_note = f" {WINDOWS_VERIFICATION_SENTENCE}"
     return (
         '<p>Generated inputs: '
         f'{html.escape(generated)}. Measured lcovmerge build: '

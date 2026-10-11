@@ -78,7 +78,7 @@ Connect your existing report step to the merged artifact.
 
 ## Try it (Linux x86-64)
 
-This fail-closed installer selects a Linux or macOS archive and verifies one checksum before extraction. Windows runtime verification is pending; see [platform limits](docs/LIMITATIONS.md).
+This fail-closed installer selects a Linux or macOS archive and verifies one checksum before extraction. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [platform limits](docs/LIMITATIONS.md).
 
 ```sh
 set -eu

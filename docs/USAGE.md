@@ -16,8 +16,7 @@ lcovmerge does not.
 The [release page](https://github.com/megasoft1978/lcovmerge/releases) provides Linux x86-64 and aarch64,
 macOS arm64 and x86-64, and Windows x86-64 archives. Verify the selected archive against `SHA256SUMS` before
 extracting it. The [README quick start](../README.md#try-it-linux-x86-64) has a complete checksum-verified
-Linux command sequence. Windows runtime verification is pending a passing Windows CI run; a published archive
-or cross-build does not establish target-runtime verification. See [platform limits](LIMITATIONS.md).
+Linux command sequence. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [platform limits](LIMITATIONS.md).
 
 ## Options
 
