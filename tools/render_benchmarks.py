@@ -278,6 +278,74 @@ def comparison_ratios(source, key):
     return time_ratio, memory_ratio
 
 
+def semantic_comparison(source):
+    """Find a semantic comparison result without mistaking ratio metadata for one."""
+    for field in ("semantic_comparison", "comparison"):
+        value = source.get(field)
+        if not isinstance(value, dict):
+            continue
+        for key in ("lcovmerge_vs_lcov", "semantic_comparison"):
+            nested = value.get(key)
+            if isinstance(nested, dict) and nested.get("status") is not None:
+                return nested
+        if value.get("status") is not None:
+            return value
+    return None
+
+
+def semantic_difference_count(comparison):
+    """Read an explicit difference count or count the comparator's reported deltas."""
+    for key in ("difference_count", "differences_count", "diff_count", "num_differences"):
+        count = comparison.get(key)
+        if isinstance(count, int) and count >= 0:
+            return count
+    differences = comparison.get("differences")
+    if isinstance(differences, int) and differences >= 0:
+        return differences
+    if isinstance(differences, list):
+        return len(differences)
+
+    details = comparison.get("details")
+    if not isinstance(details, str):
+        return None
+    total_match = re.search(r"\b(\d[\d,]*)\s+differences\b", details, re.IGNORECASE)
+    if total_match:
+        return int(total_match.group(1).replace(",", ""))
+
+    # compare_lcov.py stops after 12 reported detail fragments. Avoid presenting
+    # the partial details as a total if that cap may have been reached.
+    if len(details.split(" | ")) >= 12:
+        return None
+
+    # bench/compare_lcov.py reports per-SF key deltas and whole missing SF records.
+    # For an untruncated result, these values give its exact difference count.
+    delta_rows = re.findall(
+        r"left-only=(\d+)\s+right-only=(\d+)\s+value-differences=(\d+)",
+        details,
+    )
+    missing_sources = re.findall(r"missing from (?:left|right): SF:", details)
+    if delta_rows or missing_sources:
+        return sum(sum(int(value) for value in row) for row in delta_rows) + len(missing_sources)
+    return None
+
+
+def semantic_comparison_copy(source):
+    comparison = semantic_comparison(source)
+    if comparison is None:
+        return "outputs not compared"
+    status = str(comparison.get("status", "")).upper()
+    if status == "PASS":
+        return "normalized outputs matched"
+    if status == "FAIL":
+        count = semantic_difference_count(comparison)
+        if count is not None and count > 0:
+            return f"{count:,} differences"
+        return "normalized outputs differ; difference count not reported"
+    if status == "TIMEOUT":
+        return "semantic comparison timed out"
+    return "outputs not compared"
+
+
 def ratio_copy(source, key):
     ratios = comparison_ratios(source, key)
     if ratios is None:
@@ -375,13 +443,14 @@ def featured_site():
     if lcov_ratios:
         time_ratio = lcov_ratios[0]
         headline_html = (
-            f'<h1 id="home-title"><span>{time_ratio:,.1f}×</span> faster than '
-            f'{html.escape(labels["lcov"])}.'
+            '<h1 id="home-title" class="home-stats">'
+            f'<span class="home-stat"><strong>{time_ratio:,.1f}×</strong>'
+            f'<small>faster than {html.escape(labels["lcov"])}</small></span>'
         )
         if lcov_mem_ratio is not None:
             headline_html += (
-                f'<br><span>{lcov_mem_ratio:,.1f}×</span> less recorded peak memory than '
-                f'{html.escape(labels["lcov"])}.'
+                f'<span class="home-stat"><strong>{lcov_mem_ratio:,.1f}×</strong>'
+                '<small>less peak memory</small></span>'
             )
         headline_html += '</h1>'
     else:
@@ -432,7 +501,7 @@ def featured_site():
         f'<p class="featured-meta">{html.escape(featured_metadata(source))}</p>',
         f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
-        '<p class="generated-note">Generated; outputs not compared. '
+        f'<p class="generated-note">Generated; {html.escape(semantic_comparison_copy(source))}. '
         f'Release v{html.escape(VERSION_MATCH.group(1))}.</p>',
         '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
     ])

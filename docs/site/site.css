@@ -943,14 +943,32 @@ body.home-page .shell { width: min(1060px, calc(100% - 40px)); }
 .home-hero .eyebrow { margin-bottom: 10px; }
 .home-intro { max-width: 780px; margin: 0 0 20px; color: var(--muted); font-size: 1.08rem; }
 .featured-benchmark { max-width: 980px; }
-.featured-benchmark h1 {
-  max-width: 980px;
+.featured-benchmark h1.home-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(8px, 2vw, 16px);
+  max-width: 720px;
   margin: 0 0 12px;
-  font-size: clamp(2.25rem, 5vw, 4.1rem);
-  line-height: 1.02;
-  letter-spacing: -.065em;
+  font-size: 1rem;
+  line-height: 1.1;
+  letter-spacing: 0;
 }
-.featured-benchmark h1 span { color: var(--accent); white-space: nowrap; }
+.home-stat { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.home-stat strong {
+  color: var(--accent);
+  font-size: clamp(2rem, 8vw, 3.8rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.065em;
+  line-height: .98;
+  white-space: nowrap;
+}
+.home-stat small {
+  color: var(--text);
+  font-size: clamp(.72rem, 2vw, .88rem);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
 .featured-meta { margin: 0 0 10px; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 .featured-ratios { margin: 0 0 10px; }
 .ratio-note { margin: 4px 0; color: var(--text); font-size: .9rem; font-weight: 680; }

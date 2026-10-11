@@ -87,6 +87,18 @@ def check_featured_rendering(root, renderer):
     if section_text(home, renderer.HOME_BENCHMARK_START,
                     renderer.HOME_BENCHMARK_END) != expected_home.strip():
         raise AssertionError("stale generated landing-page benchmark section")
+    if expected_home.count('class="home-stat"') != 2:
+        raise AssertionError("featured benchmark should render two side-by-side statistics")
+    if "faster than lcov 2.6" not in expected_home or "less peak memory" not in expected_home:
+        raise AssertionError("featured benchmark statistics are missing their compact captions")
+    if re.search(r"`(?:\.info|\.gcda|\.profraw|lcov -a)`", home):
+        raise AssertionError("homepage prose contains literal Markdown backticks")
+    for code_markup in (
+        "<code>.info</code>", "<code>.gcda</code>", "<code>.profraw</code>",
+        "<code>lcov -a</code>",
+    ):
+        if code_markup not in home:
+            raise AssertionError(f"homepage prose did not render {code_markup} as code")
     if len(re.findall(r"<section\b", home)) > 4:
         raise AssertionError("landing page has more than four sections")
     if 'role="tablist"' in home:
@@ -108,6 +120,39 @@ def check_featured_rendering(root, renderer):
         and isinstance(item.get("input_bytes"), int)
     ):
         raise AssertionError("featured benchmark did not select the largest completed same-host pair")
+
+    def render_selected(source):
+        original_selector = renderer.featured_dataset
+        renderer.featured_dataset = lambda data=None: source
+        try:
+            return renderer.featured_site()
+        finally:
+            renderer.featured_dataset = original_selector
+
+    default_note = render_selected(selected)
+    if "Generated; outputs not compared." not in default_note:
+        raise AssertionError("featured benchmark without semantic status lost its fallback note")
+
+    matched = dict(selected)
+    matched["comparison"] = {
+        "lcovmerge_vs_lcov": {
+            "status": "PASS",
+            "details": "PASS normalized SF/DA/FN/FNDA/BRDA keys and counts",
+        },
+    }
+    if "Generated; normalized outputs matched." not in render_selected(matched):
+        raise AssertionError("semantic PASS was not rendered as matched normalized outputs")
+
+    different = dict(selected)
+    different["semantic_comparison"] = {
+        "status": "FAIL",
+        "details": (
+            "FAIL normalized LCOV comparison; compared 1 SF records and 9 metric keys; "
+            "SF:/src/example.c: left-only=2 right-only=3 value-differences=4"
+        ),
+    }
+    if "Generated; 9 differences." not in render_selected(different):
+        raise AssertionError("semantic differences were not rendered with their exact count")
 
     synthetic = {
         "host": "runner-a",
