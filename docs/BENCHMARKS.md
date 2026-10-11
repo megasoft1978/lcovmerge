@@ -32,12 +32,20 @@ per dataset. Per-command timeout: 30 minutes.
 
 ## Public CI compatibility investigation
 
-A separate comparison used three public CI datasets: 66 shards totaling 657,966,211 bytes. Strict `lcov -a`
-failed on all three; lcovmerge 1.0.1 completed all three; diagnostic LCOV runs with `--ignore-errors` produced
-normalized record differences on all three. These outcomes are compatibility findings, not a successful
-equivalence check or a performance result. The comparison has not been rerun against lcovmerge 1.0.2 after its
-joined-boundary recovery fix. See [the compatibility notes](COMPATIBILITY.md#what-has-been-verified) for the
-aggregate record-difference counts and scope.
+A separate comparison reran three public CI sets on 2026-10-11 with lcovmerge 1.0.2: 66 shards totaling
+657,966,211 bytes. Strict LCOV 2.6 `lcov -a` failed 3/3; lcovmerge 1.0.2 completed 3/3, with 12
+joined-boundary recovery warnings on one set. The original lcovmerge 1.0.1 run found the joined-boundary bug;
+the affected set's earlier 7 `DA`, 18 `FN`, and 18 `FNDA` differences are gone against diagnostic LCOV.
+Across all sets, normalized comparisons showed aggregate residuals of 86 lcovmerge-only `SF`, 713 LCOV-only
+`DA`, 2 lcovmerge-only `FN`, 0 `FNDA` differences, and 9,877 `BRDA` key/value differences. The earlier
+investigation root-caused these classes to documented policies: LCOV's branch-only `DA` synthesis, empty `SF`
+handling, `BRDA` block-ID remapping, and duplicate legacy `FN` handling.
+
+The rerun compared normalized `SF` keys and keyed `DA`, `FN`, `FNDA`, and `BRDA` values/counts against
+diagnostic LCOV outputs. It did not make strict LCOV succeed, did not compare byte-for-byte, did not cover
+summary, testcase, extension, or other unlisted records, and did not newly isolate those causes. This is
+compatibility evidence, not proof of equivalence or a performance result. See [the compatibility notes](COMPATIBILITY.md#what-has-been-verified)
+for the aggregate counts and policy table.
 
 ## Linux measurements
 

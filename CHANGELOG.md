@@ -9,6 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Documentation
 
 - Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
+- Update public-CI compatibility evidence with the 2026-10-11 rerun on lcovmerge 1.0.2 and its aggregate normalized-difference scope.
 
 ## [1.0.2] - 2026-10-10
 

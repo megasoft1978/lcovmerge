@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Check that generated site benchmark sections match the canonical renderer."""
 
+import html
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +25,43 @@ def section_text(document, start, end):
     _, content = document.split(start, 1)
     content, _ = content.split(end, 1)
     return content.strip()
+
+
+def check_public_compatibility_copy(text, source):
+    plain_text = html.unescape(re.sub(r"<[^>]*>", " ", text)).replace("`", "")
+    normalized = " ".join(plain_text.split()).casefold()
+    normalized = re.sub(r"\s+([,;:.])", r"\1", normalized)
+    required = (
+        "2026-10-11",
+        "strict lcov 2.6 lcov -a",
+        "failed 3/3",
+        "lcovmerge 1.0.2 completed 3/3",
+        "12 joined-boundary recovery warnings",
+        "original lcovmerge 1.0.1 run found the joined-boundary bug",
+        "7 da",
+        "18 fn",
+        "18 fnda",
+        "86 lcovmerge-only sf",
+        "713 lcov-only da",
+        "2 lcovmerge-only fn",
+        "0 fnda differences",
+        "9,877 brda key/value differences",
+        "normalized sf keys",
+        "keyed da, fn, fnda, and brda values/counts",
+        "earlier investigation root-caused",
+        "branch-only da synthesis",
+        "empty sf",
+        "block-id remapping",
+        "duplicate legacy fn",
+        "did not make strict lcov succeed",
+        "did not compare byte-for-byte",
+        "did not cover summary, testcase, extension",
+        "did not newly isolate",
+        "not proof of equivalence or a performance result",
+    )
+    missing = [fragment for fragment in required if fragment not in normalized]
+    if missing:
+        raise AssertionError(f"{source} compatibility summary is missing: {', '.join(missing)}")
 
 
 def main():
@@ -46,6 +85,26 @@ def main():
         actual = section_text(page, start, end)
         if actual != expected.strip():
             raise AssertionError(f"stale generated site section: {start}")
+
+    compatibility_section = page.split(
+        '<section class="public-compatibility-note" id="public-compatibility"', 1
+    )
+    if len(compatibility_section) != 2:
+        raise AssertionError("missing site public compatibility notes")
+    check_public_compatibility_copy(
+        compatibility_section[1].split("</section>", 1)[0], "site"
+    )
+    check_public_compatibility_copy(
+        (root / "docs" / "COMPATIBILITY.md").read_text(encoding="utf-8"),
+        "docs/COMPATIBILITY.md",
+    )
+    benchmark_doc = (root / "docs" / "BENCHMARKS.md").read_text(encoding="utf-8")
+    benchmark_section = benchmark_doc.split("## Public CI compatibility investigation", 1)
+    if len(benchmark_section) != 2:
+        raise AssertionError("missing docs/BENCHMARKS.md public compatibility investigation")
+    check_public_compatibility_copy(
+        benchmark_section[1].split("\n## ", 1)[0], "docs/BENCHMARKS.md"
+    )
 
     benchmark_data = json.loads((root / "data" / "benchmarks.json").read_text(encoding="utf-8"))
     host_data = benchmark_data.get("host_results", [])
