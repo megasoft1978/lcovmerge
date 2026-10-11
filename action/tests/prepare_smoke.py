@@ -12,7 +12,7 @@ shards.mkdir(parents=True, exist_ok=True)
     encoding="utf-8",
 )
 (shards / "integration.info").write_text(
-    "TN:integration\nSF:src/demo.c\nDA:1,2\nBRDA:1,0,0,0\nend_of_record\n",
+    "TN:unit\nSF:src/demo.c\nDA:1,2\nBRDA:1,0,0,0\nend_of_record\n",
     encoding="utf-8",
 )
 (workspace / "coverage" / "bad.info").write_text(

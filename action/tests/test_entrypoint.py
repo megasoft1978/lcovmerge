@@ -50,7 +50,7 @@ class ReleaseCoordinatesTests(unittest.TestCase):
                     "https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2",
                 )
 
-    def test_defaults_to_v1_0_1_when_version_input_is_unset(self) -> None:
+    def test_defaults_to_v1_0_2_when_version_input_is_unset(self) -> None:
         with patch.dict(os.environ, {"RUNNER_OS": "Linux", "RUNNER_ARCH": "X64"}, clear=True):
             version, asset, _ = entrypoint.release_coordinates()
         self.assertEqual(version, "1.0.2")
