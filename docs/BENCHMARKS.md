@@ -10,10 +10,9 @@ For a local rerun of the deterministic S and M fixtures, see the [reproduction i
 ## Methodology
 
 <!-- BENCH-METHOD:START -->
-Host: macOS 27.0 arm64, Apple silicon (exact model unavailable in this sandbox), 18 cores, 64 GiB RAM; no
-explicit cache flush; paired hyperfine warmups; machine load uncontrolled. Measured: 2026-10-11. lcovmerge
-runs by dataset: S: 10, M: 5, L: 2, XL-single: 5, PATH-HEAVY: 5, REAL: 0. Comparison runs per tool: 1;
-Per-command timeout: 30 minutes.
+Host: macOS 27.0 arm64, Apple M5 Max, 18 cores, 64 GiB RAM; no explicit cache flush; paired hyperfine warmups;
+machine load uncontrolled. Measured: 2026-10-11. lcovmerge runs by dataset: S: 10, M: 5, L: 2, XL-single: 5,
+PATH-HEAVY: 5, REAL: 0. Comparison runs per tool: 1; Per-command timeout: 30 minutes.
 <!-- BENCH-METHOD:END -->
 
 - Synthetic fixtures were generated with `bench/run.py`, `tools/gen-lcov.py`, and `tools/gen-path-heavy.py`. Set
@@ -130,6 +129,26 @@ successful exit. The XXL run processed 20.3 GB across 128 shards. lcovmerge 1.0.
 | REAL (unavailable) | — / — / n/a / NOT MEASURED | — / — / n/a / NOT MEASURED | — / — / n/a / NOT MEASURED |
 <!-- BENCHMARKS:END -->
 
+## Experimental profile-guided build
+
+This compiler-tuning experiment is separate from the standard tool comparisons above. It used the current
+checkout (`91da2e967ecf`) on a Mac Studio with an Apple M5 Max, macOS 27.0 arm64, and Apple clang 21.0.0.
+An instrumented binary processed generated Dataset M once to produce an LLVM profile. The profile was then
+used to build with `-O2 -mcpu=native -fprofile-instr-use`; that same profile was tested on S and M. Each
+configuration had one warmup and three measured hyperfine runs. The table reports median wall time and median
+peak resident memory.
+
+| Dataset | Portable `-O2` | Native `-O2`, no PGO | Native `-O2` with M-trained PGO | Speed change vs portable | Peak-memory change vs portable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| S (100.0 MB) | 247.6 ms / 3.00 MiB | — | 212.8 ms / 3.02 MiB | 14.1% faster | +16 KiB |
+| M (1.12 GB) | 3.655 s / 5.28 MiB | 3.645 s / 5.30 MiB | 3.263 s / 5.30 MiB | 10.7% faster | +16 KiB |
+
+The M PGO build was 10.5% faster than the native `-O2` build without PGO. Output files had identical SHA-256
+hashes for each compared pair. These are two generated workloads on one host; the optimized executable is
+machine-specific and was not used in the standard comparator table. This experiment does not establish a
+cross-platform or general speed claim. The exact run records, profile input, flags, and output hashes are in
+[`data/benchmarks.json`](../data/benchmarks.json); temporary binaries and profiles remain in ignored `.cache/`.
+
 ### Recorded timing ratios
 
 Baseline and final lcovmerge binaries processed the same generated input for each paired hyperfine run. lcov 2.6
@@ -162,8 +181,7 @@ observed command variation for the requested values; they do not measure paralle
 ## Caveats
 
 <!-- BENCH-CAVEATS:START -->
-- Measurements cover one macOS arm64 host. Exact SoC model was unavailable in the sandbox; results are not a
-  cross-platform claim.
+- Measurements cover one macOS 27 arm64 Apple M5 Max host; results are not a cross-platform claim.
 - S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived
   capture was available.
 - lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts

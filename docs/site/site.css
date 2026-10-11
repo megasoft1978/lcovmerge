@@ -446,6 +446,20 @@ td code { font-size: .86em; }
 .benchmark-table td:last-child { min-width: 6.5rem; }
 .benchmark-table .tool-primary { color: var(--accent-2); font-weight: 800; }
 @media (prefers-color-scheme: dark) { .benchmark-table .tool-primary { color: var(--accent); } }
+.optimization-note {
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.optimization-note h2 { margin-top: 0; }
+.optimization-note .table-wrap { margin-top: 16px; }
+.optimization-note .benchmark-table { min-width: 760px; }
+.optimization-note .benchmark-table td,
+.optimization-note .benchmark-table th { vertical-align: top; }
+.optimization-note .small-note { margin-top: 14px; }
 .host-results { padding-bottom: 34px; }
 .host-result-block { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .host-result-block summary {

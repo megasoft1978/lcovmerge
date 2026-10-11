@@ -1,6 +1,6 @@
 {
   "version": "1.0.2",
-  "machine": "Apple silicon (exact model unavailable in this sandbox)",
+  "machine": "Apple M5 Max",
   "measured_on": "2026-10-11",
   "repeat_counts": {
     "S": 10,
@@ -17,7 +17,7 @@
   "environment": {
     "os": "macOS 27.0",
     "architecture": "arm64",
-    "cpu": "Apple silicon (exact model unavailable in this sandbox)",
+    "cpu": "Apple M5 Max",
     "cores": 18,
     "memory_bytes": 68719476736,
     "compiler": "Apple clang 21.0.0",
@@ -301,6 +301,78 @@
           "status": "Not measured"
         }
       ]
+    }
+  ],
+  "optimization_trials": [
+    {
+      "name": "Apple Clang profile-guided build",
+      "measured_on": "2026-10-11",
+      "host": {
+        "os": "macOS 27.0 arm64",
+        "cpu": "Apple M5 Max",
+        "cores": 18,
+        "memory_gib": 64
+      },
+      "source_commit": "91da2e967ecf",
+      "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2)",
+      "training": "One instrumented run on generated Dataset M (32 shards); the same profile was tested on S and M.",
+      "instrumentation_flags": [
+        "-O2",
+        "-mcpu=native",
+        "-fprofile-instr-generate"
+      ],
+      "build_flags": [
+        "-O2",
+        "-mcpu=native",
+        "-fprofile-instr-use"
+      ],
+      "method": "One hyperfine warmup and three measured runs per binary; medians shown. Peak resident memory is the median across measured runs.",
+      "results": [
+        {
+          "dataset": "S",
+          "input_bytes": 100000000,
+          "baseline": {
+            "build": "portable -O2",
+            "time_median_s": 0.247637125,
+            "rss_median_bytes": 3145728,
+            "run_count": 3,
+            "output_sha256": "935220d7f0dd8f00f9e31b9893d76640c4500cf3314d25214d1e87578b77375f"
+          },
+          "optimized": {
+            "build": "-O2 -mcpu=native with Dataset M PGO profile",
+            "time_median_s": 0.212781375,
+            "rss_median_bytes": 3162112,
+            "run_count": 3,
+            "output_sha256": "935220d7f0dd8f00f9e31b9893d76640c4500cf3314d25214d1e87578b77375f"
+          }
+        },
+        {
+          "dataset": "M",
+          "input_bytes": 1118686233,
+          "baseline": {
+            "build": "portable -O2",
+            "time_median_s": 3.655345834,
+            "rss_median_bytes": 5537792,
+            "run_count": 3,
+            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
+          },
+          "native_o2": {
+            "build": "-O2 -mcpu=native, without PGO",
+            "time_median_s": 3.644842417,
+            "rss_median_bytes": 5554176,
+            "run_count": 3,
+            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
+          },
+          "optimized": {
+            "build": "-O2 -mcpu=native with Dataset M PGO profile",
+            "time_median_s": 3.262927917,
+            "rss_median_bytes": 5554176,
+            "run_count": 3,
+            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
+          }
+        }
+      ],
+      "caveat": "Experimental lcovmerge-only compiler tuning on one Apple M5 Max host. It is separate from the standard comparator table and is not a cross-platform or general speed claim."
     }
   ],
   "host_results": [
