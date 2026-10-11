@@ -87,7 +87,7 @@ def context():
         f'Host: {host["os"]}, {host["cpu"]}, {host["cores"]} cores, '
         f'{host["memory_gib"]} GiB RAM; {host["cache"]}. '
         f'Measured: {DATA["measured_on"]}. lcovmerge runs by dataset: {repeats}. '
-        f'Each comparison tool ran {DATA["method"]["comparison_runs_per_tool"]} time(s) per dataset. '
+        f'Comparison runs per tool: {DATA["method"]["comparison_runs_per_tool"]}; '
         f'Per-command timeout: {timeout_minutes:g} minutes.'
     )
     return textwrap.fill(result, width=110, break_long_words=False,
@@ -232,6 +232,9 @@ def measurement_note(source, key, result):
         count = DATA.get("method", {}).get("repeat_counts", {}).get(source["name"])
     if count is None and key in {"lcov", "lcov-result-merger"} and not is_earlier_timing(key, result):
         count = DATA.get("method", {}).get("comparison_runs_per_tool")
+    if (result.get("run_count") == 0 or
+            result.get("status", "").lower() in {"not measured", "skipped"}):
+        return "Not measured"
     if count is None:
         if is_earlier_timing(key, result):
             return "Earlier recorded measurement; run count not reported"
@@ -559,17 +562,27 @@ def chart(dataset_name="M"):
 
 
 def run_count_for(dataset_name, key, result):
+    if result.get("run_count") == 0 or result.get("status", "").lower() in {"not measured", "skipped"}:
+        return "Not measured"
     if result.get("status") == "NOT MEASURED":
         return "Not measured"
     if key == "lcovmerge":
+        if result.get("run_count") is not None:
+            return f'{result["run_count"]} measured'
         count = DATA["method"]["repeat_counts"].get(dataset_name)
         return f'{count} measured' if count else "Not reported"
     if key == "lcov-result-merger":
+        if result.get("run_count") is not None:
+            return f'{result["run_count"]} measured'
         return "Earlier recorded measurement; run count not reported"
     if key == "lcov":
         count = DATA["method"].get("comparison_runs_per_tool")
         time_count = f'Time: {count} run(s)' if count else "Time: run count not reported"
+        if result.get("run_count") is not None:
+            time_count = f'Time: {result["run_count"]} run(s)'
         if result.get("rss_bytes") is not None:
+            if "earlier" not in str(result.get("rss_source", "")).lower():
+                return time_count
             return f'{time_count}; peak resident memory from an earlier measurement; run count not reported'
         return f'{time_count}; peak resident memory unavailable for this failed run'
     count = DATA["method"].get("comparison_runs_per_tool")
@@ -638,13 +651,15 @@ def shard_text(value):
 
 
 def primary_rss_source(key, result):
-    if result.get("status") == "NOT MEASURED":
+    if result.get("status", "").lower() in {"not measured", "skipped"}:
         return "Not measured"
     if result.get("rss_bytes") is None:
         return plain_copy(result.get("rss_display", "Peak resident memory not reported"))
-    if key == "lcov":
+    if key == "lcov" and "earlier" in str(result.get("rss_source", "")).lower():
         return "Earlier recorded peak resident memory; current elapsed-time run did not measure memory"
-    if key == "lcov-result-merger":
+    if key == "lcov" and result.get("rss_source"):
+        return plain_copy(result["rss_source"])
+    if key == "lcov-result-merger" and result.get("run_count") is None:
         return "Earlier recorded measurement; run count not reported"
     hyperfine = DATA["environment"].get("hyperfine", "Hyperfine")
     return f'Hyperfine {hyperfine} memory_peak_resident; maximum over measured runs'
@@ -700,8 +715,7 @@ def site_benchmark_scope():
         f'<strong>{html.escape(labels["lcovmerge"])}</strong>. Comparators: '
         f'{html.escape(labels["lcov"])} and '
         f'{html.escape(labels["lcov-result-merger"])}. '
-        f'The release is v{html.escape(VERSION_MATCH.group(1))}; these records do not include '
-        'timings for that release. Generated measurements do not establish a universal speedup '
+        f'The release is v{html.escape(VERSION_MATCH.group(1))}. Generated measurements do not establish a universal speedup '
         'or output compatibility. The REAL dataset was not measured because no project-derived '
         f'capture was supplied.{html.escape(windows_note)}</p>'
     )
@@ -714,9 +728,8 @@ def site_benchmark_method():
     summary = (
         f'<p>Primary host: {html.escape(host["os"])} · {html.escape(host["cpu"])} · '
         f'{host["cores"]} cores · {host["memory_gib"]} GiB RAM; measured {html.escape(DATA["measured_on"])}. '
-        f'lcovmerge run counts: {html.escape(repeats)}. lcov elapsed time was measured '
-        f'{method["comparison_runs_per_tool"]} time(s) per dataset; successful lcov peak resident memory values and '
-        'lcov-result-merger results are earlier recorded measurements with run counts not reported. '
+        f'lcovmerge run counts: {html.escape(repeats)}. Each row lists its measured tools, run counts, '
+        'and memory source. '
         f'Cache conditions: {html.escape(host["cache"])} '
         '<a href="data/benchmarks.json">Open the published benchmark record</a>.</p>'
     )

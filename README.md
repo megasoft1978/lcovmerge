@@ -5,17 +5,15 @@ lcovmerge combines exported LCOV `.info` files into one for your existing report
 ## The benchmark
 
 <!-- README-BENCHMARK:START -->
-**Generated Dataset L · 4,853,340,843 input bytes · 64 shards · macOS 27.0 arm64 · Apple silicon (exact model unavailable in this sandbox) · 2026-10-09. Builds: lcovmerge 1.0.0 / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 2-run median; lcov 1 timed run; peak memory from earlier measurement; lcov-result-merger earlier measurement; run count unreported.**
+**Generated Dataset XXL · 20,274,194,280 input bytes · 128 shards · macOS 27.0 arm64 · Apple silicon (exact model unavailable in this sandbox) · 2026-10-11. Builds: lcovmerge 1.0.2 / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger 1 measured run.**
 
 | Tool | Time | Peak resident memory | Runs / status |
 | --- | ---: | ---: | --- |
-| lcovmerge 1.0.0 | 27.723 s | 26,279,936 B | 2 measured runs; median time · OK |
-| lcov 2.6 | 203.235 s | 1,499,709,440 B · earlier measurement | 1 measured run; peak memory from an earlier measurement · OK |
-| lcov-result-merger 6.0.0 | 604.280 s | 3,257,008,128 B · earlier measurement | Earlier recorded measurement; run count not reported · OK |
+| lcovmerge 1.0.2 | 154.660 s | 32,555,008 B | 3 measured runs; median time · OK |
+| lcov 2.6 | 893.541 s | 2,853,126,144 B | 1 measured run · OK |
+| lcov-result-merger 6.0.0 | Not measured | — | Not measured · Not measured |
 
-**7.3× faster than lcov 2.6; 57.1× less recorded peak resident memory than lcov 2.6 (its peak memory is from an earlier measurement).**
-
-**21.8× faster than lcov-result-merger 6.0.0; 123.9× less recorded peak resident memory than lcov-result-merger 6.0.0 (its values are from an earlier recorded measurement; run count not reported).**
+**5.8× faster than lcov 2.6; 87.6× less recorded peak resident memory than lcov 2.6.**
 <!-- README-BENCHMARK:END -->
 
 ## Try it (Linux x86-64)
