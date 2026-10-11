@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import platform
@@ -13,6 +14,7 @@ import signal
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -21,10 +23,15 @@ WORKLOADS = {
     "S": (8, 56, 23000),
     "M": (32, 220, 16000),
     "L": (64, 480, 16000),
+    "XXL": (128, 480, 32000),
     "XL-single": (1, 1, 30340000),
     "XL-pair": (2, 1, 15170000),
 }
-WORKLOAD_NAMES = ("S", "M", "L", "XL-single", "XL-pair", "PATH-HEAVY", "REAL")
+WORKLOAD_NAMES = ("S", "M", "L", "XXL", "XL-single", "XL-pair", "PATH-HEAVY", "REAL")
+L_INPUT_BYTES = 4853340843
+XXL_DISK_FACTOR = 2.5
+XXL_PRECHECK_MARGIN = 1.10
+XXL_COMPARISON_METHOD = "per-SF streaming comparison of normalized SF/DA/FN/FNDA/BRDA keys and counts"
 
 
 def time_wrapper_available() -> bool:
@@ -158,7 +165,21 @@ def hyperfine_timed(command: list[str], log: pathlib.Path, timeout: int,
     return status, wall_seconds, payload
 
 
-def generate(name: str, out: pathlib.Path, real_dir: pathlib.Path | None) -> list[pathlib.Path]:
+def xxl_parameters(scale: float) -> tuple[int, int, int]:
+    shards, files, lines = WORKLOADS["XXL"]
+    return shards, max(1, round(files * scale)), max(1, round(lines * scale))
+
+
+def estimate_xxl_bytes(scale: float) -> int:
+    _shards, files, lines = xxl_parameters(scale)
+    # L is the measured 64-shard, 480-file, 16,000-line reference. Keep a
+    # 10% margin because generated shard file-selection percentages vary.
+    estimated = L_INPUT_BYTES * 2 * (files / 480) * (lines / 16000)
+    return math.ceil(estimated * XXL_PRECHECK_MARGIN)
+
+
+def generate(name: str, out: pathlib.Path, real_dir: pathlib.Path | None,
+             scale: float = 1.0) -> list[pathlib.Path]:
     generated = out / "generated"
     generated.mkdir(exist_ok=True)
     if name == "REAL":
@@ -175,27 +196,28 @@ def generate(name: str, out: pathlib.Path, real_dir: pathlib.Path | None) -> lis
             check=True,
         )
         return [output]
-    shards, files, lines = WORKLOADS[name]
+    shards, files, lines = (xxl_parameters(scale) if name == "XXL"
+                            else WORKLOADS[name])
     directory = generated / name
-    subprocess.run(
-        [
-            "python3",
-            str(ROOT / "tools/gen-lcov.py"),
-            "--out",
-            str(directory),
-            "--shards",
-            str(shards),
-            "--files",
-            str(files),
-            "--lines",
-            str(lines),
-            "--seed",
-            "4242",
-            "--checksums",
-            "--benchmark-compatible",
-        ],
-        check=True,
-    )
+    command = [
+        sys.executable,
+        str(ROOT / "tools/gen-lcov.py"),
+        "--out",
+        str(directory),
+        "--shards",
+        str(shards),
+        "--files",
+        str(files),
+        "--lines",
+        str(lines),
+        "--seed",
+        "4242",
+        "--checksums",
+        "--benchmark-compatible",
+    ]
+    if name == "XXL":
+        command.append("--lcov-valid")
+    subprocess.run(command, check=True)
     return sorted(directory.glob("*.info"))
 
 
@@ -207,6 +229,19 @@ def rss_line(payload: str) -> str:
     marker = "maximum resident set size" if platform.system() == "Darwin" else "Maximum resident set size"
     return next((line.strip() for line in payload.splitlines() if marker.lower() in line.lower()),
                 "RSS unavailable")
+
+
+def rss_bytes(payload: str) -> int | None:
+    match = re.search(r"Maximum resident set size:\s*(\d+) bytes", payload)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)", payload)
+    if match:
+        return int(match.group(1)) * 1024
+    match = re.search(r"maximum resident set size\s*:?\s*(\d+)", payload, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def measurement(name: str, inputs: list[pathlib.Path], command: list[str], output: pathlib.Path,
@@ -225,10 +260,9 @@ def measurement(name: str, inputs: list[pathlib.Path], command: list[str], outpu
         f"throughput={throughput} status={result_status} {rss_line(payload)}"
     )
     print(row, flush=True)
-    rss_match = re.search(r"Maximum resident set size:\s*(\d+) bytes", payload)
     return row, {
         "time_s": round(elapsed, 6),
-        "rss_bytes": int(rss_match.group(1)) if rss_match else None,
+        "rss_bytes": rss_bytes(payload),
         "throughput_mb_s": (round(input_bytes / elapsed / 1_000_000, 1)
                             if status == 0 and elapsed else None),
         "status": result_status,
@@ -246,42 +280,68 @@ def main() -> int:
     parser.add_argument("--binary", type=pathlib.Path, default=ROOT / "bin/lcovmerge")
     parser.add_argument("--skip-lcov", action="store_true",
                         help="omit LCOV when its comparison was measured in another run")
+    parser.add_argument("--skip-node", action="store_true",
+                        help="omit the optional lcov-result-merger comparison")
     parser.add_argument("--hyperfine-runs", type=int,
-                        help="use one hyperfine warmup and this many measured runs per command")
-    parser.add_argument("--timeout", type=int, default=1800)
+                        help="use one hyperfine warmup and this many measured runs per command; XXL uses one lcov/node run")
+    parser.add_argument("--scale", type=float, default=1.0,
+                        help="scale XXL files and lines for a small validation run (0 < scale <= 1)")
+    parser.add_argument("--timeout", type=int,
+                        help="per-command timeout in seconds (default: 7,200 for XXL, 1,800 otherwise)")
     parser.add_argument("--report", type=pathlib.Path, default=ROOT / "docs/validation/benchmark.txt")
     parser.add_argument("--json-report", type=pathlib.Path,
                         help="write structured measurement results to this JSON file")
     args = parser.parse_args()
+    names = WORKLOAD_NAMES if args.workload == "all" else (args.workload,)
+    args.timeout = args.timeout if args.timeout is not None else (7200 if "XXL" in names else 1800)
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
     if args.hyperfine_runs is not None and args.hyperfine_runs <= 0:
         parser.error("--hyperfine-runs must be positive")
+    if not 0 < args.scale <= 1:
+        parser.error("--scale must be greater than 0 and at most 1")
+    if args.scale != 1 and "XXL" not in names:
+        parser.error("--scale is supported only for the XXL workload")
+    if "XXL" in names and args.hyperfine_runs is not None and args.hyperfine_runs < 3:
+        parser.error("XXL requires at least 3 hyperfine runs for lcovmerge")
+    if "XXL" in names and args.skip_lcov:
+        parser.error("XXL requires lcov for the semantic comparison")
     if args.workload == "all" and args.real_dir is None:
         parser.error("--real-dir is required when --workload all or REAL")
     if args.workload == "REAL" and args.real_dir is None:
         parser.error("--real-dir is required for REAL")
 
-    use_time_wrapper = time_wrapper_available() if not args.hyperfine_runs else False
+    use_time_wrapper = (time_wrapper_available()
+                        if not args.hyperfine_runs and "XXL" not in names else False)
 
     binary = args.binary.resolve()
     if not binary.is_file():
         parser.error("build lcovmerge first with make")
-    node_candidate = args.node_bin or (pathlib.Path(shutil.which("lcov-result-merger"))
-                                       if shutil.which("lcov-result-merger") else None)
+    node_candidate = (args.node_bin or (pathlib.Path(shutil.which("lcov-result-merger"))
+                                       if shutil.which("lcov-result-merger") else None))
+    if args.skip_node:
+        node_candidate = None
     node = str(node_candidate) if node_candidate and node_candidate.is_file() else None
     lcov = shutil.which("lcov")
+    if "XXL" in names:
+        if not shutil.which("hyperfine"):
+            parser.error("XXL requires hyperfine")
+        if not lcov:
+            parser.error("XXL requires lcov to compare merged output semantically")
     lcov_label = "lcov"
-    names = WORKLOAD_NAMES if args.workload == "all" else (args.workload,)
+    xxl_lcovmerge_runs = args.hyperfine_runs or 3
+    use_hyperfine = bool(args.hyperfine_runs) or "XXL" in names
     report = [
         f"host={platform.platform()}",
         f"timeout_seconds={args.timeout}",
-        "fixture_generator=tools/gen-lcov.py --benchmark-compatible",
+        "fixture_generator=tools/gen-lcov.py --benchmark-compatible"
+        + (" --lcov-valid for XXL" if "XXL" in names else ""),
         "temporary_data=under TMPDIR; generated inputs removed automatically",
-        (f"measurement_source=hyperfine {args.hyperfine_runs} runs after one warmup; wall time is median; RSS is max measured sample" if args.hyperfine_runs else
+        (f"measurement_source=hyperfine; XXL uses {xxl_lcovmerge_runs} lcovmerge runs, one lcov run, and one optional Node run after one warmup" if "XXL" in names else
+         f"measurement_source=hyperfine {args.hyperfine_runs} runs after one warmup; wall time is median; RSS is max measured sample" if args.hyperfine_runs else
          "measurement_source=single run"),
-        ("rss_source=/usr/bin/time -v per measured hyperfine sample" if args.hyperfine_runs and platform.system() == "Linux" else
-         "rss_source=hyperfine memory_peak_resident" if args.hyperfine_runs else
+        ("rss_source=/usr/bin/time -v per measured hyperfine sample" if use_hyperfine and platform.system() == "Linux" else
+         "rss_source=hyperfine memory_peak_resident" if use_hyperfine else
          "/usr/bin/time -l" if platform.system() == "Darwin" and use_time_wrapper else
          "rss_source=unavailable; host policy blocks /usr/bin/time -l sysctl query" if platform.system() == "Darwin" else
          "/usr/bin/time -v" if use_time_wrapper else "rss_source=unavailable"),
@@ -292,11 +352,44 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="lcovmerge-bench-") as directory:
         work = pathlib.Path(directory)
         for name in names:
+            disk_free_before: int | None = None
+            disk_required: int | None = None
+            parameters: tuple[int, int, int] | None = None
+            if name == "XXL":
+                parameters = xxl_parameters(args.scale)
+                estimated_bytes = estimate_xxl_bytes(args.scale)
+                disk_required = math.ceil(estimated_bytes * XXL_DISK_FACTOR)
+                disk_free_before = shutil.disk_usage(work).free
+                if disk_free_before < disk_required:
+                    parser.error(
+                        "XXL disk guard refused run: "
+                        f"free={disk_free_before} bytes, estimated_input={estimated_bytes} bytes, "
+                        f"required_free={disk_required} bytes (2.5x estimated input)"
+                    )
+                report.append(
+                    f"XXL disk_precheck=PASS free_bytes={disk_free_before} "
+                    f"estimated_input_bytes={estimated_bytes} required_free_bytes={disk_required}"
+                )
             try:
-                inputs = generate(name, work, args.real_dir)
+                inputs = generate(name, work, args.real_dir, args.scale)
             except (OSError, ValueError, subprocess.CalledProcessError) as error:
                 parser.error(str(error))
             total_bytes = size_of(inputs)
+            if name == "XXL":
+                assert disk_free_before is not None
+                free_after_generation = shutil.disk_usage(work).free
+                available_for_run = min(disk_free_before, free_after_generation + total_bytes)
+                exact_required = math.ceil(total_bytes * XXL_DISK_FACTOR)
+                if available_for_run < exact_required:
+                    parser.error(
+                        "XXL disk guard refused run after generation: "
+                        f"available_free={available_for_run} bytes, input={total_bytes} bytes, "
+                        f"required_free={exact_required} bytes (2.5x input)"
+                    )
+                report.append(
+                    f"XXL disk_guard=PASS available_free_bytes={available_for_run} "
+                    f"input_bytes={total_bytes} required_free_bytes={exact_required}"
+                )
             report.append(f"{name}: shards={len(inputs)} input_bytes={total_bytes}")
             dataset_result: dict[str, object] = {
                 "name": name,
@@ -304,15 +397,32 @@ def main() -> int:
                 "shards": len(inputs),
                 "results": {},
             }
+            if parameters:
+                dataset_result["files"] = parameters[1]
+                dataset_result["lines"] = parameters[2]
+                dataset_result["scale"] = args.scale
+                dataset_result["disk_guard"] = {
+                    "free_before_bytes": disk_free_before,
+                    "available_free_bytes": available_for_run,
+                    "required_free_bytes": math.ceil(total_bytes * XXL_DISK_FACTOR),
+                }
             results = dataset_result["results"]
             output = work / f"{name}.lcovmerge.info"
             command = [str(binary), "-o", str(output), *map(str, inputs)]
+            lcovmerge_runs = xxl_lcovmerge_runs if name == "XXL" else args.hyperfine_runs
             row, result = measurement(name, inputs, command, output, work, args.timeout,
-                                      "lcovmerge-default", use_time_wrapper, args.hyperfine_runs)
+                                      "lcovmerge-default", use_time_wrapper, lcovmerge_runs)
             report.append(row)
             results["lcovmerge"] = result
             if "status=OK" not in row:
                 exit_code = 1
+            if name == "XXL" and result["rss_bytes"] is None:
+                result["rss_status"] = "UNAVAILABLE"
+                if result["status"] == "OK":
+                    result["status"] = "ERROR_RSS_UNAVAILABLE"
+                    result["exit_code"] = 1
+                    report.append("XXL (lcovmerge-default): ERROR_RSS_UNAVAILABLE")
+                    exit_code = 1
 
             if name == "M":
                 for jobs in (1, 2, 4, 8):
@@ -334,10 +444,17 @@ def main() -> int:
                 lcov_command.extend(("-o", str(lcov_output)))
                 row, result = measurement(name, inputs, lcov_command, lcov_output, work,
                                           args.timeout, lcov_label, use_time_wrapper,
-                                          args.hyperfine_runs)
+                                          1 if name == "XXL" else args.hyperfine_runs)
                 report.append(row)
                 results["lcov"] = result
                 if "status=OK" not in row:
+                    exit_code = 1
+                if name == "XXL" and result["rss_bytes"] is None:
+                    result["rss_status"] = "UNAVAILABLE"
+                if name == "XXL" and result["status"] == "OK" and result["rss_bytes"] is None:
+                    result["status"] = "ERROR_RSS_UNAVAILABLE"
+                    result["exit_code"] = 1
+                    report.append("XXL (lcov): ERROR_RSS_UNAVAILABLE")
                     exit_code = 1
             else:
                 report.append(f"{name} ({lcov_label}): unavailable")
@@ -346,34 +463,147 @@ def main() -> int:
                                    "throughput_mb_s": None, "run_count": 0,
                                    "warmup_count": 0}
 
-            if node:
+            if args.skip_node:
+                report.append(f"{name} (lcov-result-merger): skipped by request")
+                results["lcov-result-merger"] = {
+                    "status": "SKIPPED", "exit_code": None, "time_s": None,
+                    "rss_bytes": None, "throughput_mb_s": None,
+                    "run_count": 0, "warmup_count": 0,
+                }
+            elif node:
                 node_output = work / f"{name}.node.info"
                 pattern = str(inputs[0] if name == "PATH-HEAVY" else inputs[0].parent / "*.info")
                 row, result = measurement(name, inputs, [node, pattern, str(node_output)],
                                           node_output, work, args.timeout, "lcov-result-merger",
-                                          use_time_wrapper, args.hyperfine_runs)
+                                          use_time_wrapper,
+                                          1 if name == "XXL" else args.hyperfine_runs)
                 report.append(row)
                 results["lcov-result-merger"] = result
+                if name == "XXL" and result["rss_bytes"] is None:
+                    result["rss_status"] = "UNAVAILABLE"
+                if name == "XXL" and result["status"] == "OK" and result["rss_bytes"] is None:
+                    result["status"] = "ERROR_RSS_UNAVAILABLE"
+                    result["exit_code"] = 1
+                    report.append("XXL (lcov-result-merger): ERROR_RSS_UNAVAILABLE")
+                    exit_code = 1
             else:
                 report.append(f"{name} (lcov-result-merger): unavailable")
+                results["lcov-result-merger"] = {
+                    "status": "UNAVAILABLE", "exit_code": None, "time_s": None,
+                    "rss_bytes": None, "throughput_mb_s": None,
+                    "run_count": 0, "warmup_count": 0,
+                }
+
+            if name == "XXL":
+                lcov_result = results.get("lcov", {})
+                lcovmerge_result = results.get("lcovmerge", {})
+                comparison: dict[str, object] = {
+                    "method": XXL_COMPARISON_METHOD,
+                    "status": "NOT_RUN",
+                }
+                if lcov_result.get("status") == "OK" and lcovmerge_result.get("status") == "OK":
+                    try:
+                        comparator = subprocess.run(
+                            [sys.executable, "-I", str(ROOT / "bench/compare_lcov.py"),
+                             str(output), str(work / f"{name}.lcov.info")],
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            check=False, timeout=args.timeout,
+                        )
+                        detail = comparator.stdout.strip()
+                        comparison.update({
+                            "status": "PASS" if comparator.returncode == 0 else "FAIL",
+                            "exit_code": comparator.returncode,
+                            "details": detail,
+                        })
+                    except subprocess.TimeoutExpired:
+                        detail = f"TIMEOUT after {args.timeout} seconds"
+                        comparison.update({"status": "TIMEOUT", "exit_code": 124,
+                                           "details": detail})
+                    report.append(f"{name} (lcovmerge vs lcov semantic comparison): {detail}")
+                    if comparison["status"] != "PASS":
+                        exit_code = 1
+                else:
+                    report.append(f"{name} (lcovmerge vs lcov semantic comparison): NOT_RUN; tool status not OK")
+                    comparison["details"] = "comparison requires successful lcovmerge and lcov outputs"
+                    exit_code = 1
+                dataset_result["comparison"] = {"lcovmerge_vs_lcov": comparison}
+
+            repeat_counts = {
+                "lcovmerge": lcovmerge_runs or 1,
+                "lcov": 1 if name == "XXL" else (args.hyperfine_runs or 1),
+                "lcov-result-merger": 1 if name == "XXL" else (args.hyperfine_runs or 1),
+            }
+            dataset_result["measurement"] = {
+                "hyperfine_runs": lcovmerge_runs,
+                "repeat_counts": repeat_counts,
+                "warmup_count": 1 if use_hyperfine else 0,
+                "timeout_seconds": args.timeout,
+                "rss_source": ("/usr/bin/time -v per measured hyperfine sample"
+                               if use_hyperfine and platform.system() == "Linux" else
+                               "hyperfine memory_peak_resident" if use_hyperfine else
+                               "/usr/bin/time -l" if platform.system() == "Darwin" else
+                               "/usr/bin/time -v"),
+            }
             dataset_results.append(dataset_result)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text("\n".join(report) + "\n", encoding="utf-8")
     if args.json_report:
+        def command_version(command: list[str]) -> str:
+            try:
+                process = subprocess.run(command, text=True, stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, check=False, timeout=10)
+                return process.stdout.strip().splitlines()[0]
+            except (OSError, subprocess.TimeoutExpired, IndexError):
+                return "unknown"
+
+        if hasattr(os, "sysconf"):
+            try:
+                memory_bytes = int(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
+            except (OSError, ValueError):
+                memory_bytes = 0
+        else:
+            memory_bytes = 0
+        compiler = command_version([*shlex.split(os.environ.get("CC", "cc")), "--version"])
+        lcov_version = command_version([lcov, "--version"]) if lcov else "not installed"
+        revision = command_version(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
+        method = {
+            "runner": "bench/run.py",
+            "timeout_seconds": args.timeout,
+            "repeat_counts": {
+                item["name"]: item.get("measurement", {}).get("repeat_counts", {})
+                for item in dataset_results
+            },
+            "warmup_count": 1 if use_hyperfine else 0,
+            "wall_time_summary": "median of measured hyperfine runs" if use_hyperfine else "single run",
+            "rss_source": ("/usr/bin/time -v per measured hyperfine sample"
+                           if use_hyperfine and platform.system() == "Linux" else
+                           "hyperfine memory_peak_resident" if use_hyperfine else
+                           "/usr/bin/time -l" if platform.system() == "Darwin" else
+                           "/usr/bin/time -v" if use_time_wrapper else "unavailable"),
+            "cache_state": "no explicit cache flush; one hyperfine warmup where used; machine load uncontrolled",
+            "comparison_method": XXL_COMPARISON_METHOD if "XXL" in names else None,
+            "text_report": str(args.report),
+        }
+        host = {
+            "runner_label": f"local-{platform.system().lower()}",
+            "os": platform.platform(),
+            "kernel": platform.release(),
+            "cpu_model": platform.processor() or "unknown",
+            "logical_cores": os.cpu_count() or 1,
+            "memory_bytes": memory_bytes,
+            "compiler": compiler,
+            "lcov": lcov_version,
+        }
         args.json_report.parent.mkdir(parents=True, exist_ok=True)
         args.json_report.write_text(json.dumps({
             "schema_version": 1,
             "measurement_date": time.strftime("%Y-%m-%d", time.gmtime()),
-            "method": {
-                "hyperfine_runs": args.hyperfine_runs,
-                "warmup_count": 1 if args.hyperfine_runs else 0,
-                "timeout_seconds": args.timeout,
-                "rss_source": ("/usr/bin/time -v per measured hyperfine sample"
-                               if args.hyperfine_runs and platform.system() == "Linux" else
-                               "hyperfine memory_peak_resident" if args.hyperfine_runs else
-                               "/usr/bin/time -v" if platform.system() != "Darwin" else
-                               "/usr/bin/time -l"),
-                "text_report": str(args.report),
+            "host": host,
+            "source": {"repository": "local/lcovmerge", "revision": revision},
+            "method": method,
+            "tool_labels": {
+                "lcovmerge": command_version([str(binary), "--version"]),
+                "lcov": lcov_version,
             },
             "datasets": dataset_results,
         }, indent=2) + "\n", encoding="utf-8")

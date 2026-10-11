@@ -20,8 +20,9 @@ The fixture parameters and generator switches match `bench/run.py` exactly:
 | --- | ---: | ---: | ---: | ---: |
 | S | 8 | 56 | 23,000 | 4242 |
 | M | 32 | 220 | 16,000 | 4242 |
+| XXL (`bench/run.py` only) | 128 | 480 | 32,000 | 4242 |
 
-The command uses `tools/gen-lcov.py --checksums --benchmark-compatible`. Generated input shards are removed on normal exit and handled signals. The result directory retains `report.txt`, captured command output and timing logs, and each successful merged output for inspection. The report lists commands with their actual expanded input paths and records versions and measurements; the temporary shard paths in those command lines are removed after the run.
+`bench/reproduce.sh` accepts S and M. The XXL workload is run through `bench/run.py` and adds `--lcov-valid` so lcov 2.6 accepts the generated function records. All workloads use `tools/gen-lcov.py --checksums --benchmark-compatible`. Generated input shards are removed on normal exit and handled signals. The result directory retains `report.txt`, captured command output and timing logs, and each successful merged output for inspection. The report lists commands with their actual expanded input paths and records versions and measurements; the temporary shard paths in those command lines are removed after the run.
 
 ## Read the results
 

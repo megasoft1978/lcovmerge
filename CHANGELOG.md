@@ -6,6 +6,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add an XXL local benchmark workload targeting about 20 GB of LCOV input, with disk-space checks, peak-RSS measurements, and a streaming semantic comparison against lcov.
+
 ### Documentation
 
 - Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
