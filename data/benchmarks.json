@@ -1,7 +1,7 @@
 {
   "version": "1.0.2",
   "measured_on": "2026-10-11",
-  "source": "bench/run.py, hyperfine 2.0.0, tools/gen-lcov.py --benchmark-compatible; tools/gen-path-heavy.py; XXL v1.0.2 rerun",
+  "source": "bench/run.py; Hyperfine 2.0.0; Apple Clang profile-guided build trained on Dataset M; Node.js 24.18.0/npm 12.2.0; LCOV 2.6; lcov-result-merger 6.0.0",
   "external_evidence": {
     "bazel_issue_26383": {
       "input_description": "two LCOV files of several hundred megabytes",
@@ -12,75 +12,11 @@
     }
   },
   "tool_labels": {
-    "lcovmerge": "lcovmerge 1.0.2",
+    "lcovmerge": "lcovmerge 1.0.2 (PGO)",
     "lcov": "lcov 2.6",
     "lcov-result-merger": "lcov-result-merger 6.0.0",
-    "grcov": "grcov 0.10.7 (not measured in this validation run)"
+    "grcov": "grcov 0.10.8 (not measured in this validation run)"
   },
-  "optimization_trials": [
-    {
-      "name": "Apple Clang profile-guided build",
-      "measured_on": "2026-10-11",
-      "host": {
-        "os": "macOS 27.0 arm64",
-        "cpu": "Apple M5 Max",
-        "cores": 18,
-        "memory_gib": 64
-      },
-      "source_commit": "91da2e967ecf",
-      "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2)",
-      "training": "One instrumented run on generated Dataset M (32 shards); the same profile was tested on S and M.",
-      "instrumentation_flags": ["-O2", "-mcpu=native", "-fprofile-instr-generate"],
-      "build_flags": ["-O2", "-mcpu=native", "-fprofile-instr-use"],
-      "method": "One hyperfine warmup and three measured runs per binary; medians shown. Peak resident memory is the median across measured runs.",
-      "results": [
-        {
-          "dataset": "S",
-          "input_bytes": 100000000,
-          "baseline": {
-            "build": "portable -O2",
-            "time_median_s": 0.247637125,
-            "rss_median_bytes": 3145728,
-            "run_count": 3,
-            "output_sha256": "935220d7f0dd8f00f9e31b9893d76640c4500cf3314d25214d1e87578b77375f"
-          },
-          "optimized": {
-            "build": "-O2 -mcpu=native with Dataset M PGO profile",
-            "time_median_s": 0.212781375,
-            "rss_median_bytes": 3162112,
-            "run_count": 3,
-            "output_sha256": "935220d7f0dd8f00f9e31b9893d76640c4500cf3314d25214d1e87578b77375f"
-          }
-        },
-        {
-          "dataset": "M",
-          "input_bytes": 1118686233,
-          "baseline": {
-            "build": "portable -O2",
-            "time_median_s": 3.655345834,
-            "rss_median_bytes": 5537792,
-            "run_count": 3,
-            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
-          },
-          "native_o2": {
-            "build": "-O2 -mcpu=native, without PGO",
-            "time_median_s": 3.644842417,
-            "rss_median_bytes": 5554176,
-            "run_count": 3,
-            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
-          },
-          "optimized": {
-            "build": "-O2 -mcpu=native with Dataset M PGO profile",
-            "time_median_s": 3.262927917,
-            "rss_median_bytes": 5554176,
-            "run_count": 3,
-            "output_sha256": "3e549c4a18c0aad766195f34c6834d8bbcd129838a4e15c99d2b43ac2c826fa6"
-          }
-        }
-      ],
-      "caveat": "Experimental lcovmerge-only compiler tuning on one Apple M5 Max host. It is separate from the standard comparator table and is not a cross-platform or general speed claim."
-    }
-  ],
   "host": {
     "os": "macOS 27.0 arm64",
     "cpu": "Apple M5 Max",
@@ -94,29 +30,30 @@
     "cpu": "Apple M5 Max",
     "cores": 18,
     "memory_bytes": 68719476736,
-    "compiler": "Apple clang 21.0.0",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
     "python": "3.12.8",
-    "node": "v24.14.0",
-    "npm": "11.9.0",
+    "node": "v24.18.0",
+    "npm": "12.2.0",
     "lcov": "2.6-0",
-    "lcov-result-merger": "not measured in the XXL rerun",
+    "lcov-result-merger": "6.0.0; prior results retained for non-XXL workloads from Node v24.14.0; XXL run used Node v24.18.0 and timed out",
     "hyperfine": "2.0.0"
   },
   "method": {
     "timeout_seconds": 1800,
     "comparison_runs_per_tool": 1,
     "repeat_counts": {
-      "S": 10,
+      "S": 5,
       "M": 5,
-      "L": 2,
+      "L": 5,
       "XL-single": 5,
       "PATH-HEAVY": 5,
-      "REAL": 0
+      "REAL": 0,
+      "XXL": 3
     },
-    "large_runs": "Baseline and final lcovmerge binaries were paired on the same generated fixture. S used three warmups and ten measured runs; the other paired workloads used one warmup. Dataset M jobs scaling used one warmup and five measured runs per setting.",
-    "measurement_order": "lcovmerge baseline then final in each hyperfine comparison; lcov 2.6 was measured once by bench/run.py after the baseline merge for each dataset.",
+    "large_runs": "All listed lcovmerge results use the Dataset M-trained profile-guided build. S, M, L, XL-single, and PATH-HEAVY used one warmup and five measured runs; XXL used one warmup and three measured runs. LCOV 2.6 was measured once on XXL. lcov-result-merger 6.0.0 did not finish its XXL warmup before the user-requested 60-minute cutoff; no measured run completed.",
+    "measurement_order": "PGO lcovmerge timing was collected on each deterministic fixture; LCOV 2.6 and lcov-result-merger 6.0.0 were invoked in the XXL run. The lcov-result-merger warmup was stopped at the 60-minute cutoff.",
     "cache_state": "No explicit cache flush. Paired measurements used one warmup except S, which used three; operating-system cache and machine load remain uncontrolled.",
-    "rss_source": "XXL lcovmerge and lcov peak RSS use hyperfine 2.0 memory_peak_resident. Older dataset lcov and lcov-result-merger RSS values retain earlier measurements.",
+    "rss_source": "PGO lcovmerge RSS uses Hyperfine 2.0.0 memory_peak_resident; XXL LCOV RSS uses the measured system peak. The XXL lcov-result-merger value is the largest periodic process RSS sample before cutoff; its full-run peak is unavailable. Earlier comparator RSS values retain their recorded measurements.",
     "throughput": "Decimal MB/s. lcovmerge uses input bytes divided by median hyperfine wall time; lcov 2.6 uses the single bench/run.py wall time and reports throughput only after success."
   },
   "datasets": [
@@ -128,29 +65,53 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 154.66037,
-          "rss_bytes": 32555008,
-          "throughput_mb_s": 131.1,
+          "time_s": 80.966641,
+          "rss_bytes": 6684672,
+          "rss_mib": 6.37109375,
+          "throughput_mb_s": 250.4,
           "status": "OK",
           "exit_code": 0,
-          "run_count": 3
+          "run_count": 3,
+          "run_samples_s": [
+            80.966641375,
+            81.182316291,
+            73.54196875
+          ],
+          "rss_samples_bytes": [
+            6684672,
+            6668288,
+            6668288
+          ],
+          "build": "profile-guided Apple Clang; Dataset M-trained profile",
+          "rss_source": "Hyperfine 2.0.0 memory_peak_resident; maximum over three measured runs"
         },
         "lcov": {
-          "time_s": 893.540574,
-          "rss_bytes": 2853126144,
-          "throughput_mb_s": 22.7,
+          "time_s": 1080.631659,
+          "rss_bytes": 3064250368,
+          "rss_mib": 2922.666015625,
+          "throughput_mb_s": 18.8,
           "status": "OK",
           "exit_code": 0,
           "run_count": 1,
-          "rss_source": "measured in the 2026-10-11 XXL run"
+          "rss_source": "measured in the 2026-10-11 XXL rerun"
         },
         "lcov-result-merger": {
-          "time_s": null,
+          "time_s": 3615.812606,
           "rss_bytes": null,
+          "rss_mib": null,
+          "rss_sampled_bytes": 2507653120,
+          "rss_sample_duration_s": 3600,
+          "rss_display": "2.34 GiB peak sampled during run; full-run peak unavailable",
           "throughput_mb_s": null,
-          "status": "Not measured",
-          "exit_code": null,
-          "run_count": 0
+          "status": "TIMEOUT",
+          "exit_code": 124,
+          "observed_exit_code": -15,
+          "termination_signal": "SIGTERM",
+          "cutoff_seconds": 3600,
+          "run_count": 0,
+          "warmup_count": 1,
+          "timeout_note": "Stopped at the 60-minute cutoff before a measured run completed.",
+          "rss_source": "periodic process RSS samples; full-run peak unavailable"
         }
       },
       "comparison": {
@@ -169,12 +130,37 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 0.259979,
-          "rss_mib": 2.953125,
-          "rss_bytes": 3096576,
-          "throughput_mb_s": 384.6,
+          "time_s": 0.191332,
+          "rss_bytes": 2605056,
+          "throughput_mb_s": 522.6,
           "status": "OK",
-          "exit_code": 0
+          "exit_code": 0,
+          "run_count": 5,
+          "successful_run_count": 5,
+          "run_samples_s": [
+            0.19133191600000002,
+            0.192389,
+            0.191432917,
+            0.1888775,
+            0.189137583
+          ],
+          "sample_exit_codes": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "rss_samples_bytes": [
+            2588672,
+            2588672,
+            2605056,
+            2605056,
+            2605056
+          ],
+          "warmup_count": 1,
+          "rss_mib": 2.484375,
+          "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
           "time_s": 5.317,
@@ -201,7 +187,7 @@
           "throughput_mb_s": 378.3,
           "run_count": 10
         },
-        "speedup_vs_baseline": 1.0166,
+        "speedup_vs_baseline": 1.3814,
         "lcov_2_6_single_run_time_s": 5.317,
         "speedup_vs_lcov": 20.452
       }
@@ -214,12 +200,37 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 3.488279,
-          "rss_mib": 5.125,
-          "rss_bytes": 5373952,
-          "throughput_mb_s": 320.7,
+          "time_s": 2.897713,
+          "rss_bytes": 3375104,
+          "throughput_mb_s": 386.1,
           "status": "OK",
-          "exit_code": 0
+          "exit_code": 0,
+          "run_count": 5,
+          "successful_run_count": 5,
+          "run_samples_s": [
+            2.887148667,
+            2.900636708,
+            2.897712542,
+            2.902525791,
+            2.884951083
+          ],
+          "sample_exit_codes": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "rss_samples_bytes": [
+            3375104,
+            3375104,
+            3375104,
+            3375104,
+            3375104
+          ],
+          "warmup_count": 1,
+          "rss_mib": 3.21875,
+          "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
           "time_s": 50.542,
@@ -246,7 +257,7 @@
           "throughput_mb_s": 311.4,
           "run_count": 5
         },
-        "speedup_vs_baseline": 1.0297,
+        "speedup_vs_baseline": 1.2396,
         "lcov_2_6_single_run_time_s": 50.542,
         "speedup_vs_lcov": 14.489
       }
@@ -259,12 +270,37 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 27.723422,
-          "rss_mib": 25.0625,
-          "rss_bytes": 26279936,
-          "throughput_mb_s": 175.1,
+          "time_s": 14.081418,
+          "rss_bytes": 4456448,
+          "throughput_mb_s": 344.7,
           "status": "OK",
-          "exit_code": 0
+          "exit_code": 0,
+          "run_count": 5,
+          "successful_run_count": 5,
+          "run_samples_s": [
+            14.164762958,
+            14.293410417,
+            13.91758975,
+            14.081418458,
+            14.026805875
+          ],
+          "sample_exit_codes": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "rss_samples_bytes": [
+            4456448,
+            4423680,
+            4407296,
+            4456448,
+            4456448
+          ],
+          "warmup_count": 1,
+          "rss_mib": 4.25,
+          "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
           "time_s": 203.235,
@@ -291,7 +327,7 @@
           "throughput_mb_s": 167.8,
           "run_count": 2
         },
-        "speedup_vs_baseline": 1.0433,
+        "speedup_vs_baseline": 2.054,
         "lcov_2_6_single_run_time_s": 203.235,
         "speedup_vs_lcov": 7.331
       }
@@ -304,12 +340,37 @@
       "description": "Generated single tracefile.",
       "results": {
         "lcovmerge": {
-          "time_s": 1.455709,
-          "rss_mib": 2.28125,
-          "rss_bytes": 2392064,
-          "throughput_mb_s": 511.8,
+          "time_s": 1.136468,
+          "rss_bytes": 2310144,
+          "throughput_mb_s": 655.5,
           "status": "OK",
-          "exit_code": 0
+          "exit_code": 0,
+          "run_count": 5,
+          "successful_run_count": 5,
+          "run_samples_s": [
+            1.129616083,
+            1.136467584,
+            1.1746645,
+            1.1621677080000001,
+            1.13055175
+          ],
+          "sample_exit_codes": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "rss_samples_bytes": [
+            2293760,
+            2293760,
+            2293760,
+            2310144,
+            2293760
+          ],
+          "warmup_count": 1,
+          "rss_mib": 2.203125,
+          "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
           "time_s": 37.803,
@@ -336,7 +397,7 @@
           "throughput_mb_s": 521.2,
           "run_count": 5
         },
-        "speedup_vs_baseline": 0.9819,
+        "speedup_vs_baseline": 1.2577,
         "lcov_2_6_single_run_time_s": 37.803,
         "speedup_vs_lcov": 25.969
       }
@@ -349,12 +410,37 @@
       "description": "Generated input with two million distinct source paths.",
       "results": {
         "lcovmerge": {
-          "time_s": 2.121826,
-          "rss_mib": 20.234375,
-          "rss_bytes": 21217280,
-          "throughput_mb_s": 61.3,
+          "time_s": 2.712556,
+          "rss_bytes": 18644992,
+          "throughput_mb_s": 47.9,
           "status": "OK",
-          "exit_code": 0
+          "exit_code": 0,
+          "run_count": 5,
+          "successful_run_count": 5,
+          "run_samples_s": [
+            2.708324584,
+            2.725274667,
+            2.736931875,
+            2.708620334,
+            2.712556
+          ],
+          "sample_exit_codes": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "rss_samples_bytes": [
+            18644992,
+            18612224,
+            18628608,
+            18644992,
+            18644992
+          ],
+          "warmup_count": 1,
+          "rss_mib": 17.78125,
+          "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
           "time_s": 98.805,
@@ -385,7 +471,7 @@
           "throughput_mb_s": 58.2,
           "run_count": 5
         },
-        "speedup_vs_baseline": 1.0521,
+        "speedup_vs_baseline": 0.8229,
         "lcov_2_6_single_run_time_s": 98.805,
         "speedup_vs_lcov": null
       }
@@ -427,55 +513,131 @@
   "scaling": {
     "M": {
       "default": {
-        "time_s": 3.619627,
-        "rss_bytes": 5406720,
-        "rss_mib": 5.15625,
-        "throughput_mb_s": 309.1,
+        "time_s": 2.897713,
+        "rss_bytes": 3375104,
+        "throughput_mb_s": 386.1,
         "status": "OK",
-        "exit_code": 0
+        "exit_code": 0,
+        "run_count": 5,
+        "run_samples_s": [
+          2.887148667,
+          2.900636708,
+          2.897712542,
+          2.902525791,
+          2.884951083
+        ],
+        "rss_samples_bytes": [
+          3375104,
+          3375104,
+          3375104,
+          3375104,
+          3375104
+        ],
+        "warmup_count": 1
       },
       "1": {
-        "time_s": 4.159647,
-        "rss_bytes": 5406720,
-        "rss_mib": 5.15625,
-        "throughput_mb_s": 268.9,
+        "time_s": 2.890234,
+        "rss_bytes": 3375104,
+        "throughput_mb_s": 387.1,
         "status": "OK",
-        "exit_code": 0
+        "exit_code": 0,
+        "run_count": 5,
+        "run_samples_s": [
+          2.9326381660000003,
+          2.897194,
+          2.890234167,
+          2.872159,
+          2.860650541
+        ],
+        "rss_samples_bytes": [
+          3342336,
+          3342336,
+          3375104,
+          3342336,
+          3358720
+        ],
+        "warmup_count": 1
       },
       "2": {
-        "time_s": 3.703596,
-        "rss_bytes": 5423104,
-        "rss_mib": 5.171875,
-        "throughput_mb_s": 302.1,
+        "time_s": 2.905369,
+        "rss_bytes": 3375104,
+        "throughput_mb_s": 385.0,
         "status": "OK",
-        "exit_code": 0
+        "exit_code": 0,
+        "run_count": 5,
+        "run_samples_s": [
+          2.943486542,
+          2.892545417,
+          2.8622461660000003,
+          2.998745166,
+          2.905369208
+        ],
+        "rss_samples_bytes": [
+          3358720,
+          3375104,
+          3358720,
+          3358720,
+          3375104
+        ],
+        "warmup_count": 1
       },
       "4": {
-        "time_s": 3.695652,
-        "rss_bytes": 5423104,
-        "rss_mib": 5.171875,
-        "throughput_mb_s": 302.7,
+        "time_s": 2.878825,
+        "rss_bytes": 3375104,
+        "throughput_mb_s": 388.6,
         "status": "OK",
-        "exit_code": 0
+        "exit_code": 0,
+        "run_count": 5,
+        "run_samples_s": [
+          2.878825292,
+          2.915997791,
+          2.871468375,
+          2.852757875,
+          3.049469375
+        ],
+        "rss_samples_bytes": [
+          3375104,
+          3375104,
+          3342336,
+          3358720,
+          3358720
+        ],
+        "warmup_count": 1
       },
       "8": {
-        "time_s": 3.726964,
-        "rss_bytes": 5406720,
-        "rss_mib": 5.15625,
-        "throughput_mb_s": 300.2,
+        "time_s": 2.90778,
+        "rss_bytes": 3375104,
+        "throughput_mb_s": 384.7,
         "status": "OK",
-        "exit_code": 0
+        "exit_code": 0,
+        "run_count": 5,
+        "run_samples_s": [
+          2.843102083,
+          2.907779542,
+          2.986133375,
+          2.98099225,
+          2.885529333
+        ],
+        "rss_samples_bytes": [
+          3358720,
+          3358720,
+          3358720,
+          3375104,
+          3325952
+        ],
+        "warmup_count": 1
       }
     }
   },
   "caveats": [
     "Measurements cover one macOS 27 arm64 Apple M5 Max host; results are not a cross-platform claim.",
     "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available.",
-    "lcovmerge baseline and final times use paired hyperfine runs on the same deterministic fixture; run counts are listed per workload. Cache warmups were used, but no explicit cache flush was applied.",
-    "lcov 2.6 ran once per dataset after the baseline merge. Its PATH-HEAVY run exited with status 1 after 98.805 s; no valid speedup or current-run RSS is reported for that failure.",
-    "The XXL lcov comparator time and peak resident memory were measured in the 2026-10-11 rerun; successful lcov memory figures for earlier datasets remain from the prior canonical benchmark.",
-    "lcov-result-merger was not measured in the XXL rerun; earlier datasets retain their separately recorded measurements.",
-    "Dataset M sorted regular shards use the direct single-threaded path; --jobs timings record run variation and do not demonstrate worker scaling.",
+    "All displayed lcovmerge measurements use a Dataset M-trained Apple Clang profile-guided host build. Release binaries remain portable target builds; this is not a cross-platform speed claim.",
+    "lcovmerge timing uses one hyperfine warmup and five measured runs for S, M, L, XL-single, and PATH-HEAVY; XXL uses one warmup and three measured runs. Cache warmups were used, but no explicit cache flush was applied.",
+    "lcov 2.6 ran once on the XXL input and completed in 1080.632 s. Its PATH-HEAVY run exited with status 1 after 98.805 s; no valid speedup or current-run peak resident memory is reported for that failure.",
+    "lcov-result-merger 6.0.0 did not finish its XXL warmup before the 60-minute cutoff. It was stopped with SIGTERM after 3615.813 s wall time; no measured run completed. Periodic RSS samples peaked at 2.34 GiB, but the full-run peak is unavailable. Other lcov-result-merger rows are earlier measurements made with Node v24.14.0.",
+    "Dataset M sorted regular shards use the direct single-threaded path; --jobs timings show run variation, not the effect of adding workers.",
+    "grcov 0.10.8 is identified as the current release but was not included in the measured benchmark runs.",
     "The external Bazel issue is context only and was not measured with these commands."
   ],
   "host_results": [
@@ -1010,5 +1172,27 @@
       ],
       "platform": "windows"
     }
-  ]
+  ],
+  "default_build": {
+    "optimization": "profile-guided",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+    "target": "host-specific Apple M5 Max build",
+    "training_dataset": "M",
+    "training_input_bytes": 1118686233,
+    "training_source_revision": "2882b1f2ef784cfee4ca6f5482fc028ebe3137b8",
+    "training_method": "One instrumented merge of generated Dataset M; LLVM profile reused for all listed lcovmerge workloads.",
+    "instrumentation_flags": [
+      "-O2",
+      "-mcpu=native",
+      "-fprofile-instr-generate"
+    ],
+    "build_flags": [
+      "-O2",
+      "-mcpu=native",
+      "-fprofile-instr-use"
+    ],
+    "profile_sha256": "69adeae7b6179cb5b9d1f88cd21e9a60a1b595d5e96fa17c250c7a781c4e9533",
+    "binary_sha256": "403994a28e278ceae3c758f671cbded02f89a56c0b684459784628a96c1eee5b",
+    "release_build": "portable target builds; no host-specific PGO profile"
+  }
 }

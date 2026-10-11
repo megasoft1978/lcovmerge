@@ -266,6 +266,21 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def package_version(binary: pathlib.Path, package_name: str) -> str:
+    """Find an npm CLI package version from its resolved executable path."""
+    for parent in (binary.resolve().parent, *binary.resolve().parents):
+        package_json = parent / "package.json"
+        if not package_json.is_file():
+            continue
+        try:
+            metadata = json.loads(package_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if metadata.get("name") == package_name:
+            return str(metadata.get("version", "unknown"))
+    return "unknown"
+
+
 def input_manifest(inputs: list[pathlib.Path]) -> list[dict[str, object]]:
     return [{"index": index, "size_bytes": path.stat().st_size, "sha256": sha256_file(path)}
             for index, path in enumerate(inputs)]
@@ -639,7 +654,10 @@ def main() -> int:
             "memory_bytes": memory_bytes,
             "compiler": compiler,
             "lcov": lcov_version,
-            "lcov_result_merger": command_version([node, "--version"]) if node else "not installed",
+            "node": command_version(["node", "--version"]) if node else "not installed",
+            "npm": command_version(["npm", "--version"]) if node else "not installed",
+            "lcov_result_merger": (package_version(node_candidate, "lcov-result-merger")
+                                   if node_candidate else "not installed"),
         }
         binary_identity = {
             "path": str(binary),
@@ -668,6 +686,8 @@ def main() -> int:
             "tool_labels": {
                 "lcovmerge": command_version([str(binary), "--version"]),
                 "lcov": lcov_version,
+                "lcov-result-merger": (package_version(node_candidate, "lcov-result-merger")
+                                       if node_candidate else "not installed"),
             },
             "datasets": dataset_results,
         }, indent=2) + "\n", encoding="utf-8")

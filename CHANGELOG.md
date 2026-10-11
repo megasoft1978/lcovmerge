@@ -23,6 +23,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Documentation
 
 - Display benchmark input sizes, elapsed times, and memory in readable units across the README and site; retain exact measurements in the published JSON record.
+- Use the profile-guided host build in the main benchmark presentation and record the lcov-result-merger 6.0.0 XXL measurement with updated toolchain provenance.
 - Simplify the README and landing page around a generated, largest-valid-pair benchmark summary and a short install/run path.
 - Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
 - Update public-CI compatibility evidence with the 2026-10-11 rerun on lcovmerge 1.0.2 and its aggregate normalized-difference scope.

@@ -61,7 +61,7 @@ def check_featured_rendering(root, renderer):
     display_cases = (
         (renderer.seconds_display(0), "0 s"),
         (renderer.seconds_display(0.259979), "260 ms"),
-        (renderer.seconds_display(154.66037), "2m 34.7s"),
+        (renderer.seconds_display(80.966641), "1m 21s"),
         (renderer.seconds_display(893.540574), "14m 53.5s"),
         (renderer.input_size_display(20_274_194_280), "20.3 GB"),
         (renderer.bytes_display(2_853_126_144, binary=True), "2.66 GiB"),
@@ -76,18 +76,12 @@ def check_featured_rendering(root, renderer):
     if section_text(readme, renderer.README_BENCHMARK_START,
                     renderer.README_BENCHMARK_END) != expected_readme.strip():
         raise AssertionError("stale generated README benchmark section")
-    expected_optimization = renderer.optimization_readme()
-    if section_text(readme, renderer.README_OPTIMIZATION_START,
-                    renderer.README_OPTIMIZATION_END) != expected_optimization.strip():
-        raise AssertionError("stale generated README optimization section")
+    if "Experimental profile-guided build" in readme:
+        raise AssertionError("README must fold profile-guided results into the main benchmark")
 
     editorial = re.sub(
         re.escape(renderer.README_BENCHMARK_START) + r".*?" +
         re.escape(renderer.README_BENCHMARK_END), " ", readme, flags=re.DOTALL,
-    )
-    editorial = re.sub(
-        re.escape(renderer.README_OPTIMIZATION_START) + r".*?" +
-        re.escape(renderer.README_OPTIMIZATION_END), " ", editorial, flags=re.DOTALL,
     )
     editorial = re.sub(r"```.*?```", " ", editorial, flags=re.DOTALL)
     editorial = re.sub(r"<!--.*?-->", " ", editorial, flags=re.DOTALL)
@@ -121,7 +115,7 @@ def check_featured_rendering(root, renderer):
             raise AssertionError(f"homepage prose did not render {code_markup} as code")
     if len(re.findall(r"<section\b", home)) > 4:
         raise AssertionError("landing page has more than four sections")
-    if "20.3 GB" not in home or "2m 34.7s" not in home:
+    if "20.3 GB" not in home or "1m 21s" not in home:
         raise AssertionError("homepage benchmark omitted readable input or elapsed units")
     if 'role="tablist"' in home:
         raise AssertionError("landing page should not add tabs")
@@ -259,14 +253,25 @@ def check_benchmark_data(root, renderer):
         for dataset in host.get("datasets", []):
             for tool, result in dataset.get("results", {}).items():
                 check_result(result, f"{host.get('label')} / {dataset.get('name')} / {tool}")
-    for trial in data.get("optimization_trials", []):
-        for result in trial.get("results", []):
-            baseline = result.get("baseline", {})
-            optimized = result.get("optimized", {})
-            if baseline.get("output_sha256") != optimized.get("output_sha256"):
-                raise AssertionError(f"PGO output hashes differ for {result.get('dataset')}")
-            if baseline.get("run_count", 0) <= 0 or optimized.get("run_count", 0) <= 0:
-                raise AssertionError(f"PGO trial has no measured runs for {result.get('dataset')}")
+    default_build = data.get("default_build", {})
+    if default_build.get("optimization") != "profile-guided":
+        raise AssertionError("benchmark default build must record profile-guided optimization")
+    if not default_build.get("training_dataset") or not default_build.get("compiler"):
+        raise AssertionError("benchmark default build is missing training or compiler provenance")
+    labels = data.get("tool_labels", {})
+    if "(PGO)" not in labels.get("lcovmerge", ""):
+        raise AssertionError("main lcovmerge benchmark label must identify the profile-guided build")
+    if labels.get("lcov-result-merger") != "lcov-result-merger 6.0.0":
+        raise AssertionError("benchmark must identify lcov-result-merger 6.0.0")
+    xxl = next((item for item in data["datasets"] if item.get("name") == "XXL"), None)
+    if xxl is None:
+        raise AssertionError("benchmark is missing the XXL result")
+    xxl_merger = xxl.get("results", {}).get("lcov-result-merger", {})
+    if xxl_merger.get("status") not in {"OK", "TIMEOUT"}:
+        raise AssertionError("XXL lcov-result-merger attempt must be reported as measured or timed out")
+    if xxl_merger.get("status") == "TIMEOUT":
+        if xxl_merger.get("cutoff_seconds") != 3600 or xxl_merger.get("run_count") != 0:
+            raise AssertionError("XXL merger timeout must record its 60-minute cutoff and no completed run")
 
 
 def check_public_compatibility_copy(text, source):
@@ -358,6 +363,8 @@ def main():
     check_featured_rendering(root, renderer)
     page_path = root / "docs" / "site" / "benchmarks.html"
     page = page_path.read_text(encoding="utf-8")
+    if "Experimental profile-guided build" in page:
+        raise AssertionError("site must fold profile-guided results into the main benchmark")
     if "20,274,194,280 bytes" in page or "657,966,211 bytes" in page:
         raise AssertionError("site benchmark page displays raw byte counts")
     if "154.66037 s" in page or "893.540574 s" in page:

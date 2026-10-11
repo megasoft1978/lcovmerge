@@ -5,31 +5,20 @@ lcovmerge combines exported LCOV `.info` files into one for your existing report
 ## The benchmark
 
 <!-- README-BENCHMARK:START -->
-**Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-11. Builds: lcovmerge 1.0.2 / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger 1 measured run.**
+**Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-11. Builds: lcovmerge 1.0.2 (PGO) / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger timeout at 1h 15.8s.**
 
 | Tool | Time | Peak resident memory | Runs / status |
 | --- | ---: | ---: | --- |
-| lcovmerge 1.0.2 | 2m 34.7s | 31.05 MiB | 3 measured runs; median time · OK |
-| lcov 2.6 | 14m 53.5s | 2.66 GiB | 1 measured run · OK |
-| lcov-result-merger 6.0.0 | Not measured | — | Not measured · Not measured |
+| lcovmerge 1.0.2 (PGO) | 1m 21s | 6.38 MiB | 3 measured runs; median time · OK |
+| lcov 2.6 | 18m 0.6s | 2.85 GiB | 1 measured run · OK |
+| lcov-result-merger 6.0.0 | TIMEOUT · stopped after 1h 15.8s | 2.34 GiB peak sampled during run; full-run peak resident memory unavailable | Not measured · TIMEOUT |
 
-**5.8× faster than lcov 2.6; 87.6× less recorded peak resident memory than lcov 2.6.**
+**13.3× faster than lcov 2.6; 458.4× less recorded peak resident memory than lcov 2.6.**
+
+Dataset M-trained PGO; portable release binaries.
 
 Input sizes and durations are rounded for readability; exact measurements are in the [published benchmark record](data/benchmarks.json).
 <!-- README-BENCHMARK:END -->
-
-<!-- README-OPTIMIZATION:START -->
-### Experimental profile-guided build
-
-A separate Apple M5 Max experiment trained an Apple Clang profile on Dataset M and reused it on S and M. Against the standard portable `-O2` build, the tuned build was 14.1% faster on S and 10.7% faster on M, with peak resident memory increasing by 16 KiB on each dataset. The M-trained profile also beat the same native `-O2` build by 10.5% on M. Outputs matched byte for byte.
-
-| Dataset | Standard `-O2` | Profile-guided build | Time change | Peak memory change |
-| --- | ---: | ---: | ---: | ---: |
-| S (100 MB) | 248 ms / 3.00 MiB | 213 ms / 3.02 MiB | 14.1% faster | +16 KiB |
-| M (1.12 GB) | 3.66 s / 5.28 MiB | 3.26 s / 5.30 MiB | 10.7% faster | +16 KiB |
-
-This is a compiler-tuning experiment on one host, separate from the standard tool comparison above; it is not a release-build or cross-platform claim. The [benchmark report](docs/BENCHMARKS.md#experimental-profile-guided-build) records compiler flags, run counts, and hashes.
-<!-- README-OPTIMIZATION:END -->
 
 ## Try it (Linux x86-64)
 

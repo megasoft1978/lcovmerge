@@ -31,12 +31,8 @@ SITE_METHOD_START = "<!-- SITE-BENCHMARK-METHOD:START -->"
 SITE_METHOD_END = "<!-- SITE-BENCHMARK-METHOD:END -->"
 SITE_SCOPE_START = "<!-- SITE-BENCHMARK-SCOPE:START -->"
 SITE_SCOPE_END = "<!-- SITE-BENCHMARK-SCOPE:END -->"
-SITE_OPTIMIZATION_START = "<!-- SITE-BENCHMARK-OPTIMIZATION:START -->"
-SITE_OPTIMIZATION_END = "<!-- SITE-BENCHMARK-OPTIMIZATION:END -->"
 README_BENCHMARK_START = "<!-- README-BENCHMARK:START -->"
 README_BENCHMARK_END = "<!-- README-BENCHMARK:END -->"
-README_OPTIMIZATION_START = "<!-- README-OPTIMIZATION:START -->"
-README_OPTIMIZATION_END = "<!-- README-OPTIMIZATION:END -->"
 HOME_BENCHMARK_START = "<!-- HOME-BENCHMARK:START -->"
 HOME_BENCHMARK_END = "<!-- HOME-BENCHMARK:END -->"
 WINDOWS_VERIFICATION_SENTENCE = (
@@ -96,6 +92,7 @@ def context():
         f'Host: {host["os"]}, {host["cpu"]}, {host["cores"]} cores, '
         f'{host["memory_gib"]} GiB RAM; {host["cache"]}. '
         f'Measured: {DATA["measured_on"]}. lcovmerge runs by dataset: {repeats}. '
+        f'{default_build_note()} '
         f'Comparison runs per tool: {DATA["method"]["comparison_runs_per_tool"]}; '
         f'Per-command timeout: {timeout_minutes:g} minutes.'
     )
@@ -107,9 +104,18 @@ def display_tool_labels():
     labels = DATA["tool_labels"].copy()
     recorded_version = DATA.get("version")
     recorded_label = labels.get("lcovmerge", "")
-    if not recorded_version or recorded_label != f"lcovmerge {recorded_version}":
+    if not recorded_version or not recorded_label.startswith(f"lcovmerge {recorded_version}"):
         raise SystemExit("data/benchmarks.json version and lcovmerge tool label do not match")
     return labels
+
+
+def default_build_note():
+    build = DATA.get("default_build", {})
+    if not build:
+        return ""
+    return (
+        f'Dataset {build["training_dataset"]}-trained PGO; portable release binaries.'
+    )
 
 
 def full_table():
@@ -401,6 +407,8 @@ def featured_metadata(source):
         lcov_note += "; peak memory from earlier measurement"
     if merger.get("status") in {"NOT MEASURED", None}:
         merger_note = "not measured"
+    elif merger.get("status") == "TIMEOUT":
+        merger_note = f'timeout at {seconds_display(merger["time_s"])}'
     elif merger_runs:
         merger_note = f"{merger_runs} runs"
     elif is_earlier_timing("lcov-result-merger", merger):
@@ -436,115 +444,14 @@ def featured_readme():
         copy = ratio_copy(source, key)
         if copy:
             rows.extend(["", f"**{copy}**"])
+    if default_build_note():
+        rows.extend(["", default_build_note()])
     rows.extend([
         "",
         "Input sizes and durations are rounded for readability; exact measurements are in the "
         "[published benchmark record](data/benchmarks.json).",
     ])
     return "\n".join(rows)
-
-
-def optimization_readme():
-    trials = DATA.get("optimization_trials", [])
-    if not trials:
-        return ""
-    trial = trials[0]
-    by_name = {result["dataset"]: result for result in trial["results"]}
-    s_result = by_name["S"]
-    m_result = by_name["M"]
-    s_gain = (1 - s_result["optimized"]["time_median_s"] /
-              s_result["baseline"]["time_median_s"]) * 100
-    m_gain = (1 - m_result["optimized"]["time_median_s"] /
-              m_result["baseline"]["time_median_s"]) * 100
-    native_gain = (1 - m_result["optimized"]["time_median_s"] /
-                   m_result["native_o2"]["time_median_s"]) * 100
-    rows = [
-        "### Experimental profile-guided build",
-        "",
-        f'A separate {trial["host"]["cpu"]} experiment trained an Apple Clang profile on Dataset M and reused it on S and M. '
-        f'Against the standard portable `-O2` build, the tuned build was {s_gain:.1f}% faster on S and '
-        f'{m_gain:.1f}% faster on M, with peak resident memory increasing by '
-        f'{bytes_display(s_result["optimized"]["rss_median_bytes"] - s_result["baseline"]["rss_median_bytes"], binary=True).replace(".00 ", " ")} '
-        'on each dataset. The M-trained profile also beat the same native `-O2` build by '
-        f'{native_gain:.1f}% on M. Outputs matched byte for byte.',
-        "",
-        "| Dataset | Standard `-O2` | Profile-guided build | Time change | Peak memory change |",
-        "| --- | ---: | ---: | ---: | ---: |",
-    ]
-    for result in trial["results"]:
-        base = result["baseline"]
-        optimized = result["optimized"]
-        speedup = (1 - optimized["time_median_s"] / base["time_median_s"]) * 100
-        memory_delta = optimized["rss_median_bytes"] - base["rss_median_bytes"]
-        memory_delta_display = bytes_display(memory_delta, binary=True).replace(".00 ", " ")
-        rows.append(
-            f'| {result["dataset"]} ({input_size_display(result["input_bytes"])}) '
-            f'| {seconds_display(base["time_median_s"])} / {bytes_display(base["rss_median_bytes"], binary=True)} '
-            f'| {seconds_display(optimized["time_median_s"])} / {bytes_display(optimized["rss_median_bytes"], binary=True)} '
-            f'| {speedup:.1f}% faster | +{memory_delta_display} |'
-        )
-    rows.extend([
-        "",
-        "This is a compiler-tuning experiment on one host, separate from the standard tool comparison above; it is not a release-build or cross-platform claim. "
-        "The [benchmark report](docs/BENCHMARKS.md#experimental-profile-guided-build) records compiler flags, run counts, and hashes.",
-    ])
-    return "\n".join(rows)
-
-
-def site_optimization_trials():
-    trial = (DATA.get("optimization_trials") or [None])[0]
-    if not trial:
-        return ""
-    host = trial["host"]
-    rows = []
-    for result in trial["results"]:
-        baseline = result["baseline"]
-        optimized = result["optimized"]
-        speedup = (1 - optimized["time_median_s"] / baseline["time_median_s"]) * 100
-        memory_delta = optimized["rss_median_bytes"] - baseline["rss_median_bytes"]
-        memory_delta_display = bytes_display(memory_delta, binary=True).replace(".00 ", " ")
-        extra = ""
-        if result.get("native_o2"):
-            native = result["native_o2"]
-            native_gain = (1 - optimized["time_median_s"] / native["time_median_s"]) * 100
-            extra = (
-                f'<p class="small-note">Native <code>-O2</code> without PGO: '
-                f'{html.escape(seconds_display(native["time_median_s"]))}, '
-                f'{html.escape(bytes_display(native["rss_median_bytes"], binary=True))}; PGO was '
-                f'{native_gain:.1f}% faster.</p>'
-            )
-        rows.append(
-            f'<tr><th scope="row">Dataset {html.escape(result["dataset"])}</th>'
-            f'<td>{html.escape(input_size_display(result["input_bytes"]))}</td>'
-            f'<td>{html.escape(seconds_display(baseline["time_median_s"]))}</td>'
-            f'<td>{html.escape(seconds_display(optimized["time_median_s"]))}</td>'
-            f'<td>{speedup:.1f}% faster{extra}</td>'
-            f'<td>{html.escape(bytes_display(baseline["rss_median_bytes"], binary=True))} → '
-            f'{html.escape(bytes_display(optimized["rss_median_bytes"], binary=True))} '
-            f'(+{html.escape(memory_delta_display)})</td></tr>'
-        )
-    return (
-        '<section class="optimization-note" id="profile-guided-build" aria-labelledby="optimization-title">'
-        '<h2 id="optimization-title">Experimental profile-guided build</h2>'
-        f'<p>Apple Clang profile guided optimization on {html.escape(host["cpu"])} · '
-        f'{html.escape(host["os"])} · measured {html.escape(trial["measured_on"])}. '
-        'The profile was trained once on generated Dataset M, then measured on S and M with one warmup '
-        'and three runs per build. This lcovmerge-only experiment is separate from the comparator results above.</p>'
-        '<div class="table-wrap desktop-benchmark-table" role="region" tabindex="0" '
-        'aria-label="Profile-guided build results, scroll horizontally if needed">'
-        '<table class="benchmark-table"><caption>Median elapsed time and peak resident memory</caption>'
-        '<thead><tr><th scope="col">Dataset</th><th scope="col">Input</th>'
-        '<th scope="col">Portable <code>-O2</code></th><th scope="col">Profile guided</th>'
-        '<th scope="col">Time</th><th scope="col">Peak memory</th></tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody></table></div>'
-        f'<p class="small-note">Compiler: {html.escape(trial["compiler"])}. '
-        f'Optimized flags: <code>{html.escape(" ".join(trial["build_flags"]))}</code>. '
-        'Output SHA-256 matched for each pair. The profile guided binary is experimental, host specific, '
-        'and not used in the standard comparison table; these results do not establish a general speedup. '
-        '<a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md#experimental-profile-guided-build">'
-        'Read the detailed method and exact output hashes.</a></p>'
-        '</section>'
-    )
 
 
 def featured_site():
@@ -593,13 +500,15 @@ def featured_site():
                 status_note = "Earlier measurement; runs unreported"
         else:
             status_note = result.get("status", "Not reported")
-            if status_note in {"TIMEOUT", "ERROR", "ERROR_1"}:
+            if status_note in {"ERROR", "ERROR_1"}:
                 status_note += " · excluded from scale and ratios"
         value = result.get("rss_bytes")
         memory_value = (
             bytes_display(value, binary=True)
             if value is not None else memory(result)
         )
+        if key == "lcov-result-merger" and result.get("status") == "TIMEOUT" and result.get("rss_sampled_bytes"):
+            memory_value = bytes_display(result["rss_sampled_bytes"], binary=True) + " sampled"
         if key == "lcov" and is_earlier_memory(key, result) and memory_value != "—":
             memory_value += " (earlier measurement)"
         chart_items.append(
@@ -624,6 +533,7 @@ def featured_site():
         f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
         f'<p class="generated-note">Generated; <span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
+        f'{html.escape(default_build_note())} '
         f'Release v{html.escape(VERSION_MATCH.group(1))}.</p>',
         '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
     ])
@@ -887,7 +797,7 @@ def site_benchmark_method():
         f'<p>Primary host: {html.escape(host["os"])} · {html.escape(host["cpu"])} · '
         f'{host["cores"]} cores · {host["memory_gib"]} GiB RAM; measured {html.escape(DATA["measured_on"])}. '
         f'lcovmerge run counts: {html.escape(repeats)}. Each row lists its measured tools, run counts, '
-        'and memory source. '
+        f'and memory source. {html.escape(default_build_note())} '
         f'Cache conditions: {html.escape(host["cache"])} '
         '<a href="data/benchmarks.json">Open the published benchmark record</a>.</p>'
     )
@@ -1066,11 +976,11 @@ def site_benchmarks():
         "source": "data/benchmarks.json",
         "data_kind": DATA.get("data_kind", "generated"),
         "environment": DATA["environment"],
+        "default_build": DATA.get("default_build", {}),
     }
     site_data = {
         **metadata,
         "datasets": datasets,
-        "optimization_trials": DATA.get("optimization_trials", []),
     }
     if isinstance(DATA.get("host_results"), list):
         site_data["host_results"] = DATA["host_results"]
@@ -1111,8 +1021,6 @@ def render_site_benchmarks(path):
                           site_results_mobile())
     replace_named_section(path, SITE_METHOD_START, SITE_METHOD_END, site_benchmark_method())
     replace_named_section(path, SITE_SCOPE_START, SITE_SCOPE_END, site_benchmark_scope())
-    replace_named_section(path, SITE_OPTIMIZATION_START, SITE_OPTIMIZATION_END,
-                          site_optimization_trials())
     replace_site_host_results(path, site_host_results())
 
 
@@ -1138,11 +1046,6 @@ def main():
     replace_named_section(
         ROOT / "README.md", README_BENCHMARK_START, README_BENCHMARK_END, featured_readme()
     )
-    replace_named_section(
-        ROOT / "README.md", README_OPTIMIZATION_START, README_OPTIMIZATION_END,
-        optimization_readme(),
-    )
-
     index = ROOT / "docs/site/index.html"
     replace_named_section(index, HOME_BENCHMARK_START, HOME_BENCHMARK_END, featured_site())
 

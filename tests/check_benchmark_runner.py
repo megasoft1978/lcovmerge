@@ -2,6 +2,7 @@
 """Small unit checks for benchmark parsing and measurement metadata."""
 
 import importlib.util
+import json
 import tempfile
 from pathlib import Path
 
@@ -30,6 +31,16 @@ def main() -> int:
         manifest = runner.input_manifest([path])
         if manifest[0]["size_bytes"] != path.stat().st_size or len(manifest[0]["sha256"]) != 64:
             raise AssertionError("input manifest omitted exact size or SHA-256")
+
+        package = Path(directory) / "node_modules" / "lcov-result-merger"
+        binary = package / "bin" / "lcov-result-merger"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        (package / "package.json").write_text(json.dumps({
+            "name": "lcov-result-merger", "version": "6.0.0"
+        }), encoding="utf-8")
+        if runner.package_version(binary, "lcov-result-merger") != "6.0.0":
+            raise AssertionError("npm package version was not read from the installed CLI")
 
     counts = runner.repeat_counts({
         "lcovmerge": {"run_count": 3}, "lcov": {"run_count": 1},
