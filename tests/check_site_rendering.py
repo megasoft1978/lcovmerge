@@ -129,8 +129,11 @@ def check_featured_rendering(root, renderer):
         finally:
             renderer.featured_dataset = original_selector
 
-    default_note = render_selected(selected)
-    if "Generated; outputs not compared." not in default_note:
+    selected_without_comparison = dict(selected)
+    selected_without_comparison.pop("comparison", None)
+    selected_without_comparison.pop("semantic_comparison", None)
+    default_note = render_selected(selected_without_comparison)
+    if "Generated; <span class=\"generated-prefix\">outputs not compared</span>." not in default_note:
         raise AssertionError("featured benchmark without semantic status lost its fallback note")
 
     matched = dict(selected)
@@ -140,7 +143,7 @@ def check_featured_rendering(root, renderer):
             "details": "PASS normalized SF/DA/FN/FNDA/BRDA keys and counts",
         },
     }
-    if "Generated; normalized outputs matched." not in render_selected(matched):
+    if "Generated; <span class=\"generated-prefix\">normalized outputs matched</span>." not in render_selected(matched):
         raise AssertionError("semantic PASS was not rendered as matched normalized outputs")
 
     different = dict(selected)
@@ -151,7 +154,7 @@ def check_featured_rendering(root, renderer):
             "SF:/src/example.c: left-only=2 right-only=3 value-differences=4"
         ),
     }
-    if "Generated; 9 differences." not in render_selected(different):
+    if "Generated; <span class=\"generated-prefix\">9 differences</span>." not in render_selected(different):
         raise AssertionError("semantic differences were not rendered with their exact count")
 
     synthetic = {

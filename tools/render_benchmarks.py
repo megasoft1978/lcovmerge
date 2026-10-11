@@ -446,7 +446,7 @@ def featured_site():
     if lcov_ratios:
         time_ratio = lcov_ratios[0]
         headline_html = (
-            '<h1 id="home-title" class="home-stats">'
+            '<h2 id="home-title" class="home-stats">'
             f'<span class="home-stat"><strong>{time_ratio:,.1f}×</strong>'
             f'<small>faster than {html.escape(labels["lcov"])}</small></span>'
         )
@@ -455,9 +455,9 @@ def featured_site():
                 f'<span class="home-stat"><strong>{lcov_mem_ratio:,.1f}×</strong>'
                 '<small>less peak memory</small></span>'
             )
-        headline_html += '</h1>'
+        headline_html += '</h2>'
     else:
-        headline_html = '<h1 id="home-title">Benchmark ratio unavailable.</h1>'
+        headline_html = '<h2 id="home-title">Benchmark ratio unavailable.</h2>'
 
     chart_items = ['<p class="bar-caption">Time · peak resident memory</p>']
     for key in keys:
@@ -501,10 +501,9 @@ def featured_site():
     )
     return "\n".join([
         headline_html,
-        f'<p class="featured-meta">{html.escape(featured_metadata(source))}</p>',
         f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
-        f'<p class="generated-note">Generated; {html.escape(semantic_comparison_copy(source))}. '
+        f'<p class="generated-note">Generated; <span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
         f'Release v{html.escape(VERSION_MATCH.group(1))}.</p>',
         '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
     ])
