@@ -1007,8 +1007,7 @@ body.home-page .main-nav .nav-github { border-color: var(--text); border-radius:
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
-.featured-meta { max-width: 800px; margin: 0 0 10px; color: var(--muted); font-size: 0; line-height: 0; }
-.featured-meta::after { content: "Generated benchmark · 128 shards · macOS arm64 · October 2026"; font-size: .77rem; line-height: 1.5; }
+.featured-meta { max-width: 800px; margin: 0 0 10px; color: var(--muted); font-size: .77rem; line-height: 1.5; }
 .featured-ratios { margin: 0 0 10px; }
 .ratio-note { margin: 4px 0; color: var(--text); font-size: .9rem; font-weight: 680; }
 .home-bars { display: grid; gap: 9px; max-width: 940px; margin: 13px 0 0; padding: 0; list-style: none; }

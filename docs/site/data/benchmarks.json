@@ -33,15 +33,15 @@
       "id": "medium",
       "name": "M",
       "description": "Generated sharded LCOV input.",
-      "input_size": "1,118,686,233 bytes",
+      "input_size": "1.12 GB",
       "shards": "32 shards",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 3.488279,
-          "seconds_display": "3.488279 s",
+          "seconds_display": "3.49 s",
           "peak_rss_mib": 5.125,
-          "rss_display": "5,373,952 B",
+          "rss_display": "5.12 MiB",
           "throughput_mbs": 320.7,
           "throughput_display": "320.7 MB/s",
           "status": "OK"
@@ -49,9 +49,9 @@
         {
           "tool": "lcov 2.6",
           "seconds": 50.542,
-          "seconds_display": "50.542 s",
+          "seconds_display": "50.54 s",
           "peak_rss_mib": 610.203125,
-          "rss_display": "639,844,352 B",
+          "rss_display": "610.2 MiB",
           "throughput_mbs": 22.1,
           "throughput_display": "22.1 MB/s",
           "status": "OK"
@@ -59,9 +59,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 145.171,
-          "seconds_display": "145.171 s",
+          "seconds_display": "2m 25.2s",
           "peak_rss_mib": 2381.96875,
-          "rss_display": "2,497,675,264 B",
+          "rss_display": "2.33 GiB",
           "throughput_mbs": 7.7,
           "throughput_display": "7.7 MB/s",
           "status": "OK"
@@ -72,15 +72,15 @@
       "id": "large",
       "name": "L",
       "description": "Generated sharded LCOV input.",
-      "input_size": "4,853,340,843 bytes",
+      "input_size": "4.85 GB",
       "shards": "64 shards",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 27.723422,
-          "seconds_display": "27.723422 s",
+          "seconds_display": "27.72 s",
           "peak_rss_mib": 25.0625,
-          "rss_display": "26,279,936 B",
+          "rss_display": "25.06 MiB",
           "throughput_mbs": 175.1,
           "throughput_display": "175.1 MB/s",
           "status": "OK"
@@ -88,9 +88,9 @@
         {
           "tool": "lcov 2.6",
           "seconds": 203.235,
-          "seconds_display": "203.235 s",
+          "seconds_display": "3m 23.2s",
           "peak_rss_mib": 1430.234375,
-          "rss_display": "1,499,709,440 B",
+          "rss_display": "1.40 GiB",
           "throughput_mbs": 23.9,
           "throughput_display": "23.9 MB/s",
           "status": "OK"
@@ -98,9 +98,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 604.28,
-          "seconds_display": "604.28 s",
+          "seconds_display": "10m 4.3s",
           "peak_rss_mib": 3106.125,
-          "rss_display": "3,257,008,128 B",
+          "rss_display": "3.03 GiB",
           "throughput_mbs": 8.0,
           "throughput_display": "8.0 MB/s",
           "status": "OK"
@@ -111,15 +111,15 @@
       "id": "single_file",
       "name": "XL-single",
       "description": "Generated single .info file.",
-      "input_size": "744,992,058 bytes",
+      "input_size": "745 MB",
       "shards": "1 file",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 1.455709,
-          "seconds_display": "1.455709 s",
+          "seconds_display": "1.46 s",
           "peak_rss_mib": 2.28125,
-          "rss_display": "2,392,064 B",
+          "rss_display": "2.28 MiB",
           "throughput_mbs": 511.8,
           "throughput_display": "511.8 MB/s",
           "status": "OK"
@@ -127,9 +127,9 @@
         {
           "tool": "lcov 2.6",
           "seconds": 37.803,
-          "seconds_display": "37.803 s",
+          "seconds_display": "37.80 s",
           "peak_rss_mib": 3577.375,
-          "rss_display": "3,751,149,568 B",
+          "rss_display": "3.49 GiB",
           "throughput_mbs": 19.7,
           "throughput_display": "19.7 MB/s",
           "status": "OK"
@@ -137,9 +137,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 0.17,
-          "seconds_display": "0.17 s",
+          "seconds_display": "170 ms",
           "peak_rss_mib": 607.671875,
-          "rss_display": "637,190,144 B",
+          "rss_display": "607.7 MiB",
           "throughput_mbs": null,
           "throughput_display": "—",
           "status": "ERROR_1"
@@ -150,15 +150,15 @@
       "id": "s",
       "name": "S",
       "description": "Generated sharded LCOV input.",
-      "input_size": "99,996,906 bytes",
+      "input_size": "100.0 MB",
       "shards": "8 shards",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 0.259979,
-          "seconds_display": "0.259979 s",
+          "seconds_display": "260 ms",
           "peak_rss_mib": 2.953125,
-          "rss_display": "3,096,576 B",
+          "rss_display": "2.95 MiB",
           "throughput_mbs": 384.6,
           "throughput_display": "384.6 MB/s",
           "status": "OK"
@@ -166,9 +166,9 @@
         {
           "tool": "lcov 2.6",
           "seconds": 5.317,
-          "seconds_display": "5.317 s",
+          "seconds_display": "5.32 s",
           "peak_rss_mib": 229.78125,
-          "rss_display": "240,943,104 B",
+          "rss_display": "229.8 MiB",
           "throughput_mbs": 18.8,
           "throughput_display": "18.8 MB/s",
           "status": "OK"
@@ -176,9 +176,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 17.521,
-          "seconds_display": "17.521 s",
+          "seconds_display": "17.52 s",
           "peak_rss_mib": 437.703125,
-          "rss_display": "458,964,992 B",
+          "rss_display": "437.7 MiB",
           "throughput_mbs": 5.7,
           "throughput_display": "5.7 MB/s",
           "status": "OK"
@@ -189,15 +189,15 @@
       "id": "path_heavy",
       "name": "PATH-HEAVY",
       "description": "Generated input with two million distinct source paths.",
-      "input_size": "130,000,000 bytes",
+      "input_size": "130 MB",
       "shards": "1 file",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 2.121826,
-          "seconds_display": "2.121826 s",
+          "seconds_display": "2.12 s",
           "peak_rss_mib": 20.234375,
-          "rss_display": "21,217,280 B",
+          "rss_display": "20.23 MiB",
           "throughput_mbs": 61.3,
           "throughput_display": "61.3 MB/s",
           "status": "OK"
@@ -205,7 +205,7 @@
         {
           "tool": "lcov 2.6",
           "seconds": 98.805,
-          "seconds_display": "98.805 s",
+          "seconds_display": "1m 38.8s",
           "peak_rss_mib": null,
           "rss_display": "peak resident memory unavailable for current failed run",
           "throughput_mbs": null,
@@ -215,9 +215,9 @@
         {
           "tool": "lcov-result-merger 6.0.0",
           "seconds": 1800.002,
-          "seconds_display": "1800.002 s",
+          "seconds_display": "30m",
           "peak_rss_mib": null,
-          "rss_display": "842 MiB sampled in final 308 s; full-run peak resident memory unavailable",
+          "rss_display": "842 MiB sampled in final 5m 8s; full-run peak resident memory unavailable",
           "throughput_mbs": null,
           "throughput_display": "—",
           "status": "TIMEOUT"
@@ -267,15 +267,15 @@
       "id": "xxl",
       "name": "XXL",
       "description": "Generated sharded LCOV input.",
-      "input_size": "20,274,194,280 bytes",
+      "input_size": "20.3 GB",
       "shards": "128 shards",
       "results": [
         {
           "tool": "lcovmerge 1.0.2",
           "seconds": 154.66037,
-          "seconds_display": "154.66037 s",
+          "seconds_display": "2m 34.7s",
           "peak_rss_mib": 31.046875,
-          "rss_display": "32,555,008 B",
+          "rss_display": "31.05 MiB",
           "throughput_mbs": 131.1,
           "throughput_display": "131.1 MB/s",
           "status": "OK"
@@ -283,9 +283,9 @@
         {
           "tool": "lcov 2.6",
           "seconds": 893.540574,
-          "seconds_display": "893.540574 s",
+          "seconds_display": "14m 53.5s",
           "peak_rss_mib": 2720.953125,
-          "rss_display": "2,853,126,144 B",
+          "rss_display": "2.66 GiB",
           "throughput_mbs": 22.7,
           "throughput_display": "22.7 MB/s",
           "status": "OK"

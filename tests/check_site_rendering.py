@@ -58,6 +58,18 @@ def word_count(text):
 
 
 def check_featured_rendering(root, renderer):
+    display_cases = (
+        (renderer.seconds_display(0), "0 s"),
+        (renderer.seconds_display(0.259979), "260 ms"),
+        (renderer.seconds_display(154.66037), "2m 34.7s"),
+        (renderer.seconds_display(893.540574), "14m 53.5s"),
+        (renderer.input_size_display(20_274_194_280), "20.3 GB"),
+        (renderer.bytes_display(2_853_126_144, binary=True), "2.66 GiB"),
+    )
+    for actual, expected in display_cases:
+        if actual != expected:
+            raise AssertionError(f"human-readable benchmark display mismatch: {actual!r} != {expected!r}")
+
     readme_path = root / "README.md"
     readme = readme_path.read_text(encoding="utf-8")
     expected_readme = renderer.featured_readme()
@@ -101,6 +113,8 @@ def check_featured_rendering(root, renderer):
             raise AssertionError(f"homepage prose did not render {code_markup} as code")
     if len(re.findall(r"<section\b", home)) > 4:
         raise AssertionError("landing page has more than four sections")
+    if "20.3 GB" not in home or "2m 34.7s" not in home:
+        raise AssertionError("homepage benchmark omitted readable input or elapsed units")
     if 'role="tablist"' in home:
         raise AssertionError("landing page should not add tabs")
     visible = VisibleText()
@@ -272,6 +286,10 @@ def main():
     check_featured_rendering(root, renderer)
     page_path = root / "docs" / "site" / "benchmarks.html"
     page = page_path.read_text(encoding="utf-8")
+    if "20,274,194,280 bytes" in page or "657,966,211 bytes" in page:
+        raise AssertionError("site benchmark page displays raw byte counts")
+    if "154.66037 s" in page or "893.540574 s" in page:
+        raise AssertionError("site benchmark page displays over-precise durations")
     generated_sections = (
         (renderer.SITE_CHARTS_START, renderer.SITE_CHARTS_END, renderer.chart()),
         (renderer.SITE_RESULTS_START, renderer.SITE_RESULTS_END, renderer.site_results_rows()),

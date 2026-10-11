@@ -45,7 +45,7 @@ WINDOWS_VERIFICATION_SENTENCE = (
 
 
 def metric(result):
-    seconds = "—" if result["time_s"] is None else f'{result["time_s"]:,.3f} s'
+    seconds = "—" if result["time_s"] is None else seconds_display(result["time_s"])
     rss = memory(result)
     rate = "n/a" if result["throughput_mb_s"] is None else f'{result["throughput_mb_s"]:,.1f} MB/s'
     return f'{seconds} / {rss} / {rate} / {result["status"]}'
@@ -55,7 +55,7 @@ def memory(result):
     if result.get("rss_display"):
         return plain_copy(result["rss_display"])
     if result.get("rss_bytes") is not None:
-        return f'{result["rss_bytes"] / (1024 * 1024):,.2f} MiB'
+        return bytes_display(result["rss_bytes"], binary=True)
     if result.get("rss_mib") is None:
         return "—"
     return f'{result["rss_mib"]:,.1f} MiB'
@@ -72,6 +72,11 @@ def plain_copy(value):
     text = re.sub(r"prior canonical (measurement|measurements|benchmark|benchmarks)",
                   r"earlier recorded \1", text, flags=re.IGNORECASE)
     text = text.replace("full-run peak unavailable", "full-run peak resident memory unavailable")
+    text = re.sub(
+        r'(?<![/\w])([0-9][0-9,]*(?:\.[0-9]+)?) s\b',
+        lambda match: seconds_display(float(match.group(1).replace(",", ""))),
+        text,
+    )
     if text.startswith("Dataset M sorted regular shards use the direct single-threaded path;"):
         text = ("Dataset M's sorted regular inputs use one merge worker; --jobs results show run variation, "
                 "not the effect of adding workers.")
@@ -106,13 +111,13 @@ def display_tool_labels():
 def full_table():
     labels = display_tool_labels()
     rows = [
-        f'| Dataset (input bytes) | {labels["lcovmerge"]} | {labels["lcov"]} | '
+        f'| Dataset (input size) | {labels["lcovmerge"]} | {labels["lcov"]} | '
         f'{labels["lcov-result-merger"]} |',
         "| --- | ---: | ---: | ---: |",
     ]
     for ds in DATA["datasets"]:
         r = ds["results"]
-        size = f'{ds["input_bytes"]:,} bytes' if ds.get("input_bytes") is not None else "unavailable"
+        size = input_size_display(ds["input_bytes"]) if ds.get("input_bytes") is not None else "unavailable"
         rows.append(
             f'| {ds["name"]} ({size}) '
             f'| {metric(r["lcovmerge"])} '
@@ -132,7 +137,7 @@ def scaling_table():
         result = scaling[jobs]
         label = "default" if jobs == "default" else f'-j{jobs}'
         rows.append(
-            f'| {label} | {result["time_s"]:,.3f} s | {memory(result)} | '
+            f'| {label} | {seconds_display(result["time_s"])} | {memory(result)} | '
             f'{result["throughput_mb_s"]:,.1f} MB/s |'
         )
     return "\n".join(rows)
@@ -248,7 +253,7 @@ def measurement_note(source, key, result):
 
 
 def featured_memory(key, result):
-    value = (f'{result["rss_bytes"]:,} B'
+    value = (bytes_display(result["rss_bytes"], binary=True)
              if result.get("rss_bytes") is not None
              else memory(result))
     if is_earlier_memory(key, result) and value != "—":
@@ -260,9 +265,9 @@ def result_elapsed(result):
     value = result.get("time_s")
     status = result.get("status", "Not reported")
     if status == "OK" and isinstance(value, (int, float)):
-        return f'{value:,.3f} s'
+        return seconds_display(value)
     if isinstance(value, (int, float)):
-        return f'{status} · stopped after {value:,.3f} s'
+        return f'{status} · stopped after {seconds_display(value)}'
     return status
 
 
@@ -399,7 +404,7 @@ def featured_metadata(source):
     else:
         merger_note = f'{method.get("comparison_runs_per_tool", "run count unreported")} measured run'
     return (
-        f'Generated Dataset {source["name"]} · {source["input_bytes"]:,} input bytes · '
+        f'Generated Dataset {source["name"]} · {input_size_display(source["input_bytes"])} input · '
         f'{source.get("shards", "shard count not reported")} · {featured_host(source)} · '
         f'{DATA.get("measured_on", "date not reported")}. '
         f'Builds: {labels["lcovmerge"]} / {labels["lcov"]} / {labels["lcov-result-merger"]}. '
@@ -427,6 +432,11 @@ def featured_readme():
         copy = ratio_copy(source, key)
         if copy:
             rows.extend(["", f"**{copy}**"])
+    rows.extend([
+        "",
+        "Input sizes and durations are rounded for readability; exact measurements are in the "
+        "[published benchmark record](data/benchmarks.json).",
+    ])
     return "\n".join(rows)
 
 
@@ -464,7 +474,7 @@ def featured_site():
         result = results.get(key, {})
         status = result.get("status", "Not reported")
         if completed(result):
-            time_text = f'{result["time_s"]:,.3f} s'
+            time_text = seconds_display(result["time_s"])
             width = result["time_s"] / maximum * 100
             bar = f'<span class="bar-fill" style="width:{width:.3f}%"></span>'
         else:
@@ -480,7 +490,7 @@ def featured_site():
                 status_note += " · excluded from scale and ratios"
         value = result.get("rss_bytes")
         memory_value = (
-            f'{value / (1024 * 1024):,.2f} MiB'
+            bytes_display(value, binary=True)
             if value is not None else memory(result)
         )
         if key == "lcov" and is_earlier_memory(key, result) and memory_value != "—":
@@ -496,11 +506,14 @@ def featured_site():
     mid = maximum / 2
     axis = (
         '<div class="bar-axis" role="img" '
-        f'aria-label="Zero-based elapsed-time scale from 0 to {maximum:,.3f} seconds">'
-        f'<span>0 s</span><span>{mid:,.1f} s</span><span>{maximum:,.1f} s</span></div>'
+        f'aria-label="Elapsed-time scale from 0 to {seconds_display(maximum)}">'
+        f'<span>{seconds_display(0)}</span><span>{seconds_display(mid)}</span>'
+        f'<span>{seconds_display(maximum)}</span></div>'
     )
     return "\n".join([
         headline_html,
+        f'<p class="featured-meta">{input_size_display(source["input_bytes"])} input · '
+        f'{html.escape(str(source.get("shards", "shard count not reported")))}</p>',
         f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
         f'<p class="generated-note">Generated; <span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
@@ -510,15 +523,50 @@ def featured_site():
 
 
 def seconds_display(value):
-    return f'{value:.6f}'.rstrip("0").rstrip(".") + " s"
+    """Render durations at a useful scale while preserving exact source values in JSON."""
+    value = float(value)
+    if value == 0:
+        return "0 s"
+    if value < 1:
+        milliseconds = value * 1000
+        if round(milliseconds) >= 1000:
+            return "1.00 s"
+        return f'{milliseconds:,.0f} ms' if milliseconds >= 100 else f'{milliseconds:,.1f} ms'
+    rounded = round(value, 2) if value < 60 else round(value, 1)
+    if rounded < 60:
+        return f'{rounded:,.2f} s'
+    minutes, seconds = divmod(rounded, 60)
+    seconds_text = f'{seconds:.0f}' if seconds.is_integer() else f'{seconds:.1f}'
+    if minutes < 60:
+        suffix = f' {seconds_text}s' if seconds else ""
+        return f'{int(minutes):,}m{suffix}'
+    hours, minutes = divmod(int(minutes), 60)
+    suffix = f' {seconds_text}s' if seconds else ""
+    minute_part = f' {int(minutes)}m' if minutes else ""
+    return f'{int(hours):,}h{minute_part}{suffix}'
 
 
-def bytes_display(value):
-    return f"{value:,} B"
+def bytes_display(value, binary=False):
+    """Format byte counts with compact SI input sizes or IEC memory sizes."""
+    base = 1024 if binary else 1000
+    units = ("B", "KiB", "MiB", "GiB", "TiB") if binary else ("B", "kB", "MB", "GB", "TB")
+    number = float(value)
+    unit = 0
+    while abs(number) >= base and unit < len(units) - 1:
+        number /= base
+        unit += 1
+    if unit == 0:
+        return f'{int(number):,} B'
+    precision = (2 if number < 100 else 1) if binary else (0 if number >= 100 else (1 if number >= 10 else 2))
+    return f'{number:,.{precision}f} {units[unit]}'
+
+
+def input_size_display(value):
+    return bytes_display(value)
 
 
 def chart(dataset_name="M"):
-    """Render the compact elapsed-time chart; exact values live in the table."""
+    """Render the elapsed-time chart with rounded display values."""
     source = dataset(dataset_name)
     labels = display_tool_labels()
     keys = ("lcovmerge", "lcov", "lcov-result-merger")
@@ -528,15 +576,16 @@ def chart(dataset_name="M"):
     maximum = max(numeric, default=1)
     if maximum <= 0:
         maximum = 1
-    input_size = (f'{source["input_bytes"]:,} bytes'
+    input_size = (input_size_display(source["input_bytes"])
                   if source.get("input_bytes") is not None else "Input size not reported")
     pieces = [
         '<figcaption><h3 id="chart-m-title">'
-        f'Dataset {html.escape(source["name"])} · elapsed time in seconds</h3>'
+        f'Dataset {html.escape(source["name"])} · elapsed time</h3>'
         f'<p>Generated input: {html.escape(input_size)} · {html.escape(source["shards"])}. '
-        'Bars use a zero-based scale; the table gives exact values and statuses.</p></figcaption>',
+        'Bars use a zero-based scale; the table shows rounded durations and statuses. '
+        'The published record retains exact measurements.</p></figcaption>',
         f'<ul class="bar-chart" aria-label="{html.escape(source["name"])} elapsed-time comparison; '
-        'exact values and statuses are in the table below">'
+        'rounded durations and statuses are in the table below">'
     ]
     for key, _result, value in values:
         label = labels.get(key, key)
@@ -551,10 +600,9 @@ def chart(dataset_name="M"):
     ticks = []
     for index in range(3):
         tick = maximum * index / 2
-        tick_text = f'{tick:.1f}' if tick < 10 else f'{tick:,.0f}'
-        ticks.append(f'<span>{tick_text} s</span>')
+        ticks.append(f'<span>{seconds_display(tick)}</span>')
     pieces.append(
-        f'<div class="bar-axis" role="img" aria-label="Zero-based scale from 0 to {maximum:,.3f} seconds">'
+        f'<div class="bar-axis" role="img" aria-label="Elapsed-time scale from 0 to {seconds_display(maximum)}">'
         + "".join(ticks) + "</div>"
     )
     return "".join(pieces)
@@ -598,13 +646,17 @@ def site_results_rows():
             cells = []
             if index == 0:
                 input_bytes = source.get("input_bytes")
-                input_size = f'{input_bytes:,} bytes' if input_bytes is not None else "Input not reported"
+                input_size = input_size_display(input_bytes) if input_bytes is not None else "Input not reported"
                 shard_text = source.get("shards", "Shard count not reported")
                 cells.append(f'<th scope="rowgroup" rowspan="{len(keys)}">{html.escape(source["name"])}</th>')
                 cells.append(f'<td rowspan="{len(keys)}">{html.escape(input_size)}; {html.escape(shard_text)}</td>')
             elapsed = (seconds_display(result["time_s"])
                        if result.get("time_s") is not None else result.get("status", "Not reported"))
-            rss = bytes_display(result["rss_bytes"]) if result.get("rss_bytes") is not None else plain_copy(result.get("rss_display", "—"))
+            rss = (
+                bytes_display(result["rss_bytes"], binary=True)
+                if result.get("rss_bytes") is not None
+                else plain_copy(result.get("rss_display", "—"))
+            )
             throughput = (f'{result["throughput_mb_s"]:,.1f} MB/s'
                           if result.get("throughput_mb_s") is not None else "—")
             primary = ' class="tool-primary"' if key == "lcovmerge" else ""
@@ -670,7 +722,7 @@ def site_results_mobile():
     host_text = primary_host_text()
     for source in DATA["datasets"]:
         input_bytes = source.get("input_bytes")
-        input_size = f'{input_bytes:,} bytes' if input_bytes is not None else "Input not reported"
+        input_size = input_size_display(input_bytes) if input_bytes is not None else "Input not reported"
         shards = source.get("shards", "Shard count not reported")
         description = plain_copy(source.get("description", ""))
         kind = "Generated" if source["name"] != "REAL" else "Project-derived input not supplied"
@@ -679,7 +731,7 @@ def site_results_mobile():
             result = source["results"][key]
             elapsed = (seconds_display(result["time_s"])
                        if result.get("time_s") is not None else result.get("status", "Not reported"))
-            rss = (bytes_display(result["rss_bytes"])
+            rss = (bytes_display(result["rss_bytes"], binary=True)
                    if result.get("rss_bytes") is not None
                    else plain_copy(result.get("rss_display", "—")))
             throughput = (f'{result["throughput_mb_s"]:,.1f} MB/s'
@@ -757,7 +809,7 @@ def site_host_results():
                 continue
             dataset_name = dataset_record.get("name", "Dataset not reported")
             input_bytes = dataset_record.get("input_bytes")
-            input_size = f'{input_bytes:,} bytes' if isinstance(input_bytes, int) else "Input not reported"
+            input_size = input_size_display(input_bytes) if isinstance(input_bytes, int) else "Input not reported"
             shards = shard_text(dataset_record.get("shards", "Shard count not reported"))
             results = dataset_record.get("results") if isinstance(dataset_record.get("results"), dict) else {}
             mobile_results = []
@@ -766,9 +818,17 @@ def site_host_results():
                     continue
                 tool = entry.get("tool_labels", {}).get(key, key)
                 elapsed_value = result.get("time_s")
-                elapsed = f'{elapsed_value:,.3f} s' if isinstance(elapsed_value, (int, float)) else result.get("status", "—")
+                elapsed = (
+                    seconds_display(elapsed_value)
+                    if isinstance(elapsed_value, (int, float))
+                    else result.get("status", "—")
+                )
                 rss_bytes = result.get("rss_bytes")
-                rss = f'{rss_bytes:,} B' if isinstance(rss_bytes, int) else plain_copy(result.get("rss_display", "—"))
+                rss = (
+                    bytes_display(rss_bytes, binary=True)
+                    if isinstance(rss_bytes, int)
+                    else plain_copy(result.get("rss_display", "—"))
+                )
                 throughput_value = result.get("throughput_mb_s")
                 throughput = f'{throughput_value:,.1f} MB/s' if isinstance(throughput_value, (int, float)) else "—"
                 run_count = result.get("run_count")
@@ -872,7 +932,7 @@ def site_benchmarks():
                 "seconds": seconds,
                 "seconds_display": seconds_display(seconds) if seconds is not None else item["status"],
                 "peak_rss_mib": rss / (1024 * 1024) if rss is not None else None,
-                "rss_display": (bytes_display(rss) if rss is not None
+                "rss_display": (bytes_display(rss, binary=True) if rss is not None
                                 else plain_copy(item.get("rss_display", item["status"]))),
                 "throughput_mbs": item.get("throughput_mb_s"),
                 "throughput_display": (f'{item["throughput_mb_s"]:,.1f} MB/s'
@@ -883,7 +943,7 @@ def site_benchmarks():
             "id": ids.get(source["name"], source["name"].lower().replace("-", "_")),
             "name": source["name"],
             "description": plain_copy(source.get("description", "")),
-            "input_size": (f'{source["input_bytes"]:,} bytes'
+            "input_size": (input_size_display(source["input_bytes"])
                            if source.get("input_bytes") is not None else "unavailable"),
             "shards": source.get("shards", "unknown shard count"),
             "results": rows,
