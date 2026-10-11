@@ -913,3 +913,90 @@ td code { font-size: .86em; }
   .workflow-code-panel { break-inside: avoid; }
   .pilot-band, .evidence-item, .limit-item, .recovery { break-inside: avoid; }
 }
+
+/* Compact landing page: generated benchmark first, then one install path and its limits. */
+body.home-page {
+  color-scheme: dark;
+  --bg: #0b100e;
+  --surface: #111915;
+  --surface-2: #171f1a;
+  --text: #eef3ed;
+  --muted: #b2bcb3;
+  --line: #354139;
+  --accent: #c3ed79;
+  --accent-2: #b5d8c1;
+  --accent-soft: #1c2d21;
+  --code: #070b09;
+  --code-text: #e7f4ec;
+  --bar-lcovmerge: #c3ed79;
+  --bar-lcov: #8fb7f0;
+  --bar-lcov-result-merger: #d4a0e6;
+  background: var(--bg);
+}
+body.home-page a { color: var(--accent); }
+body.home-page .site-header { background: var(--bg); }
+body.home-page .shell { width: min(1060px, calc(100% - 40px)); }
+.home-hero {
+  padding-block: clamp(32px, 4.5vw, 54px) 34px;
+  background: radial-gradient(ellipse at 84% 0, rgb(195 237 121 / 12%), transparent 38%), var(--bg);
+}
+.home-hero .eyebrow { margin-bottom: 10px; }
+.home-intro { max-width: 780px; margin: 0 0 20px; color: var(--muted); font-size: 1.08rem; }
+.featured-benchmark { max-width: 980px; }
+.featured-benchmark h1 {
+  max-width: 980px;
+  margin: 0 0 12px;
+  font-size: clamp(2.25rem, 5vw, 4.1rem);
+  line-height: 1.02;
+  letter-spacing: -.065em;
+}
+.featured-benchmark h1 span { color: var(--accent); white-space: nowrap; }
+.featured-meta { margin: 0 0 10px; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+.featured-ratios { margin: 0 0 10px; }
+.ratio-note { margin: 4px 0; color: var(--text); font-size: .9rem; font-weight: 680; }
+.home-bars { display: grid; gap: 9px; max-width: 940px; margin: 13px 0 0; padding: 0; list-style: none; }
+.bar-caption { margin: 0 0 -5px; color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.home-bar { margin: 0; }
+.home-bar-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 14px; font-size: .86rem; line-height: 1.35; }
+.home-bar-label > span { color: var(--text); font-weight: 760; }
+.home-bar-label strong { color: var(--muted); font-size: .82rem; font-weight: 560; font-variant-numeric: tabular-nums; }
+.home-bar .bar-track { height: 8px; margin-top: 4px; border-color: #344238; background: #17201a; }
+.home-bar .bar-fill { border-radius: inherit; }
+.home-bar.lcov .bar-fill { background: var(--bar-lcov); }
+.home-bar.lcov-result-merger .bar-fill { background: var(--bar-lcov-result-merger); }
+.home-bar-status { display: block; margin-top: 1px; color: var(--muted); font-size: .7rem; line-height: 1.3; }
+.home-bar-status:empty { display: none; }
+.featured-benchmark .bar-axis { max-width: 940px; margin-top: 5px; color: var(--muted); font-size: .72rem; }
+.benchmark-note, .generated-note { margin: 8px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.4; }
+.featured-benchmark > .text-link { display: inline-flex; margin-top: 10px; font-size: .88rem; font-weight: 750; }
+.home-start { padding-block: 23px 30px; border-top: 1px solid var(--line); }
+.home-start .eyebrow { margin-bottom: 3px; }
+.home-start h2, .home-limits h2 { margin: 0 0 10px; font-size: 1.25rem; letter-spacing: -.03em; }
+.home-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.home-columns h3 { margin: 0 0 7px; font-size: .98rem; }
+.home-start .code-block { margin: 0; padding: 13px 14px; border-radius: 7px; font-size: .72rem; line-height: 1.5; overflow-wrap: anywhere; }
+.home-note { margin: 7px 0 0; color: var(--muted); font-size: .78rem; }
+.home-limits { padding-block: 20px 26px; border-top: 1px solid var(--line); }
+.home-limits h2 { margin-top: 0; }
+.home-limits ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: .82rem; line-height: 1.45; }
+.home-limits li { margin-block: 4px; padding-left: 2px; }
+.home-limits li::marker { color: var(--accent); }
+.home-doc-links { margin: 9px 0 0; color: var(--muted); font-size: .78rem; }
+.home-page .site-footer { padding-block: 13px; }
+.home-page .footer-row { font-size: .78rem; }
+
+@media (max-width: 760px) {
+  .home-columns { grid-template-columns: 1fr; gap: 18px; }
+}
+@media (max-width: 620px) {
+  body.home-page .shell { width: min(1060px, calc(100% - 32px)); }
+  .home-hero { padding-block: 28px 24px; }
+  .home-hero h1 { font-size: clamp(2.25rem, 10vw, 3.4rem); }
+  .home-intro { margin-bottom: 15px; font-size: .98rem; }
+  .featured-meta { font-size: .76rem; }
+  .home-bar-label { display: grid; gap: 0; }
+  .home-bar-label strong { font-size: .75rem; }
+  .home-start { padding-block: 18px 22px; }
+  .home-start .code-block { padding: 11px; font-size: .68rem; }
+  .home-limits { padding-block: 17px 22px; }
+}
