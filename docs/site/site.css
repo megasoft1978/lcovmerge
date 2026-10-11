@@ -1052,10 +1052,17 @@ body.home-page .main-nav .nav-github { border-color: var(--text); border-radius:
 }
 @media (max-width: 620px) {
   body.home-page .shell { width: min(1180px, calc(100% - 32px)); }
+  body.home-page .header-row { align-items: center; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; padding-block: 10px; }
+  body.home-page .main-nav { width: 100%; justify-content: space-between; gap: 4px 8px; }
+  body.home-page .main-nav a { min-height: 38px; font-size: .82rem; }
+  body.home-page .main-nav .nav-github { padding-inline: .5rem; }
   .home-hero { padding-block: 22px 34px; }
   .home-story { padding-bottom: 34px; }
   .home-story h1 { font-size: clamp(2.7rem, 12vw, 4.2rem); }
   .home-intro { margin: 18px 0 20px; font-size: .98rem; }
+  .home-actions { align-items: stretch; flex-direction: column; gap: 8px; }
+  .home-actions a { justify-content: center; min-height: 48px; }
+  .home-actions .home-secondary { align-self: flex-start; justify-content: flex-start; padding: 8px 0; }
   .shard-art { min-height: 275px; padding-inline: 15px; }
   .featured-benchmark { padding: 23px 18px 19px; }
   .featured-meta { font-size: .73rem; }
