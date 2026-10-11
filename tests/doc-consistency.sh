@@ -5,6 +5,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && { pwd -W 2>/dev/null || pwd; })
 binary=${1:-$root/bin/lcovmerge}
 python3 -I "$root/tests/check_site_rendering.py" "$root"
+python3 -I "$root/tests/check_benchmark_runner.py"
 exec python3 - "$root" "$binary" <<'PY'
 import re
 import subprocess

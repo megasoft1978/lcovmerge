@@ -14,13 +14,14 @@
 #include <string.h>
 
 #define MAX_LINE ((size_t)1u << 20)
-#define IO_BLOCK ((size_t)1u << 16)
+#define IO_BLOCK ((size_t)1u << 14)
 #define WRITE_BLOCK ((size_t)1u << 18)
 #define RUN_FANIN_MAX 32u
 #define MAX_JOBS 32u
 #define DEFAULT_MEM_LIMIT ((size_t)64u << 20)
 #define MIN_WORKER_BUDGET ((size_t)8u << 20)
 #define ARENA_HEADROOM ((size_t)24u << 20)
+#define LINE_INITIAL_CAPACITY ((size_t)4096u)
 
 enum RecordType {
     REC_TN = 1,
@@ -86,7 +87,7 @@ typedef struct {
     unsigned char block[IO_BLOCK];
     size_t pos, len;
     char *line;
-    size_t line_len;
+    size_t line_len, line_capacity;
     uint64_t line_no;
     uint64_t bytes_read;
 } LineReader;
@@ -467,8 +468,9 @@ static int utf8_valid(const unsigned char *bytes, size_t length) {
 
 static int line_reader_init(LineReader *reader, lm_handle handle) {
     memset(reader, 0, sizeof(*reader));
-    reader->line = malloc(MAX_LINE + 1);
+    reader->line = malloc(LINE_INITIAL_CAPACITY);
     if (!reader->line) return -1;
+    reader->line_capacity = LINE_INITIAL_CAPACITY;
     reader->handle = handle;
     return 0;
 }
@@ -498,6 +500,18 @@ static int line_reader_next(LineReader *reader) {
         unsigned char *newline = memchr(reader->block + reader->pos, '\n', reader->len - reader->pos);
         size_t segment = newline ? (size_t)(newline - (reader->block + reader->pos)) : reader->len - reader->pos;
         if (segment > MAX_LINE - reader->line_len) return -3;
+        size_t required = reader->line_len + segment + 1u;
+        if (required > reader->line_capacity) {
+            size_t capacity = reader->line_capacity;
+            while (capacity < required) {
+                if (capacity > (MAX_LINE + 1u) / 2u) { capacity = MAX_LINE + 1u; break; }
+                capacity *= 2u;
+            }
+            char *grown = realloc(reader->line, capacity);
+            if (!grown) return -1;
+            reader->line = grown;
+            reader->line_capacity = capacity;
+        }
         if (segment) memcpy(reader->line + reader->line_len, reader->block + reader->pos, segment);
         reader->line_len += segment;
         reader->pos += segment + (newline ? 1u : 0u);
@@ -591,11 +605,18 @@ static int record_key_compare_same_path(const Record *left, const Record *right)
         case REC_BRDA:
             if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
             if (left->b != right->b) return (left->b > right->b) - (left->b < right->b);
-            if (left->c != right->c) return (left->c > right->c) - (left->c < right->c);
+            if ((left->flags & FLAG_NUMERIC_BRANCH) != (right->flags & FLAG_NUMERIC_BRANCH))
+                return (left->flags & FLAG_NUMERIC_BRANCH) ? -1 : 1;
+            if (left->flags & FLAG_NUMERIC_BRANCH) {
+                if (left->c != right->c) return (left->c > right->c) - (left->c < right->c);
+            } else {
+                result = string_compare(left->text, right->text);
+                if (result) return result;
+            }
             if ((left->flags & (FLAG_BR_EXCEPTION | FLAG_BR_FALLTHROUGH | FLAG_BR_UNREACHABLE)) !=
                 (right->flags & (FLAG_BR_EXCEPTION | FLAG_BR_FALLTHROUGH | FLAG_BR_UNREACHABLE)))
                 return (left->flags > right->flags) - (left->flags < right->flags);
-            return string_compare(left->text, right->text);
+            return 0;
         case REC_MCDC:
             if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
             if (left->b != right->b) return (left->b > right->b) - (left->b < right->b);
@@ -670,6 +691,9 @@ static int record_qsort_compare(const void *left, const void *right) {
 static int same_key(const Record *left, const Record *right) {
     /* Unknown extensions have no defined merge operator; preserve every row. */
     if (left->type == REC_EXT || right->type == REC_EXT) return 0;
+    /* Testcase names describe inputs, not the merged coverage identity. */
+    if (left->type == REC_TN && right->type == REC_TN)
+        return strcmp(left->path, right->path) == 0;
     return record_key_compare(left, right) == 0;
 }
 
@@ -1267,7 +1291,8 @@ static int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         }
         *fnl_valid = 0;
         if (*keep_path) {
-            if (*pending_tn && append_pending_row(worker, chunk, *path, *pending_tn, input_id, line_no) != 0) return -1;
+            if (append_pending_row(worker, chunk, *path, *pending_tn ? *pending_tn : "",
+                                   input_id, line_no) != 0) return -1;
             if (add_row(worker, chunk, *path, REC_SECTION, "", "", 0, 0, 0, 0, 0,
                         input_id, line_no) != 0) return -1;
         }
@@ -1570,6 +1595,10 @@ static int expand_input_argument(Options *options, const char *argument, unsigne
     if (argument[0] != '@')
         return list_add_string(&options->inputs, argument) == 0 ? 0 : 3;
     const char *list_path = argument + 1;
+    if (!lm_is_regular_file(list_path)) {
+        fprintf(stderr, "lcovmerge: %s:0: list file must be a regular file\n", list_path);
+        return 3;
+    }
     lm_handle handle = LM_INVALID_HANDLE;
     if (lm_open_read(list_path, &handle) != 0) {
         fprintf(stderr, "lcovmerge: %s:0: cannot open listfile\n", list_path);
@@ -1791,6 +1820,10 @@ static int reduce_runs(RunList *runs, const Options *options) {
     unsigned fanin = (unsigned)(options->mem_limit / (((size_t)2u << 20)));
     if (fanin < 2u) fanin = 2u;
     if (fanin > RUN_FANIN_MAX) fanin = RUN_FANIN_MAX;
+    unsigned descriptor_limit = lm_max_open_files();
+    unsigned descriptor_fanin = descriptor_limit > 16u ? descriptor_limit - 16u : 2u;
+    if (fanin > descriptor_fanin) fanin = descriptor_fanin;
+    if (fanin < 2u) fanin = 2u;
     while (runs->count > fanin) {
         RunList next = {0};
         int pass_failed = 0;
@@ -2032,6 +2065,7 @@ static int output_record(OutputState *output, const Record *record) {
         output_finish_file(output) != 0) return -1;
     if (start_output_file(output, record->path) != 0) return -1;
     if (record->type == REC_TN) {
+        if (record->value != 0 || record->text[0] == '\0') return 0;
         return writer_text(&output->writer, "TN:") == 0 &&
                writer_text(&output->writer, record->text) == 0 &&
                writer_text(&output->writer, "\n") == 0 ? 0 : -1;
@@ -2190,7 +2224,9 @@ static const char *input_name_for(const Options *options, uint32_t input_id) {
 
 static int merge_aggregate(Record *aggregate, const Record *next, const Options *options,
                            FILE *diagnostics) {
-    if (next->type == REC_FNDA || next->type == REC_MCDC ||
+    if (next->type == REC_TN) {
+        if (strcmp(aggregate->text, next->text) != 0) aggregate->value = 1;
+    } else if (next->type == REC_FNDA || next->type == REC_MCDC ||
         (next->type == REC_FN && (next->flags & FLAG_FN_NEW))) {
         aggregate->value = saturating_add(aggregate->value, next->value);
         if (next->type == REC_MCDC && strcmp(aggregate->text, next->text) != 0) {
@@ -2237,7 +2273,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
     if (count == 0 || count > RUN_FANIN_MAX) return -1;
     RunReader *readers = calloc(count, sizeof(*readers));
     size_t *heap = malloc(count * sizeof(*heap));
-    char *aggregate_storage = malloc(2 * MAX_LINE + 3);
+    char *aggregate_storage = malloc(3u * MAX_LINE + 3u);
     if (!readers || !heap || !aggregate_storage) {
         free(readers); free(heap); free(aggregate_storage);
         return -1;
@@ -2428,9 +2464,9 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
             (void)worker_error(worker, 2, input->filename, line, "%s", message);
             return -1;
         }
-        if (input->reader.line_len > worker->direct_max_line_bytes) {
-            size_t growth = input->reader.line_len - worker->direct_max_line_bytes;
-            worker->direct_max_line_bytes = input->reader.line_len;
+        if (input->reader.line_capacity > worker->direct_max_line_bytes) {
+            size_t growth = input->reader.line_capacity - worker->direct_max_line_bytes;
+            worker->direct_max_line_bytes = input->reader.line_capacity;
             *memory_used = saturating_add((uint64_t)*memory_used, (uint64_t)growth);
             if (*memory_used > worker->direct_memory_limit) {
                 worker->direct_unsorted = 1;
@@ -2518,6 +2554,7 @@ static void direct_tree_update(size_t *tree, size_t leaf_count, size_t input_ind
 static int direct_same_key(const Record *left, const Record *right) {
     if (left->type == REC_EXT || right->type == REC_EXT ||
         strcmp(left->path, right->path) != 0) return 0;
+    if (left->type == REC_TN && right->type == REC_TN) return 1;
     return record_key_compare_same_path(left, right) == 0;
 }
 
@@ -2548,7 +2585,10 @@ static void direct_input_destroy(DirectInput *input, int *close_failed) {
 
 static int run_direct_merge(const Options *options) {
     size_t count = options->inputs.count;
-    if (strcmp(options->output, "-") == 0 || count == 0 || count > 32u) return DIRECT_FALLBACK;
+    if (strcmp(options->output, "-") == 0 || count == 0 || count > UINT32_MAX) return DIRECT_FALLBACK;
+    unsigned descriptor_limit = lm_max_open_files();
+    if (descriptor_limit <= 8u || count > (size_t)(descriptor_limit - 8u))
+        return DIRECT_FALLBACK;
     for (size_t i = 0; i < count; ++i)
         if (strcmp(options->inputs.items[i], "-") == 0 ||
             !lm_is_regular_file(options->inputs.items[i])) return DIRECT_FALLBACK;
@@ -2557,7 +2597,19 @@ static int run_direct_merge(const Options *options) {
     FILE *diagnostics = tmpfile();
     if (!diagnostics) return DIRECT_FALLBACK;
     size_t leaf_count = 1u;
-    while (leaf_count < count) leaf_count *= 2u;
+    while (leaf_count < count) {
+        if (leaf_count > SIZE_MAX / 2u) { fclose(diagnostics); return DIRECT_FALLBACK; }
+        leaf_count *= 2u;
+    }
+    if (leaf_count > SIZE_MAX / 2u / sizeof(size_t)) {
+        fclose(diagnostics);
+        return DIRECT_FALLBACK;
+    }
+    if (count > SIZE_MAX / sizeof(DirectInput) ||
+        count > SIZE_MAX / LINE_INITIAL_CAPACITY) {
+        fclose(diagnostics);
+        return DIRECT_FALLBACK;
+    }
     size_t *tree = malloc(leaf_count * 2u * sizeof(*tree));
     DirectInput *inputs = calloc(count, sizeof(*inputs));
     PathCompareCache *cache = calloc(count * count, sizeof(*cache));
@@ -2569,6 +2621,11 @@ static int run_direct_merge(const Options *options) {
     if (memory_limit > ((size_t)16u << 20)) memory_limit = (size_t)16u << 20;
     size_t memory_used = sizeof(*inputs) * count + sizeof(*tree) * leaf_count * 2u +
                          sizeof(*cache) * count * count + WRITE_BLOCK;
+    if (memory_used > SIZE_MAX - count * LINE_INITIAL_CAPACITY) {
+        free(inputs); free(tree); free(cache); fclose(diagnostics);
+        return DIRECT_FALLBACK;
+    }
+    memory_used += count * LINE_INITIAL_CAPACITY;
     int fallback = memory_used > memory_limit;
     int status = 0;
     for (size_t i = 0; i < count && !fallback; ++i) {
@@ -2582,15 +2639,14 @@ static int run_direct_merge(const Options *options) {
         input->worker.diagnostic_file = diagnostics;
         input->worker.direct_memory_used = &memory_used;
         input->worker.direct_memory_limit = memory_limit;
+        input->worker.direct_max_line_bytes = LINE_INITIAL_CAPACITY;
         if (lm_open_read(input->filename, &input->handle) != 0) {
-            (void)worker_error(&input->worker, 3, input->filename, 0, "cannot open input");
-            status = 3;
+            fallback = 1;
             break;
         }
         input->opened = 1;
         if (line_reader_init(&input->reader, input->handle) != 0) {
-            (void)worker_error(&input->worker, 3, input->filename, 0, "out of memory");
-            status = 3;
+            fallback = 1;
             break;
         }
         input->reader_initialized = 1;
@@ -2624,7 +2680,7 @@ static int run_direct_merge(const Options *options) {
     }
     char *aggregate_storage = NULL;
     if (!fallback && status == 0) {
-        aggregate_storage = malloc(2u * MAX_LINE + 3u);
+        aggregate_storage = malloc(3u * MAX_LINE + 3u);
         if (!aggregate_storage) status = 3;
     }
     Record aggregate;
@@ -2701,6 +2757,14 @@ static int run_direct_merge(const Options *options) {
 }
 
 static int run_merge(const Options *options) {
+    for (size_t i = 0; i < options->inputs.count; ++i) {
+        const char *input = options->inputs.items[i];
+        if (strcmp(input, "-") != 0 && !lm_is_regular_file(input)) {
+            fprintf(stderr, "lcovmerge: %s:0: input must be a regular file; use '-' for standard input\n",
+                    input);
+            return 3;
+        }
+    }
     int direct_status = run_direct_merge(options);
     if (direct_status != DIRECT_FALLBACK) return direct_status;
     size_t stdin_count = 0;

@@ -110,6 +110,9 @@ def golden_cases() -> list[dict]:
                      expected_trace("/c.c", "DA:1,3\n", summary=(0,0,0,0,0,0,1,1)) +
                      expected_trace("/d.c", "DA:1,4\n", summary=(0,0,0,0,0,0,1,1)))),
         mk_case("test-name-deduplicates", ["TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n", "TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n"], rows="DA:1,2\n", tn=("alpha",), summary=(0, 0, 0, 0, 0, 0, 1, 1)),
+        mk_case("test-name-conflict-dropped", ["TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n", "TN:beta\nSF:/tn.c\nDA:1,2\nend_of_record\n"], rows="DA:1,3\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
+        mk_case("test-name-mixed-with-unnamed-dropped", ["TN:alpha\nSF:/tn.c\nDA:1,1\nend_of_record\n", "SF:/tn.c\nDA:1,2\nend_of_record\n"], rows="DA:1,3\n", summary=(0, 0, 0, 0, 0, 0, 1, 1)),
+        mk_case("numeric-branch-spelling-merges", ["SF:/branch.c\nBRDA:1,0,00,2\nBRDA:1,0,0,3\nend_of_record\n"], rows="BRDA:1,0,0,5\n", summary=(0, 0, 1, 1, 0, 0, 0, 0)),
         mk_case("input-summaries-recomputed", ["SF:/sum.c\nFNF:91\nFNH:88\nLF:72\nLH:69\nBRF:100\nBRH:99\nDA:1,0\nend_of_record\n"], rows="DA:1,0\n", summary=(0, 0, 0, 0, 0, 0, 1, 0)),
         mk_case("multiple-branches-sort", ["SF:/order.c\nBRDA:9,0,10,1\nBRDA:2,0,2,1\nBRDA:2,0,1,1\nend_of_record\n"], rows="BRDA:2,0,1,1\nBRDA:2,0,2,1\nBRDA:9,0,10,1\n", summary=(0, 0, 3, 3, 0, 0, 0, 0)),
         mk_case("multiple-da-lines-sort", ["SF:/order.c\nDA:9,1\nDA:2,0\nDA:1,1\nend_of_record\n"], rows="DA:1,1\nDA:2,0\nDA:9,1\n", summary=(0, 0, 0, 0, 0, 0, 3, 2)),
@@ -172,6 +175,14 @@ def run_goldens(binary: Path, temporary: Path) -> int:
         actual = output.read_text(encoding="utf-8") if output.exists() else ""
         if actual != case["expected"]:
             raise AssertionError(f"golden {case['name']} output mismatch\nexpected:\n{case['expected']}\nactual:\n{actual}")
+        if case["name"].startswith(("test-name-conflict", "test-name-mixed", "numeric-branch")):
+            roundtrip = case_dir / "roundtrip.info"
+            reread = run([str(binary), str(output), "-o", str(roundtrip)])
+            if reread.returncode != 0 or roundtrip.read_bytes() != output.read_bytes():
+                raise AssertionError(
+                    f"golden {case['name']} output was not stable on remerge: "
+                    f"status={reread.returncode}, stderr={reread.stderr!r}"
+                )
         if case["warning"] and case["warning"].encode() not in result.stderr:
             raise AssertionError(f"golden {case['name']} did not report {case['warning']!r}")
     return len(cases)
@@ -213,7 +224,27 @@ def parser_boundary_tests(binary: Path, temporary: Path) -> int:
             "joined end_of_record/SF boundary was not recovered with a warning: "
             f"status={joined_result.returncode}, stderr={joined_result.stderr!r}"
         )
-    return 2
+
+    long_path = "p" * 900_000
+    long_name = "f" * 650_000
+    long_source = base / "aggregate-capacity.info"
+    long_source.write_text(
+        f"SF:{long_path}\nFN:1,{long_name}\nend_of_record\n", encoding="utf-8"
+    )
+    for mode in ("direct", "fallback"):
+        if mode == "direct":
+            result = run([str(binary), str(long_source), "-o", str(base / "long-out.info")])
+            output = (base / "long-out.info").read_bytes() if (base / "long-out.info").exists() else b""
+        else:
+            result = run([str(binary), str(long_source), "-o", "-"])
+            output = result.stdout
+        if (result.returncode != 0 or b"SF:" + long_path.encode() not in output or
+                b"FN:1," + long_name.encode() not in output):
+            raise AssertionError(
+                f"long aggregate fields failed in {mode} mode: status={result.returncode}, "
+                f"stderr={result.stderr[-1000:]!r}"
+            )
+    return 4
 
 
 def malformed_tests(binary: Path, temporary: Path) -> int:
@@ -251,7 +282,7 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
         raise AssertionError("strict checksum did not fail atomically with input error status 2")
 
     unreadable = run([str(binary), str(temporary / "missing.info"), "-o", str(temporary / "missing-out.info")])
-    if unreadable.returncode != 3 or b"cannot open input" not in unreadable.stderr:
+    if unreadable.returncode != 3 or b"regular file" not in unreadable.stderr:
         raise AssertionError("unreadable input did not return I/O status 3")
     usage = run([str(binary), "--mem-limit", "2M", "x.info", "-o", "x.out"])
     if usage.returncode != 1:
@@ -268,8 +299,15 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
         raise AssertionError("path rewriting accepted an empty SF path")
     version = run([str(binary), "--version"])
     help_result = run([str(binary), "--help"])
-    if version.returncode != 0 or not re.search(rb"^lcovmerge 1\.0\.2 \(git [^)]+\)\r?\n?$", version.stdout):
-        raise AssertionError("version string did not include v1.0.2 and build commit")
+    version_header = (ROOT / "include" / "version.h").read_text(encoding="utf-8")
+    version_match = re.search(r'#define LCOVMERGE_VERSION "([^"]+)"', version_header)
+    if version_match is None:
+        raise AssertionError("could not determine expected version from include/version.h")
+    expected_version = version_match.group(1).encode("ascii")
+    if version.returncode != 0 or not re.search(
+        rb"^lcovmerge " + re.escape(expected_version) + rb" \(git [^)]+\)\r?\n?$", version.stdout
+    ):
+        raise AssertionError("version string did not include the repository version and build commit")
     if help_result.returncode != 0 or b"--warn-unknown" not in help_result.stdout:
         raise AssertionError("help output is missing an option")
     return len(examples) + 7
@@ -564,6 +602,24 @@ def listfile_boundary_tests(binary: Path, temporary: Path) -> int:
     if no_inputs.returncode != 1:
         raise AssertionError(f"empty listfile alone returned {no_inputs.returncode}, expected usage status 1")
 
+    fifo_count = 0
+    if os.name != "nt" and hasattr(os, "mkfifo"):
+        fifo_list = root / "blocked.list"
+        os.mkfifo(fifo_list)
+        try:
+            rejected = subprocess.run(
+                [str(binary), f"@{fifo_list}", str(source), "-o", str(root / "fifo-list.info")],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3, check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise AssertionError("named FIFO list file blocked instead of being rejected") from error
+        if rejected.returncode != 3 or b"regular file" not in rejected.stderr:
+            raise AssertionError(
+                f"named FIFO list file was not rejected: status={rejected.returncode}, "
+                f"stderr={rejected.stderr!r}"
+            )
+        fifo_count = 1
+
     for depth, expected_status in ((8, 0), (9, 1)):
         chain = [root / f"depth-{depth}-{index}.list" for index in range(depth)]
         for index, path in enumerate(chain):
@@ -580,7 +636,7 @@ def listfile_boundary_tests(binary: Path, temporary: Path) -> int:
             raise AssertionError("eight-level listfile chain produced incorrect output")
         if expected_status == 1 and b"nesting exceeds 8" not in nested.stderr:
             raise AssertionError("nine-level listfile chain did not explain the nesting limit")
-    return 4
+    return 4 + fifo_count
 
 
 def limits_and_io_failure_tests(binary: Path, temporary: Path) -> int:
@@ -590,6 +646,22 @@ def limits_and_io_failure_tests(binary: Path, temporary: Path) -> int:
     source.write_text("SF:/limits.c\nDA:1,1\nend_of_record\n", encoding="utf-8")
     out_of_order = root / "out-of-order.info"
     out_of_order.write_text("SF:/limits.c\nDA:2,1\nDA:1,1\nend_of_record\n", encoding="utf-8")
+
+    if os.name != "nt" and hasattr(os, "mkfifo"):
+        fifo = root / "blocked-input.fifo"
+        os.mkfifo(fifo)
+        try:
+            rejected_fifo = subprocess.run(
+                [str(binary), str(source), str(fifo), "--jobs", "2", "-o", str(root / "fifo.info")],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3, check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise AssertionError("named FIFO input blocked instead of being rejected") from error
+        if rejected_fifo.returncode != 3 or b"regular file" not in rejected_fifo.stderr:
+            raise AssertionError(
+                f"named FIFO was not rejected promptly: status={rejected_fifo.returncode}, "
+                f"stderr={rejected_fifo.stderr!r}"
+            )
 
     valid = run([str(binary), "--mem-limit", "8M", "--jobs", "1", str(source),
                  "-o", str(root / "8m.info")])
@@ -1075,7 +1147,44 @@ def many_paths_test(binary: Path, temporary: Path) -> int:
     first = next((section for section in sections if section.startswith("SF:/table/00000.c\n")), "")
     if "DA:1,3\n" not in first:
         raise AssertionError("many-path input failed to merge a repeated SF path")
-    return 1
+
+    for count in (33, 64, 128):
+        shard_paths = []
+        for index in range(count):
+            shard = base / f"shard-{count}-{index:03}.info"
+            shard.write_text(
+                f"SF:/shards/{index:03}.c\nDA:1,1\nend_of_record\n", encoding="utf-8"
+            )
+            shard_paths.append(shard)
+        shard_output = base / f"shards-{count}.info"
+        merged = run([str(binary), "-v", *(str(path) for path in shard_paths), "-o", str(shard_output)])
+        if (merged.returncode != 0 or b"sorted-input fast path" not in merged.stderr or
+                len(re.findall(r"(?m)^SF:", shard_output.read_text(encoding="utf-8"))) != count):
+            raise AssertionError(
+                f"{count}-shard sorted input did not use the direct merge: "
+                f"status={merged.returncode}, stderr={merged.stderr!r}"
+            )
+    if os.name != "nt":
+        try:
+            import resource
+        except ImportError:
+            resource = None
+        if resource is not None:
+            def limit_file_descriptors() -> None:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+
+            limited = run([
+                str(binary), "--jobs", "2", "-v",
+                *(str(path) for path in shard_paths), "-o", str(base / "limited-fds.info"),
+            ], preexec_fn=limit_file_descriptors)
+            if limited.returncode != 0 or b"using 2 job(s)" not in limited.stderr:
+                raise AssertionError(
+                    f"direct merge did not fall back under a low file-descriptor limit: "
+                    f"status={limited.returncode}, stderr={limited.stderr!r}"
+                )
+            if len(re.findall(r"(?m)^SF:", (base / "limited-fds.info").read_text(encoding="utf-8"))) != len(shard_paths):
+                raise AssertionError("low-file-descriptor fallback lost input sections")
+    return 4 + int(os.name != "nt" and resource is not None)
 
 
 def lcov_differential(binary: Path, temporary: Path) -> int:

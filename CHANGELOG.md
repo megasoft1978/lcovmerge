@@ -6,7 +6,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Size merge aggregation storage for the maximum source path, text, and extra fields; normalize numeric branch identifiers before merging; and omit testcase names when merged coverage combines conflicting or unnamed testcases.
+- Grow input line buffers as needed so the sorted-input path can handle more than 32 small files within its memory budget.
+- Reject named non-regular tracefile inputs before they can block worker cancellation, cap external-merge fan-in to available file descriptors, and test the packaged Linux release binary before publication.
+- Extend sorted streaming to budget-fit shard counts above 32; a local 128-shard trial was 22.0% faster with lower peak memory and identical output.
+
 ### Added
+
+- Add a coverage-guided Clang fuzz target, per-sample benchmark and binary provenance, and list-file input handling in the GitHub Action.
+- Exclude an existing Action output file when it matches an input glob.
 
 - Add an XXL local benchmark workload targeting about 20 GB of LCOV input, with disk-space checks, peak-RSS measurements, and a streaming semantic comparison against lcov.
 

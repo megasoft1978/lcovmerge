@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -156,6 +157,11 @@ def hyperfine_timed(command: list[str], log: pathlib.Path, timeout: int,
             payload += f"\nMaximum resident set size: {int(max(resident_values))} bytes\n"
         statuses = [int(item.get("exit_code", 0)) for item in measurements]
         status = next((code for code in statuses if code != 0), 0)
+        payload += "\nbenchmark_samples=" + json.dumps({
+            "times_s": [float(item["time_wall_clock"]["value"]) for item in measurements],
+            "exit_codes": statuses,
+            "rss_bytes": [int(value) for value in resident_values],
+        }, separators=(",", ":")) + "\n"
         payload += f"\nhyperfine_runs={len(measurements)} elapsed_s={wall_seconds:.6f}\n"
     except (OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         status = process.returncode or 1
@@ -241,7 +247,28 @@ def rss_bytes(payload: str) -> int | None:
     match = re.search(r"maximum resident set size\s*:?\s*(\d+)", payload, re.IGNORECASE)
     if match:
         return int(match.group(1))
+    match = re.search(r"^\s*(\d+)\s+maximum resident set size\s*$", payload,
+                      re.IGNORECASE | re.MULTILINE)
+    if match:
+        return int(match.group(1))
     return None
+
+
+def repeat_counts(results: dict[str, dict[str, object]]) -> dict[str, int]:
+    return {name: int(result.get("run_count", 0)) for name, result in results.items()}
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def input_manifest(inputs: list[pathlib.Path]) -> list[dict[str, object]]:
+    return [{"index": index, "size_bytes": path.stat().st_size, "sha256": sha256_file(path)}
+            for index, path in enumerate(inputs)]
 
 
 def measurement(name: str, inputs: list[pathlib.Path], command: list[str], output: pathlib.Path,
@@ -253,6 +280,12 @@ def measurement(name: str, inputs: list[pathlib.Path], command: list[str], outpu
     else:
         status, elapsed, payload = timed(command, log, timeout, use_time_wrapper)
     input_bytes = size_of(inputs)
+    samples_match = re.search(r"^benchmark_samples=(\{.*\})$", payload, re.MULTILINE)
+    samples = json.loads(samples_match.group(1)) if samples_match else (
+        {"times_s": [], "exit_codes": [], "rss_bytes": []} if hyperfine_runs else
+        {"times_s": [elapsed], "exit_codes": [status], "rss_bytes": [rss_bytes(payload)]}
+    )
+    sample_statuses = samples.get("exit_codes", [])
     result_status = "OK" if status == 0 else ("TIMEOUT" if status == 124 else f"ERROR_{status}")
     throughput = f"{input_bytes / elapsed / 1_000_000:.1f} MB/s" if status == 0 and elapsed else "n/a"
     row = (
@@ -267,7 +300,11 @@ def measurement(name: str, inputs: list[pathlib.Path], command: list[str], outpu
                             if status == 0 and elapsed else None),
         "status": result_status,
         "exit_code": status,
-        "run_count": hyperfine_runs or 1,
+        "run_count": len(sample_statuses),
+        "successful_run_count": sum(code == 0 for code in sample_statuses),
+        "run_samples_s": samples.get("times_s", []),
+        "sample_exit_codes": sample_statuses,
+        "rss_samples_bytes": samples.get("rss_bytes", []),
         "warmup_count": 1 if hyperfine_runs else 0,
     }
 
@@ -397,6 +434,8 @@ def main() -> int:
                 "shards": len(inputs),
                 "results": {},
             }
+            if args.json_report:
+                dataset_result["input_manifest"] = input_manifest(inputs)
             if parameters:
                 dataset_result["files"] = parameters[1]
                 dataset_result["lines"] = parameters[2]
@@ -528,14 +567,15 @@ def main() -> int:
                     exit_code = 1
                 dataset_result["comparison"] = {"lcovmerge_vs_lcov": comparison}
 
-            repeat_counts = {
-                "lcovmerge": lcovmerge_runs or 1,
-                "lcov": 1 if name == "XXL" else (args.hyperfine_runs or 1),
-                "lcov-result-merger": 1 if name == "XXL" else (args.hyperfine_runs or 1),
+            repeat_counts_by_tool = {
+                tool: int(result.get("successful_run_count", 0))
+                for tool, result in results.items()
             }
+            attempt_counts_by_tool = repeat_counts(results)
             dataset_result["measurement"] = {
                 "hyperfine_runs": lcovmerge_runs,
-                "repeat_counts": repeat_counts,
+                "repeat_counts": repeat_counts_by_tool,
+                "attempt_counts": attempt_counts_by_tool,
                 "warmup_count": 1 if use_hyperfine else 0,
                 "timeout_seconds": args.timeout,
                 "rss_source": ("/usr/bin/time -v per measured hyperfine sample"
@@ -566,6 +606,12 @@ def main() -> int:
         compiler = command_version([*shlex.split(os.environ.get("CC", "cc")), "--version"])
         lcov_version = command_version([lcov, "--version"]) if lcov else "not installed"
         revision = command_version(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
+        worktree = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"],
+                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  check=False).stdout
+        tracked_diff = subprocess.run(["git", "-C", str(ROOT), "diff", "--binary", "HEAD"],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      check=False).stdout
         method = {
             "runner": "bench/run.py",
             "timeout_seconds": args.timeout,
@@ -593,13 +639,31 @@ def main() -> int:
             "memory_bytes": memory_bytes,
             "compiler": compiler,
             "lcov": lcov_version,
+            "lcov_result_merger": command_version([node, "--version"]) if node else "not installed",
+        }
+        binary_identity = {
+            "path": str(binary),
+            "sha256": sha256_file(binary),
+            "size_bytes": binary.stat().st_size,
+            "version": command_version([str(binary), "--version"]),
+            "source_revision": revision,
+            "source_worktree_clean": not bool(worktree.strip()),
+            "build_command": os.environ.get("LCOVMERGE_BUILD_COMMAND", "not recorded"),
+        }
+        build_environment = {
+            name: os.environ.get(name, "project default")
+            for name in ("CC", "CFLAGS", "CPPFLAGS", "LDFLAGS")
         }
         args.json_report.parent.mkdir(parents=True, exist_ok=True)
         args.json_report.write_text(json.dumps({
             "schema_version": 1,
             "measurement_date": time.strftime("%Y-%m-%d", time.gmtime()),
             "host": host,
-            "source": {"repository": "local/lcovmerge", "revision": revision},
+            "source": {"repository": "local/lcovmerge", "revision": revision,
+                       "worktree_clean": not bool(worktree.strip())},
+            "binary": binary_identity,
+            "build_environment": build_environment,
+            "tracked_diff_sha256": hashlib.sha256(tracked_diff).hexdigest(),
             "method": method,
             "tool_labels": {
                 "lcovmerge": command_version([str(binary), "--version"]),

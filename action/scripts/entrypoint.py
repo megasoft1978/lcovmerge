@@ -129,6 +129,24 @@ def expand_inputs(workspace: Path) -> list[Path]:
     return matches
 
 
+def write_input_listfile(inputs: list[Path], destination: Path) -> Path:
+    lines = []
+    for path in inputs:
+        value = str(path.resolve())
+        if "\n" in value or "\r" in value:
+            raise SystemExit("Input paths containing newlines cannot be passed through the action")
+        if value.startswith("@"):
+            value = "@" + value
+        lines.append(value)
+    destination.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return destination
+
+
+def exclude_output_input(inputs: list[Path], output: Path) -> list[Path]:
+    output_identity = output.resolve()
+    return [path for path in inputs if path.resolve() != output_identity]
+
+
 def set_output(name: str, value: str) -> None:
     output_path = os.environ.get("GITHUB_OUTPUT")
     if not output_path:
@@ -159,6 +177,10 @@ def main() -> int:
         if not output_path.is_absolute():
             output_path = workspace / output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        inputs = exclude_output_input(inputs, output_path)
+        if not inputs:
+            raise SystemExit("The files input matched only the output file; no tracefiles remain to merge")
+        input_list = write_input_listfile(inputs, temp_root / "inputs.txt")
 
         command = [str(binary)]
         extra = shlex.split(os.environ.get("INPUT_EXTRA_ARGS", ""), posix=True)
@@ -166,7 +188,7 @@ def main() -> int:
         mem_limit = os.environ.get("INPUT_MEM_LIMIT", "").strip()
         if mem_limit:
             command.extend(["--mem-limit", mem_limit])
-        command.extend(str(path) for path in inputs)
+        command.append("@" + str(input_list))
         command.extend(["--output", str(output_path)])
         if "--stats" not in extra:
             command.append("--stats")

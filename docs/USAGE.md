@@ -9,7 +9,8 @@ lcovmerge reads existing LCOV `.info` files; it does not collect raw coverage or
 output. Input paths beginning with `@` name a list file: one path per line, blank lines and lines beginning
 with `#` are ignored, nested list files are limited to eight levels, and paths are relative to the process
 working directory. Use `@@name` for a literal input path beginning with `@`. The shell expands globs;
-lcovmerge does not.
+lcovmerge does not. Named input paths and list files must be regular files; use `-` for a stream on standard
+input. Named pipes and devices are rejected before worker threads start.
 
 ## Install
 

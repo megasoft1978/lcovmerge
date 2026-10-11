@@ -11,14 +11,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #endif
 
 int lm_open_read(const char *path, lm_handle *out) {
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_NONBLOCK);
     if (fd < 0) return -1;
+    struct stat info;
+    if (fstat(fd, &info) != 0) {
+        int saved_error = errno;
+        (void)close(fd);
+        errno = saved_error;
+        return -1;
+    }
+    if (!S_ISREG(info.st_mode)) {
+        (void)close(fd);
+        errno = EINVAL;
+        return -1;
+    }
     *out = (lm_handle)fd;
     return 0;
 }
@@ -116,6 +129,13 @@ unsigned lm_cpu_count(void) {
     return count > 0 ? (unsigned)count : 1u;
 #endif
     return 1u;
+}
+
+unsigned lm_max_open_files(void) {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) return 32u;
+    if (limit.rlim_cur == RLIM_INFINITY || limit.rlim_cur > UINT_MAX) return UINT_MAX;
+    return (unsigned)limit.rlim_cur;
 }
 
 int lm_thread_start(lm_thread *thread, lm_thread_fn function, void *argument) {

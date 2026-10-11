@@ -49,6 +49,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Agent Workflow & Workspace Boundaries
 
 - Read `AGENTS.md` before making changes; it is the shared policy for project structure, commands, coding, tests, and safe output locations.
-- Codex GPT-6-Luna is the primary implementation agent. Use yowork for complementary work and keep Luna leading the implementation.
+- Follow the model and effort policy in `~/.codex/AGENTS.md`; select Luna for scoped maintenance, Sol for cross-file changes, and Astra only for unusually difficult design or debugging.
 - Keep retained prompts, terminal logs, session markers, scratch files, generated inputs, and benchmark results under ignored repo-local `.cache/<run>/` directories. Never leave them beside the repository in its parent folder or on the Desktop.
 - Keep temporary benchmark data self-cleaning unless the user needs it for comparison; retain requested data under `.cache/` with its input and report.

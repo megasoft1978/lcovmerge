@@ -5,7 +5,7 @@ lcovmerge merges already-exported LCOV `.info` files. It does not collect raw co
 ## LCOV record differences
 
 - The policy comparison with LCOV 2.6—including branch-only lines, empty source sections, branch block IDs, legacy duplicate function names, joined record boundaries, checksums, and MC/DC—is in [COMPATIBILITY.md](COMPATIBILITY.md).
-- Output records are written in a stable order: source paths, testcase names, function groups and aliases, line records, branch records, MC/DC coverage records, then extension rows. Numeric record families are sorted by their LCOV keys. Input summary rows are discarded and recomputed. Output includes MCF/MCH summary rows even when there are no MC/DC records.
+- Output records are written in a stable order: source paths, a testcase name when every merged section for that source has the same non-empty name, function groups and aliases, line records, branch records, MC/DC coverage records, then extension rows. Conflicting or mixed named/unnamed testcase metadata is omitted because the coverage counts are combined across those inputs. Numeric record families are sorted by their LCOV keys. Input summary rows are discarded and recomputed. Output includes MCF/MCH summary rows even when there are no MC/DC records.
 - Counts use unsigned 64-bit values and saturate at `UINT64_MAX`. LCOV versions may use different numeric bounds internally.
 - Orphan FNDA rows are preserved, and their nonzero values contribute to FNH. LCOV 2.6 may reject or drop orphan hits during summary calculation; this merger keeps the supplied row.
 - FNL is counted as one function group. Every FNA alias is retained, and its FNDA count is merged by index and name. LCOV 2.6's summary command may count aliases as separate functions in some files even though FNF describes function locations.
@@ -22,6 +22,7 @@ lcovmerge merges already-exported LCOV `.info` files. It does not collect raw co
 - Windows uses synchronous `ReadFile`/`WriteFile` calls and blocking worker-thread joins without a cancellation path. A blocked operation can delay interruption and cleanup; the signal-cleanup guarantee is POSIX only.
 - Parsing can use multiple workers across input files. One large input file is not split among workers, and the merge stage itself uses one worker.
 - The program does not expand glob patterns. The caller's shell expands them; use `@listfile` for explicit lists. List-file paths are relative to the process working directory.
+- Named tracefile and list-file paths must refer to regular files. Use `-` for standard input; named pipes and devices are rejected so worker threads cannot remain blocked in open/read after a caught signal.
 - Windows long drive and UNC paths use the extended-length `\\?\` prefix, and temporary files use collision-checked `CREATE_NEW`. These paths were exercised by the Windows CI smoke test, not by local runs.
 
 ## Performance and packaging limits

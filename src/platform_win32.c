@@ -356,6 +356,8 @@ unsigned lm_cpu_count(void) {
     return info.dwNumberOfProcessors ? (unsigned)info.dwNumberOfProcessors : 1u;
 }
 
+unsigned lm_max_open_files(void) { return UINT_MAX; }
+
 static unsigned __stdcall thread_entry(void *raw) {
     ThreadStart *start = raw;
     lm_thread_fn function = start->function;

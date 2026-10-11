@@ -33,6 +33,7 @@ char *lm_default_tempdir(void);
 lm_handle lm_stdin_handle(void);
 lm_handle lm_stdout_handle(void);
 unsigned lm_cpu_count(void);
+unsigned lm_max_open_files(void);
 int lm_thread_start(lm_thread *thread, lm_thread_fn function, void *argument);
 int lm_thread_join(lm_thread thread);
 #ifdef _WIN32

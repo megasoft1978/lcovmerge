@@ -76,10 +76,18 @@ def check_featured_rendering(root, renderer):
     if section_text(readme, renderer.README_BENCHMARK_START,
                     renderer.README_BENCHMARK_END) != expected_readme.strip():
         raise AssertionError("stale generated README benchmark section")
+    expected_optimization = renderer.optimization_readme()
+    if section_text(readme, renderer.README_OPTIMIZATION_START,
+                    renderer.README_OPTIMIZATION_END) != expected_optimization.strip():
+        raise AssertionError("stale generated README optimization section")
 
     editorial = re.sub(
         re.escape(renderer.README_BENCHMARK_START) + r".*?" +
         re.escape(renderer.README_BENCHMARK_END), " ", readme, flags=re.DOTALL,
+    )
+    editorial = re.sub(
+        re.escape(renderer.README_OPTIMIZATION_START) + r".*?" +
+        re.escape(renderer.README_OPTIMIZATION_END), " ", editorial, flags=re.DOTALL,
     )
     editorial = re.sub(r"```.*?```", " ", editorial, flags=re.DOTALL)
     editorial = re.sub(r"<!--.*?-->", " ", editorial, flags=re.DOTALL)
@@ -198,6 +206,69 @@ def check_featured_rendering(root, renderer):
     print(f"featured_benchmark_rendering=PASS dataset={selected['name']} bytes={selected['input_bytes']:,} home_words={visible_words}")
 
 
+def check_benchmark_data(root, renderer):
+    data = json.loads((root / "data" / "benchmarks.json").read_text(encoding="utf-8"))
+    mirror = json.loads(
+        (root / "docs" / "site" / "data" / "benchmarks.json").read_text(encoding="utf-8")
+    )
+    if mirror != renderer.site_benchmarks():
+        raise AssertionError("site benchmark JSON is stale against the canonical renderer and data")
+    version_header = (root / "include" / "version.h").read_text(encoding="utf-8")
+    version = re.search(r'#define LCOVMERGE_VERSION "([^"]+)"', version_header)
+    if version is None or data.get("version") != version.group(1):
+        raise AssertionError("benchmark record version differs from include/version.h")
+    names = [dataset.get("name") for dataset in data.get("datasets", [])]
+    if len(names) != len(set(names)) or not names:
+        raise AssertionError("canonical benchmark dataset names are empty or duplicated")
+
+    def check_result(result, label):
+        status = str(result.get("status", ""))
+        run_count = result.get("run_count")
+        if run_count is not None and (not isinstance(run_count, int) or run_count < 0):
+            raise AssertionError(f"{label} has an invalid run_count")
+        elapsed = result.get("time_s")
+        if elapsed is not None and (not isinstance(elapsed, (int, float)) or elapsed <= 0):
+            raise AssertionError(f"{label} has a nonpositive or invalid time")
+        if status.casefold() in {"not measured", "not measured (this run)", "unavailable", "skipped"}:
+            if run_count not in (None, 0) or elapsed is not None:
+                raise AssertionError(f"{label} claims measurements despite status {status!r}")
+        if status == "OK":
+            if result.get("exit_code") not in (None, 0) or elapsed is None or run_count == 0:
+                raise AssertionError(f"{label} has OK status without a successful measurement")
+            rss = result.get("rss_bytes")
+            if rss is not None and (not isinstance(rss, int) or rss <= 0):
+                raise AssertionError(f"{label} has an invalid peak RSS")
+
+    for dataset in data.get("datasets", []):
+        input_bytes = dataset.get("input_bytes")
+        if input_bytes is not None and input_bytes <= 0:
+            raise AssertionError(f"dataset {dataset.get('name')} has no positive input size")
+        if input_bytes is None and dataset.get("name") != "REAL":
+            raise AssertionError(f"dataset {dataset.get('name')} is missing its input size")
+        for tool, result in dataset.get("results", {}).items():
+            check_result(result, f"{dataset.get('name')} / {tool}")
+            throughput = result.get("throughput_mb_s")
+            elapsed = result.get("time_s")
+            if throughput is not None and elapsed is not None and input_bytes is not None:
+                calculated = input_bytes / elapsed / 1_000_000
+                if abs(throughput - calculated) > 0.15:
+                    raise AssertionError(
+                        f"{dataset.get('name')} / {tool} throughput does not match bytes and time"
+                    )
+    for host in data.get("host_results", []):
+        for dataset in host.get("datasets", []):
+            for tool, result in dataset.get("results", {}).items():
+                check_result(result, f"{host.get('label')} / {dataset.get('name')} / {tool}")
+    for trial in data.get("optimization_trials", []):
+        for result in trial.get("results", []):
+            baseline = result.get("baseline", {})
+            optimized = result.get("optimized", {})
+            if baseline.get("output_sha256") != optimized.get("output_sha256"):
+                raise AssertionError(f"PGO output hashes differ for {result.get('dataset')}")
+            if baseline.get("run_count", 0) <= 0 or optimized.get("run_count", 0) <= 0:
+                raise AssertionError(f"PGO trial has no measured runs for {result.get('dataset')}")
+
+
 def check_public_compatibility_copy(text, source):
     plain_text = html.unescape(re.sub(r"<[^>]*>", " ", text)).replace("`", "")
     normalized = " ".join(plain_text.split()).casefold()
@@ -283,6 +354,7 @@ def main():
     root = Path(sys.argv[1]).resolve()
     check_stale_windows_verification_copy(root)
     renderer = load_renderer(root)
+    check_benchmark_data(root, renderer)
     check_featured_rendering(root, renderer)
     page_path = root / "docs" / "site" / "benchmarks.html"
     page = page_path.read_text(encoding="utf-8")

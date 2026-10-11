@@ -84,6 +84,26 @@ class InputExpansionTests(unittest.TestCase):
 
         self.assertEqual([path.name for path in matches], ["unit.info", "integration.info"])
 
+    def test_writes_inputs_to_listfile_and_rejects_newline_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shard = root / "coverage.info"
+            shard.write_text("synthetic", encoding="utf-8")
+            destination = root / "inputs.txt"
+            entrypoint.write_input_listfile([shard], destination)
+            self.assertEqual(destination.read_text(encoding="utf-8"), str(shard.resolve()) + "\n")
+            with self.assertRaisesRegex(SystemExit, "containing newlines"):
+                entrypoint.write_input_listfile([root / "bad\nname.info"], destination)
+
+    def test_excludes_existing_output_matched_by_a_broad_glob(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shard = root / "shard.info"
+            output = root / "merged.info"
+            shard.write_text("input", encoding="utf-8")
+            output.write_text("previous result", encoding="utf-8")
+            self.assertEqual(entrypoint.exclude_output_input([shard, output], output), [shard])
+
     def test_rejects_empty_or_unmatched_files_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary)

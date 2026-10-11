@@ -14,13 +14,17 @@ int lcovmerge_main(int argc, char **argv);
 static char fuzz_directory[1024];
 static char fuzz_input[1152];
 static char fuzz_output[1152];
+#ifndef LCOVMERGE_LIBFUZZER
 static int saved_stderr = -1;
 static int null_stderr = -1;
+#endif
 
 static void cleanup(void) {
+#ifndef LCOVMERGE_LIBFUZZER
     if (saved_stderr >= 0) (void)dup2(saved_stderr, STDERR_FILENO);
     if (saved_stderr >= 0) (void)close(saved_stderr);
     if (null_stderr >= 0) (void)close(null_stderr);
+#endif
     if (fuzz_input[0]) (void)unlink(fuzz_input);
     if (fuzz_output[0]) (void)unlink(fuzz_output);
     if (fuzz_directory[0]) (void)rmdir(fuzz_directory);
@@ -38,9 +42,11 @@ static int initialize(void) {
     int output_length = snprintf(fuzz_output, sizeof(fuzz_output), "%s/output.info", fuzz_directory);
     if (input_length < 0 || (size_t)input_length >= sizeof(fuzz_input) ||
         output_length < 0 || (size_t)output_length >= sizeof(fuzz_output)) return -1;
+#ifndef LCOVMERGE_LIBFUZZER
     saved_stderr = dup(STDERR_FILENO);
     null_stderr = open("/dev/null", O_WRONLY);
     if (saved_stderr < 0 || null_stderr < 0) return -1;
+#endif
     if (atexit(cleanup) != 0) return -1;
     return 0;
 }
@@ -58,10 +64,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
     (void)close(input_fd);
 
+#ifndef LCOVMERGE_LIBFUZZER
     (void)dup2(null_stderr, STDERR_FILENO);
+#endif
     char *arguments[] = {"lcovmerge-fuzz", "--jobs", "1", "--mem-limit", "8M",
                          fuzz_input, "-o", fuzz_output, NULL};
     (void)lcovmerge_main(8, arguments);
+#ifndef LCOVMERGE_LIBFUZZER
     (void)dup2(saved_stderr, STDERR_FILENO);
+#endif
     return 0;
 }

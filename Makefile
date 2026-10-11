@@ -32,7 +32,7 @@ UNIT_SOURCE = tests/unit/helpers.c
 UNIT_CPPFLAGS = -Dlcovmerge_main=lcovmerge_unit_unused_main -Dwmain=lcovmerge_unit_unused_wmain
 ASAN_CFLAGS = -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
 	-fsanitize=address,undefined -fno-omit-frame-pointer
-.PHONY: all test unit test-docker asan fuzz bench dist clean install uninstall check-format
+.PHONY: all test unit test-docker asan fuzz fuzz-guided bench dist clean install uninstall check-format
 
 all: $(BIN)
 
@@ -70,6 +70,16 @@ fuzz: | bin
 		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		bin/lcovmerge-fuzz tests/fuzz-corpus $${FUZZ_RUNS:-2000000}
+
+FUZZ_TIME ?= 10
+fuzz-guided: | bin
+	mkdir -p .cache/fuzz-artifacts
+	clang $(CPPFLAGS) -DLCOVMERGE_LIBFUZZER -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
+		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
+		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c -pthread -o bin/lcovmerge-libfuzz
+	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+		bin/lcovmerge-libfuzz tests/fuzz-corpus -max_len=1048576 -max_total_time=$(FUZZ_TIME) \
+		-artifact_prefix=.cache/fuzz-artifacts/
 
 bench: bin/lcovmerge
 	sh bench/run.sh

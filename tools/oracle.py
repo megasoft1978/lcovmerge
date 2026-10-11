@@ -67,8 +67,7 @@ def merge(paths: list[str]) -> dict:
                     name = line[3:]
                     current = files.setdefault(name, fresh())
                     current["section"] = True
-                    if pending_tn is not None:
-                        current["tn"].add(pending_tn)
+                    current["tn"].add(pending_tn if pending_tn is not None else "")
                     pending_tn = None
                     fnl = None
                     continue
@@ -210,7 +209,8 @@ def render(files: dict) -> str:
     output: list[str] = []
     for path in sorted(files):
         record = files[path]
-        output.extend(f"TN:{name}\n" for name in sorted(record["tn"]))
+        if len(record["tn"]) == 1 and next(iter(record["tn"])):
+            output.append(f"TN:{next(iter(record['tn']))}\n")
         output.append(f"SF:{path}\n")
         new_groups = sorted(group for group in record["groups"] if group[0] == 1)
         aliases = record["new_fns"]
