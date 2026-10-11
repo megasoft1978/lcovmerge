@@ -10,7 +10,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "data/benchmarks.json").read_text())
-REAL_DATA = json.loads((ROOT / "data/real-projects.json").read_text())
 VERSION_MATCH = re.search(
     r'^#define LCOVMERGE_VERSION "([^"]+)"$',
     (ROOT / "include/version.h").read_text(),
@@ -20,10 +19,6 @@ if VERSION_MATCH is None:
     raise SystemExit("LCOVMERGE_VERSION is missing from include/version.h")
 START = "<!-- BENCHMARKS:START -->"
 END = "<!-- BENCHMARKS:END -->"
-HERO_START = "<!-- HERO-PROOF:START -->"
-HERO_END = "<!-- HERO-PROOF:END -->"
-REAL_START = "<!-- REAL-PROJECTS:START -->"
-REAL_END = "<!-- REAL-PROJECTS:END -->"
 SITE_CHARTS_START = "<!-- SITE-BENCHMARK-CHARTS:START -->"
 SITE_CHARTS_END = "<!-- SITE-BENCHMARK-CHARTS:END -->"
 SITE_RESULTS_START = "<!-- SITE-BENCHMARK-RESULTS:START -->"
@@ -36,6 +31,10 @@ SITE_METHOD_START = "<!-- SITE-BENCHMARK-METHOD:START -->"
 SITE_METHOD_END = "<!-- SITE-BENCHMARK-METHOD:END -->"
 SITE_SCOPE_START = "<!-- SITE-BENCHMARK-SCOPE:START -->"
 SITE_SCOPE_END = "<!-- SITE-BENCHMARK-SCOPE:END -->"
+README_BENCHMARK_START = "<!-- README-BENCHMARK:START -->"
+README_BENCHMARK_END = "<!-- README-BENCHMARK:END -->"
+HOME_BENCHMARK_START = "<!-- HOME-BENCHMARK:START -->"
+HOME_BENCHMARK_END = "<!-- HOME-BENCHMARK:END -->"
 WINDOWS_VERIFICATION_SENTENCE = (
     "Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
     "and shipped Zig binary pass the full suite and smoke tests, and separate generated-input "
@@ -57,7 +56,7 @@ def memory(result):
         return plain_copy(result["rss_display"])
     if result.get("rss_bytes") is not None:
         return f'{result["rss_bytes"] / (1024 * 1024):,.2f} MiB'
-    if result["rss_mib"] is None:
+    if result.get("rss_mib") is None:
         return "—"
     return f'{result["rss_mib"]:,.1f} MiB'
 
@@ -77,15 +76,6 @@ def plain_copy(value):
         text = ("Dataset M's sorted regular inputs use one merge worker; --jobs results show run variation, "
                 "not the effect of adding workers.")
     return text
-
-
-def compact_metric(result):
-    seconds = "—" if result["time_s"] is None else f'{result["time_s"]:,.3f} s'
-    if result["throughput_mb_s"] is None:
-        detail = "n/a"
-    else:
-        detail = f'{result["throughput_mb_s"]:,.1f} MB/s'
-    return f'{seconds} / {memory(result)} / {detail} / {result["status"]}'
 
 
 def context():
@@ -111,26 +101,6 @@ def display_tool_labels():
     if not recorded_version or recorded_label != f"lcovmerge {recorded_version}":
         raise SystemExit("data/benchmarks.json version and lcovmerge tool label do not match")
     return labels
-
-
-def readme_table():
-    wanted = {"M", "L", "XL-single", "PATH-HEAVY"}
-    labels = display_tool_labels()
-    rows = [
-        f'| Dataset (input bytes) | {labels["lcovmerge"]} | {labels["lcov"]} | '
-        f'{labels["lcov-result-merger"]} |',
-        "| --- | ---: | ---: | ---: |",
-    ]
-    for ds in DATA["datasets"]:
-        if ds["name"] not in wanted:
-            continue
-        r = ds["results"]
-        size = f'{ds["input_bytes"]:,}' if ds.get("input_bytes") is not None else "unavailable"
-        rows.append(f'| {ds["name"]} ({size}) '
-                    f'| {compact_metric(r["lcovmerge"])} '
-                    f'| {compact_metric(r["lcov"])} '
-                    f'| {compact_metric(r["lcov-result-merger"])} |')
-    return "\n".join(rows)
 
 
 def full_table():
@@ -177,22 +147,295 @@ def caveats():
     )
 
 
-def bazel_evidence():
-    evidence = DATA["external_evidence"]["bazel_issue_26383"]
+def dataset(name):
+    return next(item for item in DATA["datasets"] if item["name"] == name)
+
+
+def completed(result):
     return (
-        "Large LCOV .info files can make a merge job the most memory hungry part of a "
-        "coverage pipeline. The Bazel CoverageOutputGenerator issue reports "
-        "that combining "
-        f'{evidence["input_description"]} required a Java heap above '
-        f'{evidence["reported_heap_requirement_gb"]} GB. It also shows a '
-        f'{evidence["single_file_size_mb"]} MB single-file case failing with a '
-        f'heap cap of {evidence["single_file_heap_cap_gb"]} GB. This is one '
-        "reported workload, not a universal result for Bazel."
+        isinstance(result, dict)
+        and result.get("status") == "OK"
+        and isinstance(result.get("time_s"), (int, float))
+        and result["time_s"] > 0
+        and result.get("exit_code", 0) == 0
     )
 
 
-def dataset(name):
-    return next(item for item in DATA["datasets"] if item["name"] == name)
+def host_identity(source, key, data):
+    result = source.get("results", {}).get(key, {})
+    host = result.get("host") or source.get("host") or data.get("host")
+    if host is None:
+        return None
+    if isinstance(host, dict):
+        return json.dumps(host, sort_keys=True, separators=(",", ":"))
+    return str(host)
+
+
+def featured_dataset(data=None):
+    """Choose the largest primary dataset with successful same-host lcov results."""
+    data = DATA if data is None else data
+    candidates = []
+    for source in data.get("datasets", []):
+        results = source.get("results", {})
+        merge = results.get("lcovmerge", {})
+        lcov = results.get("lcov", {})
+        input_bytes = source.get("input_bytes")
+        if not isinstance(input_bytes, int) or input_bytes <= 0:
+            continue
+        if not completed(merge) or not completed(lcov):
+            continue
+        merge_host = host_identity(source, "lcovmerge", data)
+        lcov_host = host_identity(source, "lcov", data)
+        if merge_host is None or merge_host != lcov_host:
+            continue
+        candidates.append(source)
+    if not candidates:
+        raise SystemExit("no completed same-host lcovmerge/lcov benchmark pair is available")
+    return max(candidates, key=lambda source: source["input_bytes"])
+
+
+def featured_host(source):
+    host = source.get("host") or DATA.get("host", {})
+    if isinstance(host, str):
+        return host
+    details = [host.get("os"), host.get("cpu")]
+    return " · ".join(str(value) for value in details if value)
+
+
+def is_earlier_memory(key, result):
+    source = result.get("rss_source") or result.get("memory_source")
+    if source and re.search(r"earlier|previous|prior", str(source), re.IGNORECASE):
+        return True
+    if key == "lcov" and "retain the previous canonical" in DATA.get("method", {}).get("rss_source", ""):
+        return result.get("rss_bytes") is not None
+    if key == "lcov-result-merger" and result.get("run_count") is None:
+        environment = DATA.get("environment", {}).get("lcov-result-merger", "")
+        return result.get("rss_bytes") is not None and "prior results retained" in environment
+    return False
+
+
+def is_earlier_timing(key, result):
+    source = result.get("time_source") or result.get("measurement_source")
+    if source and re.search(r"earlier|previous|prior", str(source), re.IGNORECASE):
+        return True
+    if key == "lcov-result-merger" and result.get("run_count") is None:
+        environment = DATA.get("environment", {}).get("lcov-result-merger", "")
+        return "prior results retained" in environment
+    return False
+
+
+def measurement_note(source, key, result):
+    if not result or result.get("status") in {"NOT MEASURED", None}:
+        return "Not measured"
+    count = result.get("run_count")
+    if count is None and key == "lcovmerge":
+        count = DATA.get("method", {}).get("repeat_counts", {}).get(source["name"])
+    if count is None and key in {"lcov", "lcov-result-merger"} and not is_earlier_timing(key, result):
+        count = DATA.get("method", {}).get("comparison_runs_per_tool")
+    if count is None:
+        if is_earlier_timing(key, result):
+            return "Earlier recorded measurement; run count not reported"
+        return "Run count not reported"
+    suffix = f"{count} measured run" + ("s" if count != 1 else "")
+    if key == "lcovmerge" and count > 1:
+        suffix += "; median time"
+    if key == "lcov" and is_earlier_memory(key, result):
+        suffix += "; peak memory from an earlier measurement"
+    return suffix
+
+
+def featured_memory(key, result):
+    value = (f'{result["rss_bytes"]:,} B'
+             if result.get("rss_bytes") is not None
+             else memory(result))
+    if is_earlier_memory(key, result) and value != "—":
+        value += " · earlier measurement"
+    return value
+
+
+def result_elapsed(result):
+    value = result.get("time_s")
+    status = result.get("status", "Not reported")
+    if status == "OK" and isinstance(value, (int, float)):
+        return f'{value:,.3f} s'
+    if isinstance(value, (int, float)):
+        return f'{status} · stopped after {value:,.3f} s'
+    return status
+
+
+def comparison_ratios(source, key):
+    """Return only successful, same-host time and resident-memory ratios."""
+    merge = source.get("results", {}).get("lcovmerge", {})
+    other = source.get("results", {}).get(key, {})
+    if not completed(merge) or not completed(other):
+        return None
+    if host_identity(source, "lcovmerge", DATA) != host_identity(source, key, DATA):
+        return None
+    time_ratio = other["time_s"] / merge["time_s"]
+    memory_ratio = None
+    if merge.get("rss_bytes") and other.get("rss_bytes"):
+        memory_ratio = other["rss_bytes"] / merge["rss_bytes"]
+    return time_ratio, memory_ratio
+
+
+def ratio_copy(source, key):
+    ratios = comparison_ratios(source, key)
+    if ratios is None:
+        return None
+    time_ratio, memory_ratio = ratios
+    label = display_tool_labels().get(key, key)
+    if time_ratio >= 1:
+        time_text = f'{time_ratio:,.1f}× faster than {label}'
+    else:
+        time_text = f'{1 / time_ratio:,.1f}× slower than {label}'
+    memory_text = None
+    if memory_ratio is not None:
+        if memory_ratio >= 1:
+            memory_text = f'{memory_ratio:,.1f}× less recorded peak resident memory than {label}'
+        else:
+            memory_text = f'{1 / memory_ratio:,.1f}× more recorded peak resident memory than {label}'
+    parts = [time_text]
+    if memory_text:
+        parts.append(memory_text)
+    caveat = ""
+    result = source.get("results", {}).get(key, {})
+    if is_earlier_timing(key, result):
+        caveat = " (its values are from an earlier recorded measurement; run count not reported)"
+    elif is_earlier_memory(key, result):
+        caveat = " (its peak memory is from an earlier measurement)"
+    return "; ".join(parts) + caveat + "."
+
+
+def featured_metadata(source):
+    labels = display_tool_labels()
+    method = DATA.get("method", {})
+    merge = source["results"]["lcovmerge"]
+    lcov = source["results"]["lcov"]
+    merger = source["results"].get("lcov-result-merger", {})
+    merge_runs = merge.get("run_count") or method.get("repeat_counts", {}).get(source["name"])
+    lcov_runs = lcov.get("run_count") or method.get("comparison_runs_per_tool")
+    merger_runs = merger.get("run_count")
+    merge_note = f'{merge_runs}-run median' if merge_runs else "run count unreported"
+    lcov_note = f'{lcov_runs} timed run' if lcov_runs else "run count unreported"
+    if is_earlier_memory("lcov", lcov):
+        lcov_note += "; peak memory from earlier measurement"
+    if merger.get("status") in {"NOT MEASURED", None}:
+        merger_note = "not measured"
+    elif merger_runs:
+        merger_note = f"{merger_runs} runs"
+    elif is_earlier_timing("lcov-result-merger", merger):
+        merger_note = "earlier measurement; run count unreported"
+    else:
+        merger_note = f'{method.get("comparison_runs_per_tool", "run count unreported")} measured run'
+    return (
+        f'Generated Dataset {source["name"]} · {source["input_bytes"]:,} input bytes · '
+        f'{source.get("shards", "shard count not reported")} · {featured_host(source)} · '
+        f'{DATA.get("measured_on", "date not reported")}. '
+        f'Builds: {labels["lcovmerge"]} / {labels["lcov"]} / {labels["lcov-result-merger"]}. '
+        f'Runs: lcovmerge {merge_note}; lcov {lcov_note}; lcov-result-merger {merger_note}.'
+    )
+
+
+def featured_readme():
+    source = featured_dataset()
+    labels = display_tool_labels()
+    keys = ("lcovmerge", "lcov", "lcov-result-merger")
+    rows = [
+        f'**{featured_metadata(source)}**',
+        "",
+        "| Tool | Time | Peak resident memory | Runs / status |",
+        "| --- | ---: | ---: | --- |",
+    ]
+    for key in keys:
+        result = source.get("results", {}).get(key, {})
+        rows.append(
+            f'| {labels[key]} | {result_elapsed(result)} | {featured_memory(key, result)} | '
+            f'{measurement_note(source, key, result)} · {result.get("status", "Not reported")} |'
+        )
+    for key in ("lcov", "lcov-result-merger"):
+        copy = ratio_copy(source, key)
+        if copy:
+            rows.extend(["", f"**{copy}**"])
+    return "\n".join(rows)
+
+
+def featured_site():
+    source = featured_dataset()
+    labels = display_tool_labels()
+    results = source.get("results", {})
+    keys = ("lcovmerge", "lcov", "lcov-result-merger")
+    completed_times = [
+        results.get(key, {}).get("time_s")
+        for key in keys
+        if completed(results.get(key, {}))
+    ]
+    maximum = max(completed_times)
+    lcov_ratios = comparison_ratios(source, "lcov")
+    lcov_mem_ratio = lcov_ratios[1] if lcov_ratios else None
+    if lcov_ratios:
+        time_ratio = lcov_ratios[0]
+        headline_html = (
+            f'<h1 id="home-title"><span>{time_ratio:,.1f}×</span> faster than '
+            f'{html.escape(labels["lcov"])}.'
+        )
+        if lcov_mem_ratio is not None:
+            headline_html += (
+                f'<br><span>{lcov_mem_ratio:,.1f}×</span> less recorded peak memory than '
+                f'{html.escape(labels["lcov"])}.'
+            )
+        headline_html += '</h1>'
+    else:
+        headline_html = '<h1 id="home-title">Benchmark ratio unavailable.</h1>'
+
+    chart_items = ['<p class="bar-caption">Time · peak resident memory</p>']
+    for key in keys:
+        result = results.get(key, {})
+        status = result.get("status", "Not reported")
+        if completed(result):
+            time_text = f'{result["time_s"]:,.3f} s'
+            width = result["time_s"] / maximum * 100
+            bar = f'<span class="bar-fill" style="width:{width:.3f}%"></span>'
+        else:
+            time_text = result_elapsed(result)
+            bar = ""
+        if result.get("status") == "OK":
+            status_note = ""
+            if is_earlier_timing(key, result):
+                status_note = "Earlier measurement; runs unreported"
+        else:
+            status_note = result.get("status", "Not reported")
+            if status_note in {"TIMEOUT", "ERROR", "ERROR_1"}:
+                status_note += " · excluded from scale and ratios"
+        value = result.get("rss_bytes")
+        memory_value = (
+            f'{value / (1024 * 1024):,.2f} MiB'
+            if value is not None else memory(result)
+        )
+        if key == "lcov" and is_earlier_memory(key, result) and memory_value != "—":
+            memory_value += " (earlier measurement)"
+        chart_items.append(
+            f'<li class="home-bar {key}">'
+            f'<div class="home-bar-label"><span>{html.escape(labels[key])}</span>'
+            f'<strong>{html.escape(time_text)} · {html.escape(memory_value)}</strong></div>'
+            f'<div class="bar-track" aria-hidden="true">{bar}</div>'
+            f'<span class="home-bar-status">{html.escape(status_note)}</span>'
+            '</li>'
+        )
+    mid = maximum / 2
+    axis = (
+        '<div class="bar-axis" role="img" '
+        f'aria-label="Zero-based elapsed-time scale from 0 to {maximum:,.3f} seconds">'
+        f'<span>0 s</span><span>{mid:,.1f} s</span><span>{maximum:,.1f} s</span></div>'
+    )
+    return "\n".join([
+        headline_html,
+        f'<p class="featured-meta">{html.escape(featured_metadata(source))}</p>',
+        f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
+        axis,
+        '<p class="generated-note">Generated; outputs not compared. '
+        f'Release v{html.escape(VERSION_MATCH.group(1))}.</p>',
+        '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
+    ])
 
 
 def seconds_display(value):
@@ -201,50 +444,6 @@ def seconds_display(value):
 
 def bytes_display(value):
     return f"{value:,} B"
-
-
-def hero_proof():
-    return f'''<p class="eyebrow">LCOV .info merger · C11 · MIT</p>
-        <h1 id="hero-title">Merge existing LCOV shards after your test jobs.</h1>
-        <p class="hero-copy">Turn existing .info files into one LCOV file. Keep your collector and report step.</p>
-        <div class="hero-actions">
-          <a class="button" href="https://github.com/megasoft1978/lcovmerge/releases/tag/v{VERSION_MATCH.group(1)}">Download v{VERSION_MATCH.group(1)}</a>
-          <a class="action-link" href="docs.html#github-actions">Use in GitHub Actions</a>
-        </div>
-        <div class="quick-merge card" aria-labelledby="quick-merge-title">
-          <p class="eyebrow">Quick merge</p>
-          <h2 id="quick-merge-title">Merge, then keep your report step.</h2>
-          <pre class="code-block" data-copy-label="Copy merge and genhtml commands"><code>lcovmerge coverage/shard-*.info -o coverage/merged.info
-genhtml coverage/merged.info --output-directory coverage/html</code></pre>
-        </div>
-        <p class="hero-note">The memory setting limits memory reserved for coverage records while sorting. Total process memory can be higher, and sorting uses temporary disk. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Read the limits</a>.</p>'''
-
-
-def hero_card():
-    medium = dataset("M")
-    results = medium["results"]
-    lcovmerge = results["lcovmerge"]
-    merge_runs = DATA["method"]["repeat_counts"]["M"]
-    labels = display_tool_labels()
-    return f'''<p class="eyebrow">Measured on generated LCOV</p>
-        <h2 id="hero-results-title">Dataset M · {medium["input_bytes"]:,} bytes · {html.escape(medium["shards"])}</h2>
-        <p><strong>{html.escape(labels["lcovmerge"])}</strong>: {seconds_display(lcovmerge["time_s"])} median of {merge_runs} runs; {bytes_display(lcovmerge["rss_bytes"])} peak resident memory.</p>
-        <p>One {html.escape(DATA["host"]["os"])} host. {html.escape(DATA["host"]["cache"])}.</p>
-        <a class="text-link" href="benchmarks.html#method-title">Full data and method ↗</a>'''
-
-
-def readme_proof():
-    medium = dataset("M")
-    lcovmerge = medium["results"]["lcovmerge"]
-    lcov = medium["results"]["lcov"]
-    runs = DATA["method"]["repeat_counts"]["M"]
-    labels = display_tool_labels()
-    return "\n".join([
-        f'> **Dataset M · generated, {medium["shards"]} · {medium["input_bytes"]:,} input bytes**<br>',
-        f'> {labels["lcovmerge"]}: **{seconds_display(lcovmerge["time_s"])}**, **{bytes_display(lcovmerge["rss_bytes"])} peak resident memory** (median of {runs} runs).<br>',
-        f'> {DATA["tool_labels"]["lcov"]}: **{seconds_display(lcov["time_s"])}**, **{bytes_display(lcov["rss_bytes"])} peak resident memory** (one run; peak resident memory from an earlier recorded measurement).<br>',
-        f'> One {DATA["host"]["os"]} {DATA["host"]["cpu"]} host; {DATA["host"]["cache"]}.',
-    ])
 
 
 def chart(dataset_name="M"):
@@ -573,45 +772,6 @@ def site_host_results():
     )
 
 
-def real_project_records():
-    return [item for item in REAL_DATA["projects"] if item["project"] != "REAL composite"]
-
-
-def real_project_rows():
-    rows = []
-    for item in REAL_DATA["projects"]:
-        project = item["project"]
-        lcovmerge = item["lcovmerge"]
-        lcov = item["lcov"]
-        rows.append(
-            f'| {project} | {item["input_mb"]:.3f} MB · {item["shards"]} shards | '
-            f'{lcovmerge["wall_seconds"]:.3f} s · {lcovmerge["peak_rss_mib"]:.2f} MiB | '
-            f'{lcov["wall_seconds"]:.3f} s · {lcov["peak_rss_mib"]:.2f} MiB | '
-            f'{item["lcov_comparison"]} / {item["genhtml"]} |'
-        )
-    return "\n".join(rows)
-
-
-def readme_real_projects():
-    projects = real_project_records()
-    sizes = [project["input_mb"] for project in projects]
-    composite = next(item for item in REAL_DATA["projects"] if item["project"] == "REAL composite")
-    shard_counts = sorted({project["shards"] for project in projects})
-    capture_count = shard_counts[0] if len(shard_counts) == 1 else "multiple"
-    sort_inputs = REAL_DATA["external_sort_method"].split()[0]
-    return "\n".join([
-        f'{len(projects)} small project-derived LCOV captures were checked on one {REAL_DATA["host"]["os"]} {REAL_DATA["host"]["architecture"]} host. Each project used {capture_count} shards,',
-        f'with inputs from {min(sizes):.3f} MB to {max(sizes):.3f} MB; the composite was {composite["input_mb"]:.3f} MB across {composite["shards"]} shards. These are',
-        "small compatibility checks, not large production workloads. Normalized record comparisons and genhtml",
-        f'passed for each project. The separate {sort_inputs}-input temporary-file sorting checks and bytewise checks across input order and worker settings passed.',
-        "See [the validation record](docs/validation/real-projects.md) for toolchain, capture warnings, and method details.",
-        "",
-        "| Project | Input | lcovmerge time / peak resident memory | LCOV 2.6 time / peak resident memory | Comparison / genhtml |",
-        "| --- | ---: | ---: | ---: | --- |",
-        real_project_rows(),
-    ])
-
-
 def site_benchmarks():
     """Map canonical measurements to the downloadable site data file."""
     ids = {"M": "medium", "L": "large", "XL-single": "single_file"}
@@ -721,15 +881,12 @@ def main():
         render_site_benchmarks(benchmark_page)
         return
 
-    replace_section(ROOT / "README.md", readme_table())
-    replace_named_section(ROOT / "README.md", "<!-- BENCH-CONTEXT:START -->", "<!-- BENCH-CONTEXT:END -->", context())
-    replace_named_section(ROOT / "README.md", "<!-- BAZEL-EVIDENCE:START -->", "<!-- BAZEL-EVIDENCE:END -->", textwrap.fill(bazel_evidence(), width=110, break_long_words=False, break_on_hyphens=False))
-    replace_named_section(ROOT / "README.md", HERO_START, HERO_END, readme_proof())
-    replace_named_section(ROOT / "README.md", REAL_START, REAL_END, readme_real_projects())
+    replace_named_section(
+        ROOT / "README.md", README_BENCHMARK_START, README_BENCHMARK_END, featured_readme()
+    )
 
     index = ROOT / "docs/site/index.html"
-    replace_named_section(index, HERO_START, HERO_END, hero_proof())
-    replace_named_section(index, "<!-- HERO-CARD:START -->", "<!-- HERO-CARD:END -->", hero_card())
+    replace_named_section(index, HOME_BENCHMARK_START, HOME_BENCHMARK_END, featured_site())
 
     render_site_benchmarks(benchmark_page)
 

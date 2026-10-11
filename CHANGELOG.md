@@ -8,6 +8,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- Simplify the README and landing page around a generated, largest-valid-pair benchmark summary and a short install/run path.
 - Add an LCOV 2.6 compatibility guide with policy comparisons, scoped validation evidence, aggregate public-CI findings, and local comparison instructions.
 - Update public-CI compatibility evidence with the 2026-10-11 rerun on lcovmerge 1.0.2 and its aggregate normalized-difference scope.
 - Update Windows platform notes to current CI scope: Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.

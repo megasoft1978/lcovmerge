@@ -6,6 +6,7 @@ import importlib.util
 import json
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 
@@ -25,6 +26,114 @@ def section_text(document, start, end):
     _, content = document.split(start, 1)
     content, _ = content.split(end, 1)
     return content.strip()
+
+
+class VisibleText(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags = []
+        self.ignored_tags = []
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append(tag)
+        classes = dict(attrs).get("class", "").split()
+        if tag in {"head", "script", "style", "pre"} or "skip-link" in classes:
+            self.ignored_tags.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.ignored_tags:
+            index = len(self.ignored_tags) - 1 - self.ignored_tags[::-1].index(tag)
+            del self.ignored_tags[index]
+        if tag in self.tags:
+            self.tags = self.tags[:len(self.tags) - 1 - self.tags[::-1].index(tag)]
+
+    def handle_data(self, data):
+        if not self.ignored_tags:
+            self.parts.append(data)
+
+
+def word_count(text):
+    return len(re.findall(r"\b[\w]+(?:[’'.-][\w]+)*\b", text, flags=re.UNICODE))
+
+
+def check_featured_rendering(root, renderer):
+    readme_path = root / "README.md"
+    readme = readme_path.read_text(encoding="utf-8")
+    expected_readme = renderer.featured_readme()
+    if section_text(readme, renderer.README_BENCHMARK_START,
+                    renderer.README_BENCHMARK_END) != expected_readme.strip():
+        raise AssertionError("stale generated README benchmark section")
+
+    editorial = re.sub(
+        re.escape(renderer.README_BENCHMARK_START) + r".*?" +
+        re.escape(renderer.README_BENCHMARK_END), " ", readme, flags=re.DOTALL,
+    )
+    editorial = re.sub(r"```.*?```", " ", editorial, flags=re.DOTALL)
+    editorial = re.sub(r"<!--.*?-->", " ", editorial, flags=re.DOTALL)
+    editorial = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", editorial)
+    if word_count(editorial) > 150:
+        raise AssertionError(f"README has {word_count(editorial)} editorial words outside code and generated sections")
+
+    blocks = re.findall(r"```sh\s*(.*?)\s*```", readme, flags=re.DOTALL)
+    if len(blocks) != 2 or any(len([line for line in block.splitlines() if line.strip()]) != 3 for block in blocks):
+        raise AssertionError("README install and usage examples must each have three lines")
+    if "set -eu" not in blocks[0] or "count != 1" not in blocks[0] or "sha256sum -c" not in blocks[0]:
+        raise AssertionError("README installer must fail closed on a missing or invalid checksum")
+
+    home_path = root / "docs" / "site" / "index.html"
+    home = home_path.read_text(encoding="utf-8")
+    expected_home = renderer.featured_site()
+    if section_text(home, renderer.HOME_BENCHMARK_START,
+                    renderer.HOME_BENCHMARK_END) != expected_home.strip():
+        raise AssertionError("stale generated landing-page benchmark section")
+    if len(re.findall(r"<section\b", home)) > 4:
+        raise AssertionError("landing page has more than four sections")
+    if 'role="tablist"' in home:
+        raise AssertionError("landing page should not add tabs")
+    visible = VisibleText()
+    visible.feed(home)
+    visible_words = word_count(" ".join(visible.parts))
+    if visible_words > 250:
+        raise AssertionError(f"landing page has {visible_words} visible words outside code")
+
+    data = json.loads((root / "data" / "benchmarks.json").read_text(encoding="utf-8"))
+    selected = renderer.featured_dataset(data)
+    if selected.get("input_bytes") != max(
+        item["input_bytes"] for item in data["datasets"]
+        if renderer.completed(item.get("results", {}).get("lcovmerge", {}))
+        and renderer.completed(item.get("results", {}).get("lcov", {}))
+        and renderer.host_identity(item, "lcovmerge", data)
+        == renderer.host_identity(item, "lcov", data)
+        and isinstance(item.get("input_bytes"), int)
+    ):
+        raise AssertionError("featured benchmark did not select the largest completed same-host pair")
+
+    synthetic = {
+        "host": "runner-a",
+        "datasets": [
+            {"name": "M", "input_bytes": 10, "results": {
+                "lcovmerge": {"status": "OK", "time_s": 2},
+                "lcov": {"status": "OK", "time_s": 5},
+            }},
+            {"name": "XXL", "input_bytes": 100, "results": {
+                "lcovmerge": {"status": "OK", "time_s": 10, "host": "runner-a"},
+                "lcov": {"status": "OK", "time_s": 90, "host": "runner-b"},
+            }},
+        ],
+    }
+    if renderer.featured_dataset(synthetic)["name"] != "M":
+        raise AssertionError("featured benchmark compared results from different hosts")
+    synthetic["datasets"][1]["results"]["lcov"]["host"] = "runner-a"
+    if renderer.featured_dataset(synthetic)["name"] != "XXL":
+        raise AssertionError("new largest completed pair did not become the featured benchmark")
+    synthetic["datasets"][1]["results"]["lcov"]["status"] = "TIMEOUT"
+    synthetic["datasets"][1]["results"]["lcov"]["exit_code"] = 124
+    if renderer.featured_dataset(synthetic)["name"] != "M":
+        raise AssertionError("timed-out benchmark incorrectly became the featured pair")
+    if renderer.comparison_ratios(synthetic["datasets"][1], "lcov") is not None:
+        raise AssertionError("timed-out comparator incorrectly received a speed or memory ratio")
+    print(f"featured_benchmark_rendering=PASS dataset={selected['name']} bytes={selected['input_bytes']:,} home_words={visible_words}")
 
 
 def check_public_compatibility_copy(text, source):
@@ -112,6 +221,7 @@ def main():
     root = Path(sys.argv[1]).resolve()
     check_stale_windows_verification_copy(root)
     renderer = load_renderer(root)
+    check_featured_rendering(root, renderer)
     page_path = root / "docs" / "site" / "benchmarks.html"
     page = page_path.read_text(encoding="utf-8")
     generated_sections = (
