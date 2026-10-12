@@ -9,6 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Split the core source into `src/lcovmerge.c` (CLI) and `src/lm_*.c` modules sharing `src/lm_internal.h`. Internal refactor only; behavior, output, and diagnostics are unchanged.
+- Speed up merging with byte-identical output: compare record strings by stored length, inline hot parsing and writer helpers, and write per-file summaries without `vsnprintf`. On the generated benchmark inputs, local medians were 7.6% (S) to 14.3% (XL-single) faster on the sorted-input path and 34.6% faster on the external-sort workload (PATH-HEAVY); one host, uncontrolled cache state.
 
 ## [1.1.0] - 2026-10-12
 

@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `src/platform_posix.c` / `src/platform_win32.c` + `include/platform.h`: file I/O, temp files, rename/remove, CPU count, threads. Platform APIs stay in these layers. `platform_entry.c` is the POSIX `main` shim; Windows uses `wmain` + UTF-8 conversion.
 - Pipeline (details in `docs/ARCHITECTURE.md`):
   1. Streaming parse with 1 MiB line cap, NUL/UTF-8 validation, SF path rewrite/filter.
-  2. Direct path: ≤32 regular files already in canonical order → tournament-tree merge, output staged in destination dir. On out-of-order input or budget overflow, staged output is discarded and the fallback runs.
+  2. Direct path: regular files already in canonical order (no fixed file-count cap; falls back on stdin, `-o -`, non-regular input, fd limit, or the direct memory budget) → tournament-tree merge, output staged in destination dir. On out-of-order input or budget overflow, staged output is discarded and the fallback runs.
   3. Fallback: bounded external sort (chunks → sorted temp runs; `--mem-limit` shared across workers, ≥8 MiB each, 24 MiB reserved overhead).
   4. K-way merge; summaries (function/branch/MC/DC/line) recomputed; output renamed atomically only after all I/O succeeds.
 - Determinism rules live in the comparator (SF path → record class → typed keys → text → values). Count merge is commutative and saturating (UINT64_MAX). Changes to ordering/merge semantics need regression cases.
