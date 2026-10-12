@@ -26,25 +26,22 @@ static void *partition_thread(void *argument) {
     return NULL;
 }
 
-static int append_file(lm_handle destination, const char *path, unsigned char *buffer,
-                       size_t capacity) {
-    lm_handle source = LM_INVALID_HANDLE;
-    if (lm_open_read(path, &source) != 0) return -1;
-    int status = 0;
-    while (status == 0) {
+/* Copies a whole staged file, through its still-open read-write handle, to the end of the destination. */
+static int append_staged(lm_handle destination, lm_handle source, unsigned char *buffer,
+                         size_t capacity) {
+    for (uint64_t offset = 0;;) {
         size_t got = 0;
         if (atomic_load_explicit(&interrupted, memory_order_relaxed) ||
-            lm_read(source, buffer, capacity, &got, &interrupted) != 0) { status = -1; break; }
-        if (got == 0) break;
-        for (size_t done = 0; done < got && status == 0;) {
+            lm_pread(source, buffer, capacity, offset, &got, &interrupted) != 0) return -1;
+        if (got == 0) return 0;
+        for (size_t done = 0; done < got;) {
             size_t written = 0;
             if (lm_write(destination, buffer + done, got - done, &written, &interrupted) != 0 ||
-                written == 0) status = -1;
+                written == 0) return -1;
             done += written;
         }
+        offset += got;
     }
-    if (lm_close(source) != 0 && status == 0) status = -1;
-    return status;
 }
 
 /* Everything the attempt created: staged files, diagnostics, results, the plan. */
@@ -159,23 +156,24 @@ int direct_run_partitioned(const Options *options) {
         }
     }
     if (usable) {
-        /* Close (and thereby flush) the later staged files; the first stays open as the target. */
-        for (unsigned p = 1; p < parts; ++p) {
-            if (lm_close(outputs[p].handle) != 0) usable = 0;
-            outputs[p].handle = LM_INVALID_HANDLE;
-            outputs[p].owns_handle = 0;
-        }
-        unsigned char *buffer = usable ? malloc(WRITE_BLOCK) : NULL;
-        if (usable && !buffer) usable = 0;
+        unsigned char *buffer = malloc(WRITE_BLOCK);
+        if (!buffer) usable = 0;
         for (unsigned p = 1; p < parts && usable; ++p) {
-            if (append_file(outputs[0].handle, outputs[p].path, buffer, WRITE_BLOCK) != 0 ||
-                lm_remove(outputs[p].path) != 0) usable = 0;
-            else { free(outputs[p].path); outputs[p].path = NULL; }
+            if (append_staged(outputs[0].handle, outputs[p].handle, buffer, WRITE_BLOCK) != 0) usable = 0;
+            else if (lm_close(outputs[p].handle) != 0) usable = 0;
+            else {
+                outputs[p].handle = LM_INVALID_HANDLE;
+                outputs[p].owns_handle = 0;
+                if (lm_remove(outputs[p].path) != 0) usable = 0;
+                else { free(outputs[p].path); outputs[p].path = NULL; }
+            }
         }
         free(buffer);
-        if (usable && lm_close(outputs[0].handle) != 0) usable = 0;
-        outputs[0].handle = LM_INVALID_HANDLE;
-        outputs[0].owns_handle = 0;
+        if (usable) {
+            if (lm_close(outputs[0].handle) != 0) usable = 0;
+            outputs[0].handle = LM_INVALID_HANDLE;
+            outputs[0].owns_handle = 0;
+        }
     }
     if (interrupted) {
         partition_cleanup(tasks, outputs, threads, &plan, prepared);
