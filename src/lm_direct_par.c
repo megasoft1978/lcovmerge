@@ -78,6 +78,8 @@ int direct_run_partitioned(const Options *options) {
     unsigned prepared = 0;
     atomic_bool abort_flag;
     atomic_init(&abort_flag, 0);
+    atomic_uint_fast64_t shared_growth;
+    atomic_init(&shared_growth, 0);
     if (!tasks || !outputs || !threads) {
         partition_cleanup(tasks, outputs, threads, &plan, 0);
         return DIRECT_RERUN;
@@ -102,6 +104,7 @@ int direct_run_partitioned(const Options *options) {
         tasks[prepared].job.prepared_output = &outputs[prepared];
         tasks[prepared].job.abort_flag = &abort_flag;
         tasks[prepared].job.diagnostics = diagnostics;
+        tasks[prepared].job.shared_growth = &shared_growth;
     }
     unsigned started = 0;
     int thread_failed = 0;

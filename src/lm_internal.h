@@ -183,6 +183,8 @@ typedef struct {
     size_t direct_count, direct_head;
     size_t *direct_memory_used;
     size_t direct_memory_limit, direct_max_line_bytes;
+    atomic_uint_fast64_t *direct_shared_growth; /* partitioned: growth of all partitions, see direct_charge */
+    uint64_t direct_shared_limit;
     uint64_t direct_path_generation;
     int direct_mode, direct_unsorted, have_direct_last_row;
 } Worker;
@@ -268,6 +270,7 @@ typedef struct {
     unsigned part;
     OutputFile *prepared_output; /* partitioned: staged file created (and later removed) by the caller */
     atomic_bool *abort_flag;     /* partitioned: set by the caller when any partition gave up */
+    atomic_uint_fast64_t *shared_growth; /* partitioned: total growth of every partition's buffers */
     FILE *diagnostics;           /* partitioned: created by the caller (see direct_run_partitioned), adopted by the run */
 } DirectJob;
 
@@ -400,6 +403,7 @@ int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, uint32_
 void print_worker_error(const Worker *worker);
 int run_direct_merge(const Options *options);
 size_t direct_fixed_cost(size_t count);
+int direct_charge(Worker *worker, size_t growth);
 
 int run_merge(const Options *options);
 

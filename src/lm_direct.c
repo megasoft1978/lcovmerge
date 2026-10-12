@@ -20,7 +20,7 @@ static int direct_rows_in_range(const DirectInput *input) {
     return 1;
 }
 
-static int direct_input_next(DirectInput *input, size_t *memory_used) {
+static int direct_input_next(DirectInput *input) {
     Worker *worker = &input->worker;
     if (worker->direct_count != 0) return 1;
     free(worker->direct_deferred_text);
@@ -67,11 +67,7 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
         if (input->reader.line_capacity > worker->direct_max_line_bytes) {
             size_t growth = input->reader.line_capacity - worker->direct_max_line_bytes;
             worker->direct_max_line_bytes = input->reader.line_capacity;
-            *memory_used = saturating_add((uint64_t)*memory_used, (uint64_t)growth);
-            if (*memory_used > worker->direct_memory_limit) {
-                worker->direct_unsorted = 1;
-                return DIRECT_FALLBACK;
-            }
+            if (direct_charge(worker, growth)) return DIRECT_FALLBACK;
         }
         input->reader.line[input->reader.line_len] = '\0';
         if (input->range_fix_first) {
@@ -252,6 +248,23 @@ void direct_result_free(DirectResult *result) {
 }
 
 /*
+ * Charges buffer growth to the run's budget; returns 1 (and marks the input unsorted, which makes
+ * the run give up) when the budget is exceeded. Partitioned runs also add to one total shared by all
+ * partitions, so their combined growth, not just each partition's own, stays inside the budget.
+ */
+int direct_charge(Worker *worker, size_t growth) {
+    *worker->direct_memory_used = saturating_add((uint64_t)*worker->direct_memory_used, (uint64_t)growth);
+    int over = *worker->direct_memory_used > worker->direct_memory_limit;
+    if (worker->direct_shared_growth) {
+        uint64_t total = (uint64_t)atomic_fetch_add_explicit(worker->direct_shared_growth, (uint_fast64_t)growth,
+                                                             memory_order_relaxed) + growth;
+        if (total > worker->direct_shared_limit) over = 1;
+    }
+    if (over) worker->direct_unsorted = 1;
+    return over;
+}
+
+/*
  * One pass of the sorted-input tournament merge. Without a plan it reads whole files on private
  * handles and is the single-job path; with a plan it merges partition job->part (byte ranges of the
  * shared handles, rows restricted to the partition's path range) into the caller's staged file.
@@ -296,6 +309,8 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
         input->worker.diagnostic_file = diagnostics;
         input->worker.direct_memory_used = &memory_used;
         input->worker.direct_memory_limit = memory_limit;
+        input->worker.direct_shared_growth = job->shared_growth;
+        input->worker.direct_shared_limit = memory_limit - fixed_cost;
         input->worker.direct_max_line_bytes = LINE_INITIAL_CAPACITY;
         if (partitioned) input->handle = plan->handles[i];
         else if (lm_open_read(input->filename, &input->handle) != 0) {
@@ -320,7 +335,7 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
     size_t active_count = 0;
     for (size_t i = 0; i < leaf_count * 2u; ++i) tree[i] = SIZE_MAX;
     for (size_t i = 0; i < count && !fallback && status == 0; ++i) {
-        int got = direct_input_next(&inputs[i], &memory_used);
+        int got = direct_input_next(&inputs[i]);
         if (got == DIRECT_FALLBACK) fallback = 1;
         else if (got < 0) status = inputs[i].worker.error_code ? inputs[i].worker.error_code : 3;
         else if (got > 0) { tree[leaf_count + i] = i; ++active_count; }
@@ -367,7 +382,7 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
         }
         worker->direct_head = (worker->direct_head + 1u) % 2u;
         --worker->direct_count;
-        int got = direct_input_next(&inputs[input_index], &memory_used);
+        int got = direct_input_next(&inputs[input_index]);
         if (got == DIRECT_FALLBACK) { fallback = 1; break; }
         if (got < 0) { status = worker->error_code ? worker->error_code : 3; break; }
         if (got == 0) {

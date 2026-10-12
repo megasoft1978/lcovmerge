@@ -43,12 +43,7 @@ static int direct_store_last(Worker *worker, const Record *source) {
     worker->direct_last_row.extra = cursor;
     worker->have_direct_last_row = 1;
     if (worker->direct_memory_used && worker->direct_last_capacity > previous_capacity) {
-        *worker->direct_memory_used = saturating_add((uint64_t)*worker->direct_memory_used,
-            (uint64_t)(worker->direct_last_capacity - previous_capacity));
-        if (*worker->direct_memory_used > worker->direct_memory_limit) {
-            worker->direct_unsorted = 1;
-            return 1;
-        }
+        if (direct_charge(worker, worker->direct_last_capacity - previous_capacity)) return 1;
     }
     return 0;
 }
@@ -68,12 +63,7 @@ static int direct_preserve_last_path(Worker *worker, const char *path) {
     worker->direct_last_row.path = worker->direct_path_storage;
     worker->direct_last_row.path_length = (uint32_t)(needed - 1u);
     if (worker->direct_memory_used && worker->direct_path_capacity > previous_capacity) {
-        *worker->direct_memory_used = saturating_add((uint64_t)*worker->direct_memory_used,
-            (uint64_t)(worker->direct_path_capacity - previous_capacity));
-        if (*worker->direct_memory_used > worker->direct_memory_limit) {
-            worker->direct_unsorted = 1;
-            return 1;
-        }
+        if (direct_charge(worker, worker->direct_path_capacity - previous_capacity)) return 1;
     }
     return 0;
 }
