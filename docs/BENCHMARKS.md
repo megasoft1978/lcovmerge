@@ -17,7 +17,7 @@ Per-command timeout: 30 minutes.
 <!-- BENCH-METHOD:END -->
 
 - Synthetic fixtures were generated with `bench/run.py`, `tools/gen-lcov.py`, and `tools/gen-path-heavy.py`. Set
-  `TMPDIR=./.luna-tmp`; the harness removes generated inputs when it exits.
+  `TMPDIR=./.cache`; the harness removes generated inputs when it exits.
 - The PGO profile was trained with one instrumented merge of generated Dataset M, then reused across the listed
   lcovmerge workloads. `hyperfine 2.0.0` used one warmup and measured repeats; wall time is the median and peak
   resident memory is the maximum measured `memory_peak_resident` value. XXL used three measured runs; the other
@@ -56,14 +56,14 @@ for the aggregate counts and policy table.
 The manually triggered `Linux benchmark` workflow runs S, M, and L on `ubuntu-24.04`, with an optional
 PATH-HEAVY run. Each tool gets one hyperfine warmup and repeat measurements. On Linux, peak resident memory comes
 from GNU `/usr/bin/time -v` for each measured run. The workflow artifact contains host metadata and aggregate JSON and
-text reports; generated tracefiles stay in the runner's ignored `.luna-tmp` directory and are removed by the
+text reports; generated tracefiles stay in the runner's ignored `.cache` directory and are removed by the
 benchmark runner.
 
 After running the workflow, download its `linux-benchmark-<run-id>-<attempt>` artifact into an isolated directory
-under `.luna-tmp`, then merge the aggregate JSON with:
+under `.cache`, then merge the aggregate JSON with:
 
 ```sh
-python3 -I bench/ingest-ci-results.py .luna-tmp/<download-dir>/benchmark.json
+python3 -I bench/ingest-ci-results.py .cache/<download-dir>/benchmark.json
 ```
 
 The ingester appends or replaces that run under the additive `host_results` field in the published measurement record and the
@@ -82,10 +82,10 @@ unknown if any measured run cannot be sampled. No LCOV comparator is run, and th
 separate host entry rather than a cross-platform speed claim. The large-dataset timings are disk-bound CI numbers
 that describe this runner and I/O path, not Windows desktop performance generally.
 
-Download a completed `windows-benchmark-<run-id>-<attempt>` artifact into `.luna-tmp`, then merge it with:
+Download a completed `windows-benchmark-<run-id>-<attempt>` artifact into `.cache`, then merge it with:
 
 ```sh
-python3 -I bench/ingest-ci-results.py .luna-tmp/<download-dir>/benchmark.json
+python3 -I bench/ingest-ci-results.py .cache/<download-dir>/benchmark.json
 ```
 
 The ingester adds the Windows build comparison as a separately labeled entry under `host_results` in the
@@ -118,8 +118,8 @@ To reproduce a final lcovmerge measurement for M:
 
 ```sh
 make
-TMPDIR=./.luna-tmp python3 -I bench/run.py --workload M --hyperfine-runs 5 \
-  --skip-lcov --report .luna-tmp/current-M.txt
+TMPDIR=./.cache python3 -I bench/run.py --workload M --hyperfine-runs 5 \
+  --skip-lcov --report .cache/current-M.txt
 ```
 
 The optional `--binary` argument selects another built executable, and `--skip-lcov` avoids rerunning a comparator
