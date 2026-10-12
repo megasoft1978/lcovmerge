@@ -19,7 +19,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-dist.XXXXXX")
 cleanup() { python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' "$work"; }
 trap cleanup EXIT HUP INT TERM
 
-core_src="src/lcovmerge.c src/lm_util.c src/lm_io.c src/lm_record.c"
+core_src="src/lcovmerge.c src/lm_util.c src/lm_io.c src/lm_record.c src/lm_path.c"
 
 build_set() {
     python3 tools/package-dist.py --clean "$dist"
