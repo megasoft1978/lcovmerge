@@ -7,10 +7,10 @@
  * caller fall back to the unchanged single-threaded path, which reproduces today's diagnostics.
  */
 
-#define PART_SAMPLES_PER_PART 16u
+#define PART_SAMPLES_PER_PART 128u
 #define PART_MIN_PARTITION_BYTES ((uint64_t)32u << 20)
 #define PART_FINDER_CAP ((uint64_t)1u << 30)
-#define PART_FINDER_DIVISOR 8u
+#define PART_FINDER_DIVISOR 4u
 #define PART_JOINED_PREFIX_LENGTH 13u
 
 int part_scanner_init(PartScanner *scanner) {
@@ -298,7 +298,10 @@ void partition_plan_destroy(PartitionPlan *plan) {
 static int choose_splitters(PartScanner *scanner, const Options *options,
                             const PartitionPlan *plan, unsigned want, char ***out,
                             size_t *out_count) {
-    size_t sample_target = (size_t)want * PART_SAMPLES_PER_PART;
+    uint64_t sample_limit = (uint64_t)want * PART_SAMPLES_PER_PART;
+    if (sample_limit > plan->total_bytes / 2u) sample_limit = plan->total_bytes / 2u;  /* tiny test inputs */
+    if (sample_limit < (uint64_t)want) return -1;
+    size_t sample_target = (size_t)sample_limit;
     char **samples = calloc(sample_target, sizeof(*samples));
     if (!samples) return -1;
     size_t taken = 0;
@@ -381,8 +384,9 @@ int partition_plan_build(const Options *options, PartitionPlan *plan) {
     if (want > fd_parts) want = fd_parts;
     if (want < 2u) return 0;
     size_t part_cost = direct_fixed_cost(count);
-    if (part_cost == SIZE_MAX || part_cost > SIZE_MAX - (3u * MAX_LINE + 3u)) return 0;
-    part_cost += 3u * MAX_LINE + 3u;
+    /* The aggregate buffer is reserved for 3 MiB but touched only as far as records grow. */
+    if (part_cost == SIZE_MAX || part_cost > SIZE_MAX - MAX_LINE) return 0;
+    part_cost += MAX_LINE;
     size_t memory_parts = options->mem_limit / 2u / part_cost;
     if ((size_t)want > memory_parts) want = (unsigned)memory_parts;
     if (want < 2u) return 0;
@@ -402,7 +406,7 @@ int partition_plan_build(const Options *options, PartitionPlan *plan) {
         uint64_t by_size = plan->total_bytes / PART_MIN_PARTITION_BYTES;
         if (by_size < want) want = (unsigned)by_size;
     }
-    if (want < 2u || plan->total_bytes / (uint64_t)want / PART_SAMPLES_PER_PART == 0) goto fail;
+    if (want < 2u) goto fail;
 
     PartScanner scanner;
     if (part_scanner_init(&scanner) != 0) goto fail;

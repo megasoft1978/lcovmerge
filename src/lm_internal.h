@@ -196,6 +196,12 @@ typedef struct {
     char *path, *pending_tn;
     uint64_t fnl_index, fnl_line, fnl_end;
     int fnl_valid, keep_path, section_open, opened, reader_initialized, eof;
+    /* Range mode (threaded partition run); range_mode == 0 is exactly the whole-file path. */
+    int range_mode, range_peek, range_fix_first;
+    uint64_t range_end;
+    const char *range_low, *range_high;
+    size_t range_low_length, range_high_length;
+    atomic_bool *abort_flag;
 } DirectInput;
 
 typedef struct {
@@ -225,6 +231,7 @@ typedef struct {
 } DiskRecord;
 
 #define DIRECT_FALLBACK (-1)
+#define DIRECT_RERUN (-2)  /* internal: the threaded attempt gave up; run the serial path */
 
 /* Sorted-input threaded direct path: partition finder (lm_partition.c). */
 #define PART_CHUNK ((size_t)64u << 10)
@@ -254,6 +261,32 @@ typedef struct {
     char **splitters;    /* parts - 1 real kept rewritten SF paths, strictly increasing */
     PartPoint *points;   /* [input * stride + p]; p = 0 is offset 0, p = parts is the size */
 } PartitionPlan;
+
+typedef struct {
+    const Options *options;
+    const PartitionPlan *plan;   /* NULL: whole files on private handles (the single-job path) */
+    unsigned part;
+    OutputFile *prepared_output; /* partitioned: staged file created (and later removed) by the caller */
+    atomic_bool *abort_flag;     /* partitioned: set by the caller when any partition gave up */
+} DirectJob;
+
+typedef struct {
+    int fallback, status;
+    OutputFile file;             /* whole-file path only */
+    uint64_t total_fnf, total_fnh, total_lf, total_lh, total_brf, total_brh;
+    uint64_t input_bytes, records;
+    FILE *diagnostics;
+    int had_diagnostics;
+    DirectInput *inputs;         /* whole-file path only (error reporting) */
+    size_t count;
+    size_t fixed_cost;
+    size_t *growth;              /* partitioned: per-input dynamic memory, see run_direct_partitioned */
+} DirectResult;
+
+void direct_partition_run(const DirectJob *job, DirectResult *result);
+void direct_result_free(DirectResult *result);
+int direct_run_partitioned(const Options *options);
+int create_output_temp_quiet(const char *output_path, OutputFile *file);
 
 int part_scanner_init(PartScanner *scanner);
 void part_scanner_destroy(PartScanner *scanner);

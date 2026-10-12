@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -160,8 +161,28 @@ unsigned lm_max_open_files(void) {
     return (unsigned)limit.rlim_cur;
 }
 
+typedef struct { lm_thread_fn function; void *argument; } ThreadStart;
+
+static void *thread_entry(void *raw) {
+    ThreadStart start = *(ThreadStart *)raw;
+    free(raw);
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGHUP);
+    (void)pthread_sigmask(SIG_UNBLOCK, &set, NULL);
+    return start.function(start.argument);
+}
+
 int lm_thread_start(lm_thread *thread, lm_thread_fn function, void *argument) {
-    return pthread_create(thread, NULL, function, argument);
+    ThreadStart *start = malloc(sizeof(*start));
+    if (!start) return -1;
+    start->function = function;
+    start->argument = argument;
+    int result = pthread_create(thread, NULL, thread_entry, start);
+    if (result != 0) free(start);
+    return result;
 }
 
 int lm_thread_join(lm_thread thread) { return pthread_join(thread, NULL); }

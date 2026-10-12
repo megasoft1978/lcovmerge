@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from partition_tests import partition_signal_tests, partition_tests  # noqa: E402
 ORACLE = ROOT / "tools" / "oracle.py"
 MAX_U64 = (1 << 64) - 1
 
@@ -1272,10 +1274,38 @@ def lcov_differential(binary: Path, temporary: Path) -> int:
     return 200
 
 
+def partition_forced_suite(ptest: Path, temporary: Path) -> int:
+    """Re-runs the golden/malformed/option suites with every merge forced through 3 partitions."""
+    if os.name == "nt":
+        return 0
+    forced = temporary / "forced-partitions"
+    forced.mkdir()
+    previous = os.environ.get("LCOVMERGE_TEST_PARTITION")
+    os.environ["LCOVMERGE_TEST_PARTITION"] = "3"
+    try:
+        total = parser_boundary_tests(ptest, forced)
+        total += run_goldens(ptest, forced)
+        total += malformed_tests(ptest, forced)
+        total += differential_tests(ptest, forced)
+        total += determinism_test(ptest, forced)
+        total += list_and_stdio_tests(ptest, forced)
+        total += listfile_boundary_tests(ptest, forced)
+        total += limits_and_io_failure_tests(ptest, forced)
+        total += many_paths_test(ptest, forced)
+    finally:
+        if previous is None:
+            os.environ.pop("LCOVMERGE_TEST_PARTITION", None)
+        else:
+            os.environ["LCOVMERGE_TEST_PARTITION"] = previous
+    return total
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--no-lcov", action="store_true")
+    parser.add_argument("--partition-binary", type=Path,
+                        help="test-hook build (-DLM_TEST_PARTITION) for the threaded direct path")
     args = parser.parse_args()
     binary = args.binary.resolve()
     if not binary.exists():
@@ -1300,6 +1330,14 @@ def main() -> int:
             binary, temporary, check_lcov=not args.no_lcov
         )
         lcov_cases = 0 if args.no_lcov else lcov_differential(binary, temporary)
+        partition_cases = partition_signal_cases = partition_rerun_cases = 0
+        if args.partition_binary:
+            ptest = args.partition_binary.resolve()
+            if not ptest.exists():
+                parser.error(f"partition binary does not exist: {ptest}")
+            partition_cases = partition_tests(binary, ptest, temporary)
+            partition_signal_cases = partition_signal_tests(ptest)
+            partition_rerun_cases = partition_forced_suite(ptest, temporary)
     print(f"boundary_cases={boundaries} golden_cases={goldens} malformed_cases={malformed} "
           f"oracle_cases={differential} randomized_sets={randomized_sets} "
           f"randomized_runs={randomized_runs} determinism_runs={deterministic} "
@@ -1309,7 +1347,9 @@ def main() -> int:
           f"interrupted_staged_output_cases={staged_signal_cases} many_paths_cases={many_paths_cases} "
           f"generator_lcov_valid_cases={generator_lcov_valid_cases} "
           f"interruption_doc_cases={interruption_doc_cases} "
-          f"lcov_cases={lcov_cases}")
+          f"lcov_cases={lcov_cases} partition_cases={partition_cases} "
+          f"partition_signal_cases={partition_signal_cases} "
+          f"partition_forced_suite_cases={partition_rerun_cases}")
     return 0
 
 

@@ -258,24 +258,35 @@ static int output_directory(const char *filename, char **directory_out) {
     return 0;
 }
 
-int create_output_temp(const char *output_path, OutputFile *file) {
+static int create_output_temp_impl(const char *output_path, OutputFile *file, int quiet) {
     char *directory = NULL;
     if (output_directory(output_path, &directory) != 0) {
-        fprintf(stderr, "lcovmerge: %s:0: cannot determine output parent directory; "
-                        "ensure it exists and is writable\n", output_path);
+        if (!quiet)
+            fprintf(stderr, "lcovmerge: %s:0: cannot determine output parent directory; "
+                            "ensure it exists and is writable\n", output_path);
         return -1;
     }
     unsigned long system_error = 0;
     if (lm_create_temp(directory, &file->path, &file->handle, &system_error) != 0) {
         char reason[256];
         lm_format_error(system_error, reason, sizeof(reason));
-        fprintf(stderr, "lcovmerge: %s:0: cannot create output temporary file: %s; "
-                        "parent directory '%s' must exist and be writable\n",
-                output_path, reason, directory);
+        if (!quiet)
+            fprintf(stderr, "lcovmerge: %s:0: cannot create output temporary file: %s; "
+                            "parent directory '%s' must exist and be writable\n",
+                    output_path, reason, directory);
         free(directory);
         return -1;
     }
     file->owns_handle = 1;
     free(directory);
     return 0;
+}
+
+int create_output_temp(const char *output_path, OutputFile *file) {
+    return create_output_temp_impl(output_path, file, 0);
+}
+
+/* As create_output_temp, but silent: the threaded path reports nothing and reruns serially. */
+int create_output_temp_quiet(const char *output_path, OutputFile *file) {
+    return create_output_temp_impl(output_path, file, 1);
 }

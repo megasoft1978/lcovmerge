@@ -4,6 +4,22 @@ static Record *direct_current_row(DirectInput *input) {
     return &input->worker.direct_rows[input->worker.direct_head];
 }
 
+/* Rows of a partition's SECTION rows must lie in [low, high) of the partition's splitters. */
+static int direct_rows_in_range(const DirectInput *input) {
+    const Worker *worker = &input->worker;
+    for (size_t i = 0; i < worker->direct_count; ++i) {
+        const Record *row = &worker->direct_rows[(worker->direct_head + i) % 2u];
+        if (row->type != REC_SECTION) continue;
+        if (input->range_low &&
+            bytes_compare(row->path, row->path_length, input->range_low, input->range_low_length) < 0)
+            return 0;
+        if (input->range_high &&
+            bytes_compare(row->path, row->path_length, input->range_high, input->range_high_length) >= 0)
+            return 0;
+    }
+    return 1;
+}
+
 static int direct_input_next(DirectInput *input, size_t *memory_used) {
     Worker *worker = &input->worker;
     if (worker->direct_count != 0) return 1;
@@ -15,6 +31,16 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
         if (atomic_load_explicit(&interrupted, memory_order_relaxed)) {
             (void)worker_error(worker, 3, input->filename, input->reader.line_no, "interrupted");
             return -1;
+        }
+        int peeking = 0;
+        if (input->range_mode) {
+            if (input->abort_flag && atomic_load_explicit(input->abort_flag, memory_order_relaxed)) {
+                (void)worker_error(worker, 3, input->filename, input->reader.line_no, "partition run aborted");
+                return -1;
+            }
+            /* The line at the range end is what the whole-file path reads next; parse it for its
+               diagnostics and order check, then drop its rows (the next partition owns them). */
+            peeking = input->range_peek && line_reader_offset(&input->reader) >= input->range_end;
         }
         int got = line_reader_next(&input->reader);
         if (got == 0) {
@@ -48,6 +74,21 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
             }
         }
         input->reader.line[input->reader.line_len] = '\0';
+        if (input->range_fix_first) {
+            /* First line of a partition: parse silently as a section start; a joined
+               end_of_recordSF: line loses its prefix (the previous partition owns the warning). */
+            input->range_fix_first = 0;
+            static const char joined_prefix[] = "end_of_record";
+            size_t prefix_length = sizeof(joined_prefix) - 1u;
+            if (input->reader.line_len >= prefix_length + 3u &&
+                memcmp(input->reader.line, joined_prefix, prefix_length) == 0 &&
+                (memcmp(input->reader.line + prefix_length, "SF:", 3u) == 0 ||
+                 memcmp(input->reader.line + prefix_length, "KF:", 3u) == 0)) {
+                memmove(input->reader.line, input->reader.line + prefix_length,
+                        input->reader.line_len - prefix_length + 1u);
+                input->reader.line_len -= prefix_length;
+            }
+        }
         int parse_status = 0;
         int direct = 0;
         size_t parse_length = input->reader.line_len;
@@ -81,7 +122,28 @@ static int direct_input_next(DirectInput *input, size_t *memory_used) {
             if (worker->direct_unsorted) return DIRECT_FALLBACK;
             return -1;
         }
-        if (worker->direct_count != 0) return 1;
+        if (peeking) {
+            if (worker->direct_count == 0) {
+                (void)worker_error(worker, 3, input->filename, input->reader.line_no,
+                                   "partition boundary is not a section start");
+                return -1;
+            }
+            worker->records -= worker->direct_count;
+            worker->direct_count = 0;
+            free(worker->direct_deferred_text);
+            worker->direct_deferred_text = NULL;
+            input->eof = 1;
+            worker->current_file = NULL;
+            return 0;
+        }
+        if (worker->direct_count != 0) {
+            if (input->range_mode && !direct_rows_in_range(input)) {
+                (void)worker_error(worker, 3, input->filename, input->reader.line_no,
+                                   "section outside its partition range");
+                return -1;
+            }
+            return 1;
+        }
     }
 }
 
@@ -159,49 +221,68 @@ static void direct_input_destroy(DirectInput *input, int *close_failed) {
     free(input->worker.direct_deferred_text);
 }
 
-int run_direct_merge(const Options *options) {
+static void direct_input_set_range(DirectInput *input, const PartitionPlan *plan,
+                                   size_t index, unsigned part, atomic_bool *abort_flag) {
+    const PartPoint *begin = &plan->points[index * plan->stride + part];
+    const PartPoint *end = &plan->points[index * plan->stride + part + 1u];
+    input->range_mode = 1;
+    input->abort_flag = abort_flag;
+    input->range_end = end->offset;
+    input->range_peek = end->offset < plan->sizes[index] &&
+                        (part == 0 || end->offset > begin->offset);
+    if (part > 0) {
+        input->range_low = plan->splitters[part - 1u];
+        input->range_low_length = strlen(input->range_low);
+    }
+    if (part + 1u < plan->parts) {
+        input->range_high = plan->splitters[part];
+        input->range_high_length = strlen(input->range_high);
+    }
+    line_reader_seek(&input->reader, begin->offset);
+    if (part > 0 && begin->offset == end->offset) input->eof = 1;
+    else if (part > 0) input->range_fix_first = 1;
+}
+
+void direct_result_free(DirectResult *result) {
+    free(result->file.path);
+    free(result->inputs);
+    free(result->growth);
+    if (result->diagnostics) fclose(result->diagnostics);
+    memset(result, 0, sizeof(*result));
+}
+
+/*
+ * One pass of the sorted-input tournament merge. Without a plan it reads whole files on private
+ * handles and is the single-job path; with a plan it merges partition job->part (byte ranges of the
+ * shared handles, rows restricted to the partition's path range) into the caller's staged file.
+ * Partitioned runs print nothing: any anomaly makes the caller rerun the serial path.
+ */
+void direct_partition_run(const DirectJob *job, DirectResult *result) {
+    const Options *options = job->options;
+    const PartitionPlan *plan = job->plan;
+    int partitioned = plan != NULL;
     size_t count = options->inputs.count;
-    if (strcmp(options->output, "-") == 0 || count == 0 || count > UINT32_MAX) return DIRECT_FALLBACK;
-    unsigned descriptor_limit = lm_max_open_files();
-    if (descriptor_limit <= 8u || count > (size_t)(descriptor_limit - 8u))
-        return DIRECT_FALLBACK;
-    for (size_t i = 0; i < count; ++i)
-        if (strcmp(options->inputs.items[i], "-") == 0 ||
-            !lm_is_regular_file(options->inputs.items[i])) return DIRECT_FALLBACK;
-    if (count > SIZE_MAX / count || count * count > SIZE_MAX / sizeof(PathCompareCache))
-        return DIRECT_FALLBACK;
+    memset(result, 0, sizeof(*result));
+    result->file.handle = LM_INVALID_HANDLE;
     FILE *diagnostics = tmpfile();
-    if (!diagnostics) return DIRECT_FALLBACK;
+    result->diagnostics = diagnostics;
+    if (!diagnostics) { result->fallback = 1; return; }
+    size_t fixed_cost = direct_fixed_cost(count);
+    if (fixed_cost == SIZE_MAX) { result->fallback = 1; return; }
     size_t leaf_count = 1u;
-    while (leaf_count < count) {
-        if (leaf_count > SIZE_MAX / 2u) { fclose(diagnostics); return DIRECT_FALLBACK; }
-        leaf_count *= 2u;
-    }
-    if (leaf_count > SIZE_MAX / 2u / sizeof(size_t)) {
-        fclose(diagnostics);
-        return DIRECT_FALLBACK;
-    }
-    if (count > SIZE_MAX / sizeof(DirectInput) ||
-        count > SIZE_MAX / LINE_INITIAL_CAPACITY) {
-        fclose(diagnostics);
-        return DIRECT_FALLBACK;
-    }
+    while (leaf_count < count) leaf_count *= 2u;
     size_t *tree = malloc(leaf_count * 2u * sizeof(*tree));
     DirectInput *inputs = calloc(count, sizeof(*inputs));
     PathCompareCache *cache = calloc(count * count, sizeof(*cache));
     if (!inputs || !tree || !cache) {
-        free(inputs); free(tree); free(cache); fclose(diagnostics);
-        return DIRECT_FALLBACK;
+        free(inputs); free(tree); free(cache);
+        result->fallback = 1;
+        return;
     }
     size_t memory_limit = options->mem_limit / 2u;
     if (memory_limit > ((size_t)16u << 20)) memory_limit = (size_t)16u << 20;
-    size_t memory_used = sizeof(*inputs) * count + sizeof(*tree) * leaf_count * 2u +
-                         sizeof(*cache) * count * count + WRITE_BLOCK;
-    if (memory_used > SIZE_MAX - count * LINE_INITIAL_CAPACITY) {
-        free(inputs); free(tree); free(cache); fclose(diagnostics);
-        return DIRECT_FALLBACK;
-    }
-    memory_used += count * LINE_INITIAL_CAPACITY;
+    size_t memory_used = fixed_cost;
+    result->fixed_cost = fixed_cost;
     int fallback = memory_used > memory_limit;
     int status = 0;
     for (size_t i = 0; i < count && !fallback; ++i) {
@@ -216,16 +297,24 @@ int run_direct_merge(const Options *options) {
         input->worker.direct_memory_used = &memory_used;
         input->worker.direct_memory_limit = memory_limit;
         input->worker.direct_max_line_bytes = LINE_INITIAL_CAPACITY;
-        if (lm_open_read(input->filename, &input->handle) != 0) {
+        if (partitioned) input->handle = plan->handles[i];
+        else if (lm_open_read(input->filename, &input->handle) != 0) {
             fallback = 1;
             break;
-        }
-        input->opened = 1;
+        } else input->opened = 1;
         if (line_reader_init(&input->reader, input->handle) != 0) {
             fallback = 1;
             break;
         }
         input->reader_initialized = 1;
+        if (partitioned) {
+            direct_input_set_range(input, plan, i, job->part, job->abort_flag);
+            const char *pending = plan->points[i * plan->stride + job->part].pending_tn;
+            if (input->range_fix_first && pending) {
+                input->pending_tn = duplicate_string(pending);
+                if (!input->pending_tn) { fallback = 1; break; }
+            }
+        }
         if (memory_used > memory_limit) fallback = 1;
     }
     size_t active_count = 0;
@@ -241,16 +330,14 @@ int run_direct_merge(const Options *options) {
             tree[node] = direct_tree_winner(tree[node * 2u], tree[node * 2u + 1u],
                                             inputs, cache, count);
 
-    OutputFile file;
-    memset(&file, 0, sizeof(file));
-    file.handle = LM_INVALID_HANDLE;
+    OutputFile *file = partitioned ? job->prepared_output : &result->file;
     OutputState output;
     memset(&output, 0, sizeof(output));
     int writer_initialized = 0;
     if (!fallback && status == 0) {
-        if (create_output_temp(options->output, &file) != 0) status = 3;
-        if (status == 0 && writer_init(&output.writer, file.handle) != 0) {
-            fprintf(stderr, "lcovmerge: %s:0: out of memory\n", options->output);
+        if (!partitioned && create_output_temp(options->output, file) != 0) status = 3;
+        if (status == 0 && writer_init(&output.writer, file->handle) != 0) {
+            if (!partitioned) fprintf(stderr, "lcovmerge: %s:0: out of memory\n", options->output);
             status = 3;
         } else if (status == 0) writer_initialized = 1;
     }
@@ -263,6 +350,10 @@ int run_direct_merge(const Options *options) {
     int have_aggregate = 0;
     while (!fallback && status == 0 && active_count != 0) {
         if (atomic_load_explicit(&interrupted, memory_order_relaxed)) { status = 3; break; }
+        if (job->abort_flag && atomic_load_explicit(job->abort_flag, memory_order_relaxed)) {
+            status = 3;
+            break;
+        }
         size_t input_index = tree[1];
         Worker *worker = &inputs[input_index].worker;
         Record *row = direct_current_row(&inputs[input_index]);
@@ -295,41 +386,89 @@ int run_direct_merge(const Options *options) {
     free(output.path);
     free(output.fn_group_name);
     free(aggregate_storage);
-    uint64_t total_bytes = 0, total_records = 0;
+    result->total_fnf = output.total_fnf;
+    result->total_fnh = output.total_fnh;
+    result->total_lf = output.total_lf;
+    result->total_lh = output.total_lh;
+    result->total_brf = output.total_brf;
+    result->total_brh = output.total_brh;
+    if (partitioned && !fallback) result->growth = calloc(count, sizeof(*result->growth));
     int close_failed = 0;
     for (size_t i = 0; i < count; ++i) {
-        total_bytes = saturating_add(total_bytes, inputs[i].worker.input_bytes);
-        total_records = saturating_add(total_records, inputs[i].worker.records);
+        result->input_bytes = saturating_add(result->input_bytes, inputs[i].worker.input_bytes);
+        result->records = saturating_add(result->records, inputs[i].worker.records);
+        if (result->growth) {
+            const Worker *worker = &inputs[i].worker;
+            result->growth[i] = worker->direct_max_line_bytes - LINE_INITIAL_CAPACITY +
+                                worker->direct_last_capacity + worker->direct_path_capacity;
+        }
         direct_input_destroy(&inputs[i], &close_failed);
     }
     if (!fallback && close_failed && status == 0) status = 3;
-    if (file.owns_handle && lm_close(file.handle) != 0 && status == 0) status = 3;
+    if (partitioned && !fallback && !result->growth) status = 3;
+    if (partitioned) {
+        if (fflush(diagnostics) != 0 || ftell(diagnostics) != 0) result->had_diagnostics = 1;
+        free(inputs);
+    } else {
+        result->inputs = inputs;
+        result->count = count;
+    }
+    free(tree);
+    free(cache);
+    result->fallback = fallback;
+    result->status = status;
+}
+
+static int run_direct_serial(const Options *options) {
+    DirectJob job;
+    memset(&job, 0, sizeof(job));
+    job.options = options;
+    DirectResult result;
+    direct_partition_run(&job, &result);
+    int fallback = result.fallback;
+    int status = result.status;
+    OutputFile *file = &result.file;
+    if (file->owns_handle && lm_close(file->handle) != 0 && status == 0) status = 3;
     if (!fallback && status == 0 && interrupted) {
-        (void)worker_error(&inputs[0].worker, 3, NULL, 0, "interrupted");
+        (void)worker_error(&result.inputs[0].worker, 3, NULL, 0, "interrupted");
         status = 3;
     }
-    if (!fallback && status == 0 && file.owns_handle && lm_rename(file.path, options->output) != 0) {
+    if (!fallback && status == 0 && file->owns_handle && lm_rename(file->path, options->output) != 0) {
         fprintf(stderr, "lcovmerge: %s:0: cannot replace output\n", options->output);
         status = 3;
     }
-    if (file.path && (fallback || status != 0)) (void)lm_remove(file.path);
+    if (file->path && (fallback || status != 0)) (void)lm_remove(file->path);
     if (!fallback && status != 0) {
-        (void)replay_diagnostics(diagnostics);
-        for (size_t i = 0; i < count; ++i)
-            if (inputs[i].worker.error_code != 0) print_worker_error(&inputs[i].worker);
-    } else if (!fallback && replay_diagnostics(diagnostics) != 0 && status == 0) status = 3;
+        (void)replay_diagnostics(result.diagnostics);
+        for (size_t i = 0; i < result.count; ++i)
+            if (result.inputs[i].worker.error_code != 0) print_worker_error(&result.inputs[i].worker);
+    } else if (!fallback && replay_diagnostics(result.diagnostics) != 0 && status == 0) status = 3;
     if (!fallback && status == 0 && options->verbose && !options->quiet)
         fprintf(stderr, "lcovmerge: parsed %" PRIu64 " input bytes into %" PRIu64 " records using 1 job (sorted-input fast path)\n",
-                total_bytes, total_records);
+                result.input_bytes, result.records);
     if (!fallback && status == 0 && (options->stats || (options->verbose && !options->quiet)))
         fprintf(stderr, "lcovmerge: stats LF=%" PRIu64 " LH=%" PRIu64
                 " FNF=%" PRIu64 " FNH=%" PRIu64 " BRF=%" PRIu64 " BRH=%" PRIu64 "\n",
-                output.total_lf, output.total_lh, output.total_fnf, output.total_fnh,
-                output.total_brf, output.total_brh);
-    free(file.path);
-    free(inputs); free(tree); free(cache);
-    fclose(diagnostics);
+                result.total_lf, result.total_lh, result.total_fnf, result.total_fnh,
+                result.total_brf, result.total_brh);
+    direct_result_free(&result);
     return fallback ? DIRECT_FALLBACK : status;
+}
+
+int run_direct_merge(const Options *options) {
+    size_t count = options->inputs.count;
+    if (strcmp(options->output, "-") == 0 || count == 0 || count > UINT32_MAX) return DIRECT_FALLBACK;
+    unsigned descriptor_limit = lm_max_open_files();
+    if (descriptor_limit <= 8u || count > (size_t)(descriptor_limit - 8u))
+        return DIRECT_FALLBACK;
+    for (size_t i = 0; i < count; ++i)
+        if (strcmp(options->inputs.items[i], "-") == 0 ||
+            !lm_is_regular_file(options->inputs.items[i])) return DIRECT_FALLBACK;
+    if (direct_fixed_cost(count) == SIZE_MAX) return DIRECT_FALLBACK;
+    /* Opt-in: partitions only for an explicit -j N >= 2 with P_eff > 1; otherwise DIRECT_RERUN. */
+    int status = direct_run_partitioned(options);
+    if (status != DIRECT_RERUN) return status;
+    return run_direct_serial(options);
 }
 
 /* Per-partition fixed memory of the direct path; SIZE_MAX if the sizes overflow. */
