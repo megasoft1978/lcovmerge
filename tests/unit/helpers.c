@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../src/lcovmerge.c"
+#include "../../src/lm_internal.h"
 
 static unsigned assertions;
 

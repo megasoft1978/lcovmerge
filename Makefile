@@ -26,7 +26,8 @@ UNIT_BIN ?= bin/lcovmerge-unit
 UNIT_LDFLAGS = -pthread
 endif
 
-SOURCES = src/lcovmerge.c $(PLATFORM_SRC) $(ENTRY_SRC)
+CORE_SRC = src/lcovmerge.c
+SOURCES = $(CORE_SRC) $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h src/lm_internal.h
 UNIT_SOURCE = tests/unit/helpers.c
 UNIT_CPPFLAGS = -Dlcovmerge_main=lcovmerge_unit_unused_main -Dwmain=lcovmerge_unit_unused_wmain
@@ -50,15 +51,15 @@ test: $(BIN) $(UNIT_BIN)
 unit: $(UNIT_BIN)
 	./$(UNIT_BIN)
 
-$(UNIT_BIN): $(UNIT_SOURCE) src/lcovmerge.c $(PLATFORM_SRC) $(HEADERS) | bin
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o $@
+$(UNIT_BIN): $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(HEADERS) | bin
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o $@
 
 test-docker: dist
 	sh scripts/test-docker.sh
 
 asan: | bin
 	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-asan
-	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o bin/lcovmerge-unit-asan
+	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o bin/lcovmerge-unit-asan
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		bin/lcovmerge-unit-asan
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
@@ -67,7 +68,7 @@ asan: | bin
 fuzz: | bin
 	clang $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
 		-fsanitize=address,undefined -fno-omit-frame-pointer \
-		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
+		$(CORE_SRC) src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		bin/lcovmerge-fuzz tests/fuzz-corpus $${FUZZ_RUNS:-2000000}
 
@@ -76,7 +77,7 @@ fuzz-guided: | bin
 	mkdir -p .cache/fuzz-artifacts
 	clang $(CPPFLAGS) -DLCOVMERGE_LIBFUZZER -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
 		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		src/lcovmerge.c src/platform_posix.c tests/fuzz/fuzz.c -pthread -o bin/lcovmerge-libfuzz
+		$(CORE_SRC) src/platform_posix.c tests/fuzz/fuzz.c -pthread -o bin/lcovmerge-libfuzz
 	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
 		bin/lcovmerge-libfuzz tests/fuzz-corpus -max_len=1048576 -max_total_time=$(FUZZ_TIME) \
 		-artifact_prefix=.cache/fuzz-artifacts/

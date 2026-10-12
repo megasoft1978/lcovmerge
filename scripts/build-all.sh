@@ -19,6 +19,8 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-dist.XXXXXX")
 cleanup() { python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' "$work"; }
 trap cleanup EXIT HUP INT TERM
 
+core_src="src/lcovmerge.c"
+
 build_set() {
     python3 tools/package-dist.py --clean "$dist"
     # Keep the flags as positional arguments so paths containing spaces remain one argument.
@@ -27,19 +29,19 @@ build_set() {
         set -- "$@" "$flag"
     done
 
-    "$zig_bin" cc -target x86_64-linux-musl "$@" -static src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-x86_64"
-    "$zig_bin" cc -target aarch64-linux-musl "$@" -static src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-aarch64"
-    "$zig_bin" cc -target aarch64-macos "$@" src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-arm64"
-    "$zig_bin" cc -target x86_64-macos "$@" src/lcovmerge.c src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-x86_64"
+    "$zig_bin" cc -target x86_64-linux-musl "$@" -static $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-x86_64"
+    "$zig_bin" cc -target aarch64-linux-musl "$@" -static $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-aarch64"
+    "$zig_bin" cc -target aarch64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-arm64"
+    "$zig_bin" cc -target x86_64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-x86_64"
     if [ -n "${MINGW_CC:-}" ]; then
         command -v "$MINGW_CC" >/dev/null 2>&1 || {
             printf 'MINGW_CC not found: %s\n' "$MINGW_CC" >&2
             exit 1
         }
-        "$MINGW_CC" "$@" -static src/lcovmerge.c src/platform_win32.c -municode \
+        "$MINGW_CC" "$@" -static $core_src src/platform_win32.c -municode \
             -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     else
-        "$zig_bin" cc -target x86_64-windows-gnu "$@" -static src/lcovmerge.c src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+        "$zig_bin" cc -target x86_64-windows-gnu "$@" -static $core_src src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     fi
     python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$epoch"
 }

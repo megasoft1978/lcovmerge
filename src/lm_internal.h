@@ -213,4 +213,34 @@ typedef struct {
     int have_fn_group, fn_group_hit;
 } OutputState;
 
+extern atomic_bool interrupted;
+
+int record_key_compare(const Record *left, const Record *right);
+int wildcard_match(const char *pattern, const char *text);
+int utf8_valid(const unsigned char *bytes, size_t length);
+int add_rebase(Options *options, const char *mapping);
+void options_destroy(Options *options);
+int list_add_string(StringList *list, const char *item);
+int writer_init(Writer *writer, lm_handle handle);
+int writer_u64(Writer *writer, uint64_t value);
+void writer_destroy(Writer *writer);
+int parse_size(const char *text, size_t *value);
+int record_total_compare(const Record *left, const Record *right);
+int record_total_compare_same_path(const Record *left, const Record *right);
+char *rewrite_path(const Options *options, const char *path);
+int path_selected(const Options *options, const char *path);
+char *duplicate_string(const char *text);
+int line_reader_init(LineReader *reader, lm_handle handle);
+int line_reader_next(LineReader *reader);
+void line_reader_destroy(LineReader *reader);
+
+static inline uint64_t saturating_add(uint64_t left, uint64_t right) {
+    return left > UINT64_MAX - right ? UINT64_MAX : left + right;
+}
+
+static inline int string_compare(const char *left, const char *right) {
+    int result = strcmp(left, right);
+    return (result > 0) - (result < 0);
+}
+
 #endif

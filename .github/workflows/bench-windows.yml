@@ -66,6 +66,7 @@ jobs:
           set -eu
           mkdir -p .luna-tmp bin
           commit=$(git rev-parse --short=12 HEAD)
+          core_src="src/lcovmerge.c"
           set -- \
             -Iinclude \
             -O2 \
@@ -74,7 +75,7 @@ jobs:
             -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
             -ffunction-sections -fdata-sections \
             "-DLCOVMERGE_GIT_COMMIT=\"$commit\""
-          gcc "$@" -static src/lcovmerge.c src/platform_win32.c -municode \
+          gcc "$@" -static $core_src src/platform_win32.c -municode \
             -Wl,--gc-sections -Wl,-s -o bin/lcovmerge-ucrt64-gcc.exe
           gcc --version | head -n 1
 

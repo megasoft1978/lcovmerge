@@ -1,6 +1,6 @@
 #include "lm_internal.h"
 
-static atomic_bool interrupted = ATOMIC_VAR_INIT(0);
+atomic_bool interrupted = ATOMIC_VAR_INIT(0);
 _Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "signal cancellation flag must be lock-free");
 
 static void on_signal(int signal_number) {
@@ -68,7 +68,7 @@ static char *duplicate_range(const char *text, size_t length) {
     return copy;
 }
 
-static char *duplicate_string(const char *text) {
+char *duplicate_string(const char *text) {
     return duplicate_range(text, strlen(text));
 }
 
@@ -85,7 +85,7 @@ static int list_add(StringList *list, char *item) {
     return 0;
 }
 
-static int list_add_string(StringList *list, const char *item) {
+int list_add_string(StringList *list, const char *item) {
     char *copy = duplicate_string(item);
     if (!copy) return -1;
     if (list_add(list, copy) != 0) { free(copy); return -1; }
@@ -112,7 +112,7 @@ static int parse_u64(const char *text, size_t length, uint64_t *value) {
     return 1;
 }
 
-static int parse_size(const char *text, size_t *value) {
+int parse_size(const char *text, size_t *value) {
     size_t length = strlen(text);
     uint64_t multiplier = 1;
     if (length == 0) return 0;
@@ -124,10 +124,6 @@ static int parse_size(const char *text, size_t *value) {
     if (!parse_u64(text, length, &amount) || amount > (uint64_t)SIZE_MAX / multiplier) return 0;
     *value = (size_t)(amount * multiplier);
     return 1;
-}
-
-static uint64_t saturating_add(uint64_t left, uint64_t right) {
-    return left > UINT64_MAX - right ? UINT64_MAX : left + right;
 }
 
 static int writer_flush(Writer *writer) {
@@ -145,7 +141,7 @@ static int writer_flush(Writer *writer) {
     return 0;
 }
 
-static int writer_init(Writer *writer, lm_handle handle) {
+int writer_init(Writer *writer, lm_handle handle) {
     memset(writer, 0, sizeof(*writer));
     writer->capacity = WRITE_BLOCK;
     writer->buffer = malloc(writer->capacity);
@@ -177,7 +173,7 @@ static int writer_char(Writer *writer, char value) {
     return writer_bytes(writer, &value, 1);
 }
 
-static int writer_u64(Writer *writer, uint64_t value) {
+int writer_u64(Writer *writer, uint64_t value) {
     static const char digit_pairs[] =
         "00010203040506070809"
         "10111213141516171819"
@@ -218,13 +214,13 @@ static int writer_format(Writer *writer, const char *format, ...) {
     return writer_bytes(writer, buffer, (size_t)count);
 }
 
-static void writer_destroy(Writer *writer) {
+void writer_destroy(Writer *writer) {
     free(writer->buffer);
     free(writer->run_path);
     memset(writer, 0, sizeof(*writer));
 }
 
-static int utf8_valid(const unsigned char *bytes, size_t length) {
+int utf8_valid(const unsigned char *bytes, size_t length) {
     size_t i = 0;
     const uint64_t high_bits = UINT64_C(0x8080808080808080);
     const uint64_t byte_ones = UINT64_C(0x0101010101010101);
@@ -258,7 +254,7 @@ static int utf8_valid(const unsigned char *bytes, size_t length) {
     return 1;
 }
 
-static int line_reader_init(LineReader *reader, lm_handle handle) {
+int line_reader_init(LineReader *reader, lm_handle handle) {
     memset(reader, 0, sizeof(*reader));
     reader->line = malloc(LINE_INITIAL_CAPACITY);
     if (!reader->line) return -1;
@@ -267,13 +263,13 @@ static int line_reader_init(LineReader *reader, lm_handle handle) {
     return 0;
 }
 
-static void line_reader_destroy(LineReader *reader) {
+void line_reader_destroy(LineReader *reader) {
     free(reader->line);
     memset(reader, 0, sizeof(*reader));
 }
 
 /* Returns 1 for a line, 0 at EOF, -1 for I/O, and -2 for an invalid line. */
-static int line_reader_next(LineReader *reader) {
+int line_reader_next(LineReader *reader) {
     reader->line_len = 0;
     for (;;) {
         if (reader->pos == reader->len) {
@@ -314,11 +310,6 @@ static int line_reader_next(LineReader *reader) {
             return 1;
         }
     }
-}
-
-static int string_compare(const char *left, const char *right) {
-    int result = strcmp(left, right);
-    return (result > 0) - (result < 0);
 }
 
 static int new_function_event(const Record *record) {
@@ -423,7 +414,7 @@ static int record_key_compare_same_path(const Record *left, const Record *right)
     }
 }
 
-static int record_key_compare(const Record *left, const Record *right) {
+int record_key_compare(const Record *left, const Record *right) {
     if (left->path != right->path &&
         (left->path_id == 0 || right->path_id == 0 || left->path_id != right->path_id)) {
         int result = string_compare(left->path, right->path);
@@ -432,7 +423,7 @@ static int record_key_compare(const Record *left, const Record *right) {
     return record_key_compare_same_path(left, right);
 }
 
-static int record_total_compare(const Record *left, const Record *right) {
+int record_total_compare(const Record *left, const Record *right) {
     int result = record_key_compare(left, right);
     if (result) return result;
     if (left->type == REC_DA) {
@@ -449,7 +440,7 @@ static int record_total_compare(const Record *left, const Record *right) {
     return (left->origin_line > right->origin_line) - (left->origin_line < right->origin_line);
 }
 
-static int record_total_compare_same_path(const Record *left, const Record *right) {
+int record_total_compare_same_path(const Record *left, const Record *right) {
     if (left->type == REC_DA && right->type == REC_DA) {
         if (left->a != right->a) return (left->a > right->a) - (left->a < right->a);
         int result = string_compare(left->extra, right->extra);
@@ -709,7 +700,7 @@ static void chunk_destroy(Chunk *chunk) {
     memset(chunk, 0, sizeof(*chunk));
 }
 
-static int wildcard_match(const char *pattern, const char *text) {
+int wildcard_match(const char *pattern, const char *text) {
     const char *star = NULL;
     const char *retry = NULL;
     while (*text) {
@@ -752,7 +743,7 @@ static int prefix_match(const char *path, const char *prefix, size_t *matched) {
     return 1;
 }
 
-static char *rewrite_path(const Options *options, const char *path) {
+char *rewrite_path(const Options *options, const char *path) {
     char *current = duplicate_string(path);
     if (!current) return NULL;
     for (size_t i = 0; i < options->rebase_count; ++i) {
@@ -796,7 +787,7 @@ static char *rewrite_path(const Options *options, const char *path) {
     return current;
 }
 
-static int path_selected(const Options *options, const char *path) {
+int path_selected(const Options *options, const char *path) {
     int included = options->includes.count == 0;
     for (size_t i = 0; i < options->includes.count; ++i)
         if (wildcard_match(options->includes.items[i], path)) included = 1;
@@ -1427,7 +1418,7 @@ static int expand_input_argument(Options *options, const char *argument, unsigne
     return result;
 }
 
-static int add_rebase(Options *options, const char *mapping) {
+int add_rebase(Options *options, const char *mapping) {
     const char *equal = strchr(mapping, '=');
     if (!equal) return -1;
     if (options->rebase_count == options->rebase_capacity) {
@@ -1450,7 +1441,7 @@ static int add_rebase(Options *options, const char *mapping) {
     return 0;
 }
 
-static void options_destroy(Options *options) {
+void options_destroy(Options *options) {
     list_free(&options->inputs);
     list_free(&options->includes);
     list_free(&options->excludes);
