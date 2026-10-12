@@ -291,7 +291,7 @@ static int merge_group(const char *const *paths, size_t count, const char *tmpdi
         if (!final_output) {
             if (write_record(&run_writer, row) != 0) { status = 3; break; }
         } else if (have_aggregate && same_key(&aggregate, row)) {
-            if (merge_aggregate(&aggregate, row, options, stderr) != 0) { status = options->strict_checksum ? 2 : 3; break; }
+            if (merge_aggregate(&aggregate, row, options, stderr, NULL) != 0) { status = options->strict_checksum ? 2 : 3; break; }
         } else {
             if (have_aggregate && output_record(output, &aggregate) != 0) { status = 3; break; }
             aggregate_copy(&aggregate, row, aggregate_storage);

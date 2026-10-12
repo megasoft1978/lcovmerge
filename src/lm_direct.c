@@ -307,16 +307,26 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
         input->worker.worker_count = (unsigned)count;
         input->worker.direct_mode = 1;
         input->worker.diagnostic_file = diagnostics;
+        input->worker.diagnostic_abort = job->abort_flag;
         input->worker.direct_memory_used = &memory_used;
         input->worker.direct_memory_limit = memory_limit;
         input->worker.direct_shared_growth = job->shared_growth;
         input->worker.direct_shared_limit = memory_limit - fixed_cost;
         input->worker.direct_max_line_bytes = LINE_INITIAL_CAPACITY;
+#ifdef _WIN32
+        /* Concurrent ReadFile calls on one synchronous Windows handle are serialised, so each
+           partition reads through a handle of its own; POSIX partitions share pread()-only fds. */
+        if (lm_open_read(input->filename, &input->handle) != 0) {
+            fallback = 1;
+            break;
+        } else input->opened = 1;
+#else
         if (partitioned) input->handle = plan->handles[i];
         else if (lm_open_read(input->filename, &input->handle) != 0) {
             fallback = 1;
             break;
         } else input->opened = 1;
+#endif
         if (line_reader_init(&input->reader, input->handle) != 0) {
             fallback = 1;
             break;
@@ -373,7 +383,7 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
         Worker *worker = &inputs[input_index].worker;
         Record *row = direct_current_row(&inputs[input_index]);
         if (have_aggregate && direct_same_key(&aggregate, row)) {
-            int merged = merge_aggregate(&aggregate, row, options, diagnostics);
+            int merged = merge_aggregate(&aggregate, row, options, diagnostics, job->abort_flag);
             if (merged != 0) { status = merged == 2 ? 2 : 3; break; }
         } else {
             if (have_aggregate && output_record(&output, &aggregate) != 0) { status = 3; break; }

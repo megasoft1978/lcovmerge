@@ -220,6 +220,7 @@ int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         fprintf(diagnostics,
                 "lcovmerge: %s:%" PRIu64 ": warning: recovered joined end_of_record/source boundary after missing newline\n",
                 filename, line_no);
+        if (worker->diagnostic_abort) atomic_store_explicit(worker->diagnostic_abort, 1, memory_order_relaxed);
         ++worker->warnings;
 
         memmove(line, line + end_record_length, length - end_record_length + 1u);
@@ -437,6 +438,7 @@ int parse_record_line(Worker *worker, Chunk *chunk, char *line,
         fprintf(worker->diagnostic_file ? worker->diagnostic_file : stderr,
                 "lcovmerge: %s:%" PRIu64 ": preserved unknown record %.*s\n",
                 filename, line_no, (int)(colon - line), line);
+        if (worker->diagnostic_abort) atomic_store_explicit(worker->diagnostic_abort, 1, memory_order_relaxed);
         ++worker->warnings;
     }
     if (*keep_path && add_row(worker, chunk, *path, REC_EXT, line, "", 0, 0, 0, 0, 0,

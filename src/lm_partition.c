@@ -399,6 +399,11 @@ int partition_plan_build(const Options *options, PartitionPlan *plan) {
     if (want > fd_parts) want = fd_parts;
     if (want < 2u) return 0;
     size_t part_cost = direct_fixed_cost(count);
+    /* The serial run falls back to the external sort when its fixed cost alone exceeds the direct
+       budget (lm_direct.c); partitioning would only spend probe reads before that decision. */
+    size_t direct_budget = options->mem_limit / 2u;
+    if (direct_budget > ((size_t)16u << 20)) direct_budget = (size_t)16u << 20;
+    if (part_cost > direct_budget) return 0;
     /* The aggregate buffer is reserved for 3 MiB but touched only as far as records grow. */
     if (part_cost == SIZE_MAX || part_cost > SIZE_MAX - MAX_LINE) return 0;
     part_cost += MAX_LINE;

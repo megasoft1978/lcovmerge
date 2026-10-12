@@ -194,7 +194,7 @@ static const char *input_name_for(const Options *options, uint32_t input_id) {
 }
 
 int merge_aggregate(Record *aggregate, const Record *next, const Options *options,
-                           FILE *diagnostics) {
+                           FILE *diagnostics, atomic_bool *diagnosed) {
     if (next->type == REC_TN) {
         if (strcmp(aggregate->text, next->text) != 0) aggregate->value = 1;
     } else if (next->type == REC_FNDA || next->type == REC_MCDC ||
@@ -204,6 +204,7 @@ int merge_aggregate(Record *aggregate, const Record *next, const Options *option
             fprintf(diagnostics, "lcovmerge: %s:%" PRIu64 ": MC/DC expression mismatch for %s:%" PRIu64 " group %" PRIu64 " index %" PRIu64 "\n",
                     input_name_for(options, next->input_id), next->origin_line,
                     next->path, next->a, next->b, next->c);
+            if (diagnosed) atomic_store_explicit(diagnosed, 1, memory_order_relaxed);
             if (strcmp(next->text, aggregate->text) < 0) {
                 size_t length = next->text_length;
                 memcpy(aggregate->text, next->text, length + 1);
@@ -229,6 +230,7 @@ int merge_aggregate(Record *aggregate, const Record *next, const Options *option
                 fprintf(diagnostics, "lcovmerge: %s:%" PRIu64 ": checksum mismatch for %s:%" PRIu64 "\n",
                         input_name_for(options, next->input_id), next->origin_line,
                         next->path, next->a);
+                if (diagnosed) atomic_store_explicit(diagnosed, 1, memory_order_relaxed);
                 if (options->strict_checksum) return 2;
                 if (order > 0) {
                     size_t length = next->extra_length;

@@ -185,6 +185,7 @@ typedef struct {
     size_t direct_memory_limit, direct_max_line_bytes;
     atomic_uint_fast64_t *direct_shared_growth; /* partitioned: growth of all partitions, see direct_charge */
     uint64_t direct_shared_limit;
+    atomic_bool *diagnostic_abort; /* partitioned: raised on the first diagnostic (the run will be redone serially) */
     uint64_t direct_path_generation;
     int direct_mode, direct_unsorted, have_direct_last_row;
 } Worker;
@@ -390,7 +391,7 @@ void chunk_destroy(Chunk *chunk);
 int output_record(OutputState *output, const Record *record);
 int output_finish_file(OutputState *output);
 int merge_aggregate(Record *aggregate, const Record *next, const Options *options,
-                           FILE *diagnostics);
+                           FILE *diagnostics, atomic_bool *diagnosed);
 int create_output_temp(const char *output_path, OutputFile *file);
 
 int worker_error(Worker *worker, int code, const char *file, uint64_t line, const char *format, ...);
