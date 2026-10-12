@@ -243,4 +243,11 @@ static inline int string_compare(const char *left, const char *right) {
     return (result > 0) - (result < 0);
 }
 
+int install_signal_handlers(void);
+char *duplicate_range(const char *text, size_t length);
+void list_free(StringList *list);
+int parse_u64(const char *text, size_t length, uint64_t *value);
+int run_list_add(RunList *list, char *path);
+void run_list_cleanup(RunList *list);
+
 #endif

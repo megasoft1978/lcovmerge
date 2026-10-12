@@ -26,7 +26,8 @@ UNIT_BIN ?= bin/lcovmerge-unit
 UNIT_LDFLAGS = -pthread
 endif
 
-CORE_SRC = src/lcovmerge.c
+CORE_SRC = src/lcovmerge.c \
+	src/lm_util.c
 SOURCES = $(CORE_SRC) $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h src/lm_internal.h
 UNIT_SOURCE = tests/unit/helpers.c
