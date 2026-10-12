@@ -301,4 +301,6 @@ int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, uint32_
 void print_worker_error(const Worker *worker);
 int run_direct_merge(const Options *options);
 
+int run_merge(const Options *options);
+
 #endif

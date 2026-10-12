@@ -34,7 +34,8 @@ CORE_SRC = src/lcovmerge.c \
 	src/lm_chunk.c \
 	src/lm_emit.c \
 	src/lm_parse.c \
-	src/lm_direct.c
+	src/lm_direct.c \
+	src/lm_merge.c
 SOURCES = $(CORE_SRC) $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h src/lm_internal.h
 UNIT_SOURCE = tests/unit/helpers.c
