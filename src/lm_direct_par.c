@@ -70,8 +70,12 @@ static void partition_cleanup(PartitionTask *tasks, OutputFile *outputs, lm_thre
 /* Returns the exit status, or DIRECT_RERUN when the serial path must run (or P_eff is 1). */
 int direct_run_partitioned(const Options *options) {
     PartitionPlan plan;
-    if (!partition_plan_build(options, &plan)) return DIRECT_RERUN;
+    if (!partition_plan_build(options, &plan)) {
+        PARTITION_TRACE("partition: not engaged\n");
+        return DIRECT_RERUN;
+    }
     unsigned parts = plan.parts;
+    PARTITION_TRACE("partition: engaged P=%u\n", parts);
     PartitionTask *tasks = calloc(parts, sizeof(*tasks));
     OutputFile *outputs = calloc(parts, sizeof(*outputs));
     lm_thread *threads = calloc(parts - 1u, sizeof(*threads));
@@ -82,7 +86,7 @@ int direct_run_partitioned(const Options *options) {
     atomic_init(&shared_growth, 0);
     if (!tasks || !outputs || !threads) {
         partition_cleanup(tasks, outputs, threads, &plan, 0);
-        return DIRECT_RERUN;
+        return PARTITION_RERUN("alloc");
     }
     for (; prepared < parts; ++prepared) {
         outputs[prepared].handle = LM_INVALID_HANDLE;
@@ -91,12 +95,12 @@ int direct_run_partitioned(const Options *options) {
         FILE *diagnostics = tmpfile();
         if (!diagnostics) {
             partition_cleanup(tasks, outputs, threads, &plan, prepared);
-            return DIRECT_RERUN;
+            return PARTITION_RERUN("tmpfile");
         }
         if (create_output_temp_quiet(options->output, &outputs[prepared]) != 0) {
             fclose(diagnostics);
             partition_cleanup(tasks, outputs, threads, &plan, prepared);
-            return DIRECT_RERUN;
+            return PARTITION_RERUN("staged-file");
         }
         tasks[prepared].job.options = options;
         tasks[prepared].job.plan = &plan;
@@ -122,7 +126,7 @@ int direct_run_partitioned(const Options *options) {
     if (thread_failed) {
         /* Results of unjoined or never-started partitions are unusable; started ones were joined. */
         partition_cleanup(tasks, outputs, threads, &plan, prepared);
-        return DIRECT_RERUN;
+        return PARTITION_RERUN("thread-start");
     }
 
     if (interrupted) {
@@ -133,7 +137,10 @@ int direct_run_partitioned(const Options *options) {
     int usable = 1;
     for (unsigned p = 0; p < parts; ++p) {
         const DirectResult *result = &tasks[p].result;
-        if (result->fallback || result->status != 0 || result->had_diagnostics) usable = 0;
+        if (result->fallback || result->status != 0 || result->had_diagnostics) {
+            if (usable) PARTITION_TRACE("partition: anomaly in a worker\n");
+            usable = 0;
+        }
     }
     /* Whole-file memory decision: fixed cost plus, per input, the largest dynamic need of any range. */
     if (usable) {
@@ -146,7 +153,10 @@ int direct_run_partitioned(const Options *options) {
                 if (tasks[p].result.growth[i] > largest) largest = tasks[p].result.growth[i];
             memory_used = saturating_add(memory_used, (uint64_t)largest);
         }
-        if (memory_used > memory_limit) usable = 0;
+        if (memory_used > memory_limit) {
+            PARTITION_TRACE("partition: anomaly memory budget\n");
+            usable = 0;
+        }
     }
     if (usable) {
         /* Close (and thereby flush) the later staged files; the first stays open as the target. */
@@ -174,7 +184,7 @@ int direct_run_partitioned(const Options *options) {
     }
     if (!usable) {
         partition_cleanup(tasks, outputs, threads, &plan, prepared);
-        return DIRECT_RERUN;
+        return PARTITION_RERUN("anomaly");
     }
 
     int status = 0;

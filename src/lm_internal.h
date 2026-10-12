@@ -305,6 +305,14 @@ int part_find_kept_sf(PartScanner *scanner, const Options *options, lm_handle ha
 int part_locate(PartScanner *scanner, const Options *options, lm_handle handle, uint64_t size,
                 const char *splitter, size_t splitter_length, uint64_t lo,
                 uint64_t *offset_out, char **pending_tn_out);
+#ifdef LM_TEST_PARTITION
+/* Test builds only: appends one line to the file named by LCOVMERGE_TEST_PARTITION_TRACE. */
+void partition_trace(const char *format, ...);
+#define PARTITION_TRACE(...) partition_trace(__VA_ARGS__)
+#else
+#define PARTITION_TRACE(...) ((void)0)
+#endif
+#define PARTITION_RERUN(reason) (PARTITION_TRACE("partition: rerun serial reason=%s\n", reason), DIRECT_RERUN)
 /* 1 = plan ready, 0 = not partitioning (exactly today's path). */
 int partition_plan_build(const Options *options, PartitionPlan *plan);
 void partition_plan_destroy(PartitionPlan *plan);

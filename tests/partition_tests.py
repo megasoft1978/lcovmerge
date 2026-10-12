@@ -18,6 +18,29 @@ import time
 from pathlib import Path
 
 PARTS = (2, 3, 4, 8)
+
+# Cases that must run threaded to the end, and cases that must engage threads and then give up
+# (any error, warning, ordering violation, budget overflow or I/O failure reruns the serial path).
+# Cases in neither group (nothing to split, stdin, -o -, missing files) are only compared.
+CLEAN_CASES = frozenset((
+    "plain", "plain-stats", "many-tiny-sections", "single-input", "same-input-many", "disjoint-ranges",
+    "empty-inputs", "tn-comment-blank", "tn-crlf", "tn-before-end-of-file-garbage", "no-final-newline",
+    "crlf-everywhere", "checksum-clean", "prefix-strip", "include-one-of-many", "exclude-half",
+    "branch-off", "no-function-data", "function-rows", "branch-rows", "budget-ok-line", "forty-inputs",
+    "verbose-stats", "stdin-input", "ooo-high-section-59"))
+RERUN_CASES = frozenset((
+    "tn-two-before-sf", "sf-before-end-of-record", "binary-nul-late", "invalid-utf8-mid",
+    "truncated-last-line", "ooo-mem-8M", "mcdc-mismatch-late", "excluded-sections-junk-warn",
+    "budget-overflow-late-line", "unwritable-destination"))
+RERUN_PREFIXES = ("joined-", "err-", "warn-", "ooo-", "checksum-conflict", "rebase-")
+
+
+def _expected(name: str) -> str | None:
+    if name in CLEAN_CASES:
+        return "clean"
+    if name in RERUN_CASES or name.startswith(RERUN_PREFIXES):
+        return "rerun"
+    return None
 JOBS_TEXT = re.compile(rb"using (\d+) jobs \(sorted-input fast path\)")
 
 
@@ -46,8 +69,13 @@ def _listing(directory: Path):
 
 def compare(binary: Path, ptest: Path, base: Path, name: str, inputs: list[bytes | str], *,
             options=(), stdin: bytes | None = None, extra_inputs=(), output="out.info",
-            parts=PARTS, engaged: bool | None = None, tmpdir_option: bool = False) -> int:
-    """Runs one case for every P; returns the number of comparisons."""
+            parts=PARTS, engaged: bool | None = None, tmpdir_option: bool = False,
+            expect: str | None = None) -> int:
+    """Runs one case for every P; returns the number of comparisons.
+
+    expect checks the test-build trace (LCOVMERGE_TEST_PARTITION_TRACE): "clean" = threaded path
+    engaged and finished without a serial rerun; "rerun" = engaged, then gave up and reran serially.
+    """
     runs = 0
     for parts_count in parts:
         case = base / f"{name}-p{parts_count}"
@@ -67,12 +95,14 @@ def compare(binary: Path, ptest: Path, base: Path, name: str, inputs: list[bytes
             opts += ["--tmpdir", str(case / "tmp")]
         command_tail = [*opts, *files, "-o", out_path]
         results = []
+        trace_path = base / f"{name}-p{parts_count}.trace"
         for which in ("ref", "new"):
             env = dict(os.environ)
             env.pop("LCOVMERGE_TEST_PARTITION", None)
             exe = binary
             if which == "new":
                 env["LCOVMERGE_TEST_PARTITION"] = str(parts_count)
+                env["LCOVMERGE_TEST_PARTITION_TRACE"] = str(trace_path)
                 exe = ptest
             if out_path != "-" and Path(out_path).exists():
                 Path(out_path).unlink()
@@ -84,6 +114,17 @@ def compare(binary: Path, ptest: Path, base: Path, name: str, inputs: list[bytes
         new_err = JOBS_TEXT.sub(b"using 1 job (sorted-input fast path)", new.stderr)
         if engaged and not JOBS_TEXT.search(new.stderr):
             raise AssertionError(f"partition case {name} P={parts_count} did not use the threaded path: {new.stderr!r}")
+        if expect is None:
+            expect = _expected(name)
+        events = trace_path.read_text().splitlines() if trace_path.exists() else []
+        if os.environ.get("LCOVMERGE_PT_REPORT"):
+            print(f"REPORT {name} P={parts_count}: {events}")
+        if expect:
+            if not any(e.startswith("partition: engaged P=") for e in events):
+                raise AssertionError(f"partition case {name} P={parts_count}: threaded path not engaged: {events}")
+            reran = any(e.startswith("partition: rerun serial") for e in events)
+            if (expect == "rerun") != reran:
+                raise AssertionError(f"partition case {name} P={parts_count}: expected {expect}, trace {events}")
         problems = []
         if ref.returncode != new.returncode:
             problems.append(f"exit {ref.returncode} != {new.returncode}")

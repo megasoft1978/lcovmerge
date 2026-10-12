@@ -7,6 +7,21 @@
  * caller fall back to the unchanged single-threaded path, which reproduces today's diagnostics.
  */
 
+#ifdef LM_TEST_PARTITION
+#include <stdarg.h>
+void partition_trace(const char *format, ...) {
+    const char *path = getenv("LCOVMERGE_TEST_PARTITION_TRACE");
+    if (!path || !*path) return;
+    FILE *file = fopen(path, "a");
+    if (!file) return;
+    va_list arguments;
+    va_start(arguments, format);
+    (void)vfprintf(file, format, arguments);
+    va_end(arguments);
+    (void)fclose(file);
+}
+#endif
+
 #define PART_SAMPLES_PER_PART 128u
 #define PART_MIN_PARTITION_BYTES ((uint64_t)32u << 20)
 #define PART_FINDER_CAP ((uint64_t)1u << 30)
