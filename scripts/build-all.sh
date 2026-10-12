@@ -35,15 +35,16 @@ build_set() {
     "$zig_bin" cc -target aarch64-linux-musl "$@" -static $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-aarch64"
     "$zig_bin" cc -target aarch64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-arm64"
     "$zig_bin" cc -target x86_64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-x86_64"
+    # The Windows executable is built with -Os (the later flag overrides -O2) to stay within the release size budget.
     if [ -n "${MINGW_CC:-}" ]; then
         command -v "$MINGW_CC" >/dev/null 2>&1 || {
             printf 'MINGW_CC not found: %s\n' "$MINGW_CC" >&2
             exit 1
         }
-        "$MINGW_CC" "$@" -static $core_src src/platform_win32.c -municode \
+        "$MINGW_CC" "$@" -Os -static $core_src src/platform_win32.c -municode \
             -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     else
-        "$zig_bin" cc -target x86_64-windows-gnu "$@" -static $core_src src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+        "$zig_bin" cc -target x86_64-windows-gnu "$@" -Os -static $core_src src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
     fi
     python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$epoch"
 }
