@@ -165,13 +165,14 @@ int output_finish_file(OutputState *output) {
     if (!output->active) return 0;
     if (ensure_source_record(output) != 0) return -1;
     finish_function_group(output);
-    if (writer_format(&output->writer,
-                      "FNF:%" PRIu64 "\nFNH:%" PRIu64 "\n"
-                      "BRF:%" PRIu64 "\nBRH:%" PRIu64 "\n"
-                      "MCF:%" PRIu64 "\nMCH:%" PRIu64 "\n"
-                      "LF:%" PRIu64 "\nLH:%" PRIu64 "\nend_of_record\n",
-                      output->fnf, output->fnh, output->brf, output->brh,
-                      output->mcf, output->mch, output->lf, output->lh) != 0) return -1;
+    static const char *const labels[] = {"FNF:", "FNH:", "BRF:", "BRH:", "MCF:", "MCH:", "LF:", "LH:"};
+    const uint64_t values[] = {output->fnf, output->fnh, output->brf, output->brh,
+                               output->mcf, output->mch, output->lf, output->lh};
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+        if (writer_text(&output->writer, labels[i]) != 0 ||
+            writer_u64(&output->writer, values[i]) != 0 ||
+            writer_char(&output->writer, '\n') != 0) return -1;
+    if (writer_text(&output->writer, "end_of_record\n") != 0) return -1;
     output->total_fnf = saturating_add(output->total_fnf, output->fnf);
     output->total_fnh = saturating_add(output->total_fnh, output->fnh);
     output->total_brf = saturating_add(output->total_brf, output->brf);
