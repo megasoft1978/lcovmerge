@@ -6,7 +6,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in threaded sorted-input merge: an explicit `-j N` with `N` of 2 or more splits the source-path range of already-sorted regular-file inputs (at least 64 MiB in total) into partitions, merges them in parallel, and joins the staged outputs in path order. Output bytes, diagnostics, and exit status are identical for any `-j` and input order; the default stays single-threaded. Any error, warning, out-of-order input, or memory-budget overflow during a threaded attempt discards the staged outputs and reruns the single-threaded path. Trade-offs: staged files in the destination directory add up to about the output size on disk briefly, and each extra thread adds buffers. On generated inputs on one host, up to ~3.5x at `-j 4` and ~6x at `-j 8` on a 64-shard input (uncontrolled cache state).
+
 ### Changed
+
+- Build the Windows release executable with `-Os` to stay within the size budget; output is unchanged.
 
 - Split the core source into `src/lcovmerge.c` (CLI) and `src/lm_*.c` modules sharing `src/lm_internal.h`. Internal refactor only; behavior, output, and diagnostics are unchanged.
 - Speed up merging with byte-identical output: compare record strings by stored length, inline hot parsing and writer helpers, and write per-file summaries without `vsnprintf`. On the generated benchmark inputs, local medians were 7.6% (S) to 14.3% (XL-single) faster on the sorted-input path and 34.6% faster on the external-sort workload (PATH-HEAVY); one host, uncontrolled cache state.

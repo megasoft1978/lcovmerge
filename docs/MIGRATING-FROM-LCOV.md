@@ -8,7 +8,7 @@ lcovmerge merges already-exported LCOV `.info` files; it does not collect covera
 | --- | --- | --- |
 | -a FILE / `--add-tracefile` FILE | Pass each `.info` path as a positional input | The shell expands globs before lcovmerge runs; it does not expand wildcards itself. |
 | -o FILE / `--output-file` FILE | -o FILE / `--output` FILE | The destination is replaced only after a successful file merge. |
-| `--parallel` N | `--jobs` N | Workers process whole files; a single large file is not split. The merge stage uses one worker. |
+| `--parallel` N | `--jobs` N | Workers process whole files; a single large file is not split. The external-sort merge stage uses one worker; an explicit `-j N` can thread the sorted-input streaming merge (see [USAGE](USAGE.md#-j-n---jobs-n)). |
 | `--memory` N | No direct equivalent. `--mem-limit` SIZE | Limits memory reserved for coverage records while sorting. It does not cap total process memory or temporary disk. The minimum is 8 MiB per job. |
 | `--tempdir` DIR | `--tmpdir` DIR | Selects an existing writable directory for temporary sorted files. Success and handled failures clean them up; interruption details differ by platform. |
 | `--include` GLOB / `--exclude` GLOB | `--include` GLOB / `--exclude` GLOB | Check path matching on your own files. lcovmerge rewrites paths before applying filters. |

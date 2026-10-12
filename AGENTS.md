@@ -9,6 +9,7 @@
 - `make` builds `bin/lcovmerge` (or `bin/lcovmerge.exe` on Windows).
 - `make test` builds and runs golden, malformed-input, differential, and determinism checks, then checks documentation consistency. The optional comparison with `lcov` runs when it is installed.
 - `make asan` builds with AddressSanitizer and UndefinedBehaviorSanitizer and runs the core suite.
+- `make ptest` builds the test-only binary that can force the threaded sorted-input merge on small fixtures (`make test` and `make asan` run its partition cases); `make tsan` runs the suite on it under ThreadSanitizer.
 - `make fuzz` builds the Clang sanitizer fuzz harness and runs its corpus; set `FUZZ_RUNS` to adjust the run count.
 - `make check-format` checks whitespace and runs `clang-format` when available.
 

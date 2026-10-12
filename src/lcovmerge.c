@@ -6,7 +6,8 @@ static void print_usage(FILE *stream) {
           "  --mem-limit SIZE            arena cap; bytes or binary K/M/G, case-insensitive\n"
           "                              default 64M; minimum 8M per external-sort job\n"
           "  --tmpdir DIR                temporary run directory\n"
-          "  -j, --jobs N                1-32 external-sort jobs (default min(4, cores), memory-limited)\n"
+          "  -j, --jobs N                1-32 jobs (default min(4, cores), memory-limited); N>=2 given\n"
+          "                              explicitly also threads sorted-input merges of large inputs\n"
           "  --prefix-strip PREFIX       strip an SF path prefix at a path boundary\n"
           "  --rebase OLD=NEW            rewrite SF path prefixes at path boundaries\n"
           "  --include GLOB              include matching SF paths (repeatable)\n"
@@ -22,7 +23,7 @@ static void print_usage(FILE *stream) {
           "  -h, --help                  show this text\n"
           "  inputs: shell expands globs; @file reads paths (8 levels), @@ escapes @\n"
           "  filters: rebase, prefix-strip, includes, then exclusions\n"
-          "  sorted regular files use one stream job; fallback uses --jobs\n"
+          "  sorted regular files stream on one job unless -j N (N>=2) is given; fallback uses --jobs\n"
           "  exits: 0 success, 1 usage, 2 input/format, 3 I/O/allocation/interruption\n", stream);
 }
 

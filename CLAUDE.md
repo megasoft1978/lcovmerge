@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make` → `bin/lcovmerge` (strict warnings, `-Werror`; `-Wconversion -Wshadow` included)
 - `make test` → `tests/run_tests.py --binary bin/lcovmerge` (golden, malformed, differential, determinism) + `tests/doc-consistency.sh`
 - `make asan` → ASan/UBSan build, runs core suite (`--no-lcov`)
+- `make ptest` → builds the test-only binary with `LM_TEST_PARTITION` (forces partitions on tiny inputs; `make test`/`make asan` run its cases); `make tsan` → suite on that build under ThreadSanitizer
 - `make fuzz` → needs `clang`; `FUZZ_RUNS=N` to adjust
 - `make check-format` → `git diff --check` + `clang-format` if installed
 - `make dist` → cross builds via `scripts/build-all.sh`
@@ -20,17 +21,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture
 
 - Core logic is split by responsibility; shared declarations live in `src/lm_internal.h` (see `docs/ARCHITECTURE.md` for the module map). Shared behavior goes in the core modules:
-  - `lcovmerge.c` CLI/options/main; `lm_util.c` helpers and signals; `lm_io.c` writer/line reader; `lm_record.c` comparators; `lm_path.c` path rewrite/filter; `lm_chunk.c` chunk arena and spill; `lm_parse.c` parser; `lm_direct.c` direct merge; `lm_emit.c` summaries/output; `lm_merge.c` workers and k-way merge.
+  - `lcovmerge.c` CLI/options/main; `lm_util.c` helpers and signals; `lm_io.c` writer/line reader; `lm_record.c` comparators; `lm_path.c` path rewrite/filter; `lm_chunk.c` chunk arena and spill; `lm_parse.c` parser; `lm_direct.c` direct merge; `lm_partition.c` splitter/range finder and `lm_direct_par.c` threaded direct driver; `lm_emit.c` summaries/output; `lm_merge.c` workers and k-way merge.
   - New core files go in `CORE_SRC` (`Makefile`), `core_src` (`scripts/build-all.sh`), and `.github/workflows/bench-windows.yml`. Keep each file under 800 lines.
 - `src/platform_posix.c` / `src/platform_win32.c` + `include/platform.h`: file I/O, temp files, rename/remove, CPU count, threads. Platform APIs stay in these layers. `platform_entry.c` is the POSIX `main` shim; Windows uses `wmain` + UTF-8 conversion.
 - Pipeline (details in `docs/ARCHITECTURE.md`):
   1. Streaming parse with 1 MiB line cap, NUL/UTF-8 validation, SF path rewrite/filter.
-  2. Direct path: regular files already in canonical order (no fixed file-count cap; falls back on stdin, `-o -`, non-regular input, fd limit, or the direct memory budget) → tournament-tree merge, output staged in destination dir. On out-of-order input or budget overflow, staged output is discarded and the fallback runs.
+  2. Direct path: regular files already in canonical order (no fixed file-count cap; falls back on stdin, `-o -`, non-regular input, fd limit, or the direct memory budget) → tournament-tree merge, output staged in destination dir. On out-of-order input or budget overflow, staged output is discarded and the fallback runs. Explicit `-j N` (N>=2) and >=64 MiB total input: partitioned by SF path range (`lm_partition.c`), one thread per range (`lm_direct_par.c`), staged files joined in path order; any diagnostic/anomaly discards them and reruns the serial direct path (default, no `-j`, stays serial).
   3. Fallback: bounded external sort (chunks → sorted temp runs; `--mem-limit` shared across workers, ≥8 MiB each, 24 MiB reserved overhead).
   4. K-way merge; summaries (function/branch/MC/DC/line) recomputed; output renamed atomically only after all I/O succeeds.
 - Determinism rules live in the comparator (SF path → record class → typed keys → text → values). Count merge is commutative and saturating (UINT64_MAX). Changes to ordering/merge semantics need regression cases.
 - Temp run files are named (not unlink-on-open) because later merge passes reopen them by path; they must be removed explicitly on success and handled failure.
-- Limits: 32 workers, listfile nesting 8, whole-file worker distribution (one huge file can't be parallel-parsed).
+- Limits: 32 workers, listfile nesting 8, whole-file worker distribution in the external-sort fallback (one huge file can't be parallel-parsed there).
 
 ## Other components
 

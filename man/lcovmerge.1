@@ -52,15 +52,25 @@ caught SIGINT, SIGTERM, and SIGHUP. A forced kill or machine failure can leave
 files behind. Windows does not promise the same interruption cleanup.
 .TP
 .BI -j " N" ", " --jobs " N"
-Process whole input files concurrently with N workers. N must be from 1
-through 32. A single large input file is not split across workers. The
-default is the lesser of four and the detected processor count, further
-reduced when needed to fit the memory setting. An explicit count must fit
-the minimum 8M per job. When all inputs are regular files and rewritten
-records are already in stable order, the streaming merge uses one worker and
-ignores this value. An out-of-order row, unsupported stream type, or
+Set the number of jobs. N must be from 1 through 32. The default is the
+lesser of four and the detected processor count, further reduced when needed
+to fit the memory setting. An explicit count must fit the minimum 8M per
+job. When all inputs are regular files and rewritten records are already in
+stable order, the streaming merge uses one thread and ignores this value
+unless N of 2 or more is given explicitly. Then, for inputs totalling at
+least 64 MiB, the SF path range is split into up to N partitions that are
+merged in parallel into staged files in the output directory and joined in
+path order; output, diagnostics and exit status do not depend on N. The
+merge silently stays single-threaded when the input is too small, too few
+split points exist, filtering or very long lines defeat planning, or
+descriptor or memory limits leave no room. Any error, warning, out-of-order
+row or memory-budget overflow during a threaded attempt discards the staged
+files and reruns the single-threaded merge. Staged files add up to about the
+output size on disk briefly. Standard input, -o - and non-regular inputs are
+never threaded. An out-of-order row, unsupported stream type, or
 streaming-path memory limit causes a retry using temporary sorted files and
-this worker count.
+N workers, which process whole input files; a single large input file is
+not split across workers there.
 .TP
 .BI --prefix-strip " PREFIX"
 Remove a matching leading prefix from each SF path. A match must end at a

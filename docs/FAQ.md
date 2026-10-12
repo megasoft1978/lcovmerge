@@ -40,7 +40,7 @@ With the same inputs, options, and build, lcovmerge writes stable bytes regardle
 
 ## Does `--jobs` parallelize one large input file?
 
-No. Workers process whole input files; one large file is not split among them. The merge stage itself uses one worker.
+Not in the external-sort fallback: workers process whole input files, and one large file is not split among them. On the sorted-input streaming path, an explicit `-j N` of 2 or more can split a large merge by source-path range, but only when the inputs total at least 64 MiB; see [`-j`](USAGE.md#-j-n---jobs-n).
 
 ## Is Windows runtime behavior verified?
 

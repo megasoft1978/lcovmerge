@@ -33,7 +33,11 @@ Set the limit for memory reserved for coverage records while sorting. The defaul
 `8M` per job. A suffix of `K`, `M`, or `G` is case-insensitive and denotes a binary multiple of 1024. A value
 without a suffix is bytes. This setting does not cap total process memory or temporary disk use: parser
 buffers, merge bookkeeping, thread stacks, and runtime state need additional memory, and sorting writes
-temporary files.
+temporary files. On the sorted-input streaming path the budget is the lesser of half this value and 16 MiB;
+a threaded merge (`-j N`, `N` of 2 or more) keeps the combined buffer growth of its partitions within that
+budget, but each partition also holds its own reader state, so process memory grows with the thread count.
+On generated inputs on one host, peak resident memory at `-j 8` was about 12 MiB on a 32-shard 1.1 GB input
+and 19 MiB on a 64-shard 4.85 GB input, against about 3-4 MiB single-threaded.
 
 ### `--tmpdir DIR`
 
@@ -45,12 +49,30 @@ joins have no cancellation path.
 
 ### `-j N`, `--jobs N`
 
-Set the number of input-file workers from 1 through 32. The default is the lesser of four and the detected
-processor count, further reduced when needed to fit the memory setting. An explicit job count must fit the
-minimum `8M` per job. Workers process whole files; a single large file is not split across workers. When all
-inputs are regular files and their rewritten records are already in stable order, lcovmerge streams the merge
-with one worker and ignores this setting. An out-of-order row, unsupported stream type, or memory limit for
-the streaming path causes lcovmerge to retry using temporary sorted files and the requested worker count.
+Set the number of jobs from 1 through 32. The default is the lesser of four and the detected processor
+count, further reduced when needed to fit the memory setting. An explicit job count must fit the minimum `8M`
+per job.
+
+When all inputs are regular files and their rewritten records are already in stable order, lcovmerge streams
+the merge. By default this streaming merge uses one thread and ignores `-j`. Only an explicit `-j N` with
+`N` of 2 or more can thread it: lcovmerge splits the source-path range into up to `N` partitions, merges the
+partitions in parallel into staged files in the output directory, and joins them in path order. Output bytes,
+diagnostics, and exit status are the same for every `-j` value and input order. Standard input, `-o -`, and
+non-regular inputs never use threads.
+
+lcovmerge silently keeps the single-threaded merge, with the same result, when the inputs total less than
+64 MiB (each partition needs at least 32 MiB), when too few distinct split points are found, when heavy
+`--include`/`--exclude` filtering or very long lines make the planning scan exceed its limit, when the
+descriptor or memory limit leaves room for fewer than two partitions, or when the streaming memory budget does
+not fit. Any error, warning, out-of-order row, or memory-budget overflow during a threaded attempt discards
+the staged files and reruns the single-threaded merge, so such inputs can take up to the threaded time
+longer; the attempt stops at the first diagnostic. The staged files add up to about the output size in the
+output directory, so up to about twice the output size can be on disk briefly. Each additional thread
+adds buffers; see the memory limit option above.
+
+An out-of-order row, unsupported stream type, or memory limit for the streaming path causes lcovmerge to
+retry using temporary sorted files and the requested worker count. Workers there process whole files; a
+single large file is not split across them.
 
 ### `--prefix-strip PREFIX`
 
@@ -100,6 +122,7 @@ Suppress routine progress output. Errors remain visible.
 ### `-v`
 
 Print parsed byte and record totals, the selected worker count, and merged summary totals to standard error.
+A threaded sorted-input merge reports `using N jobs (sorted-input fast path)`; the single-threaded one reports `using 1 job`.
 
 ### `--stats`
 

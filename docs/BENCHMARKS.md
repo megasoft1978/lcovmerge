@@ -174,7 +174,7 @@ so no LCOV ratio is shown for it.
 | -j8 | 2.87 s | 3.20 MiB | 389.2 MB/s |
 <!-- SCALING:END -->
 
-The sorted regular-file fast path streams with one job and ignores the jobs setting. These measurements record the
+In the measured 1.1.0 build the sorted regular-file fast path streams with one job and ignores the jobs setting; later builds thread it only for an explicit `-j N` of 2 or more (see [USAGE](USAGE.md#-j-n---jobs-n)). These measurements record the
 observed command variation for the requested values; they do not measure parallel sorting across input files.
 
 ## Caveats
