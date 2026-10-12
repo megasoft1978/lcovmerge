@@ -281,4 +281,19 @@ int merge_aggregate(Record *aggregate, const Record *next, const Options *option
                            FILE *diagnostics);
 int create_output_temp(const char *output_path, OutputFile *file);
 
+int worker_error(Worker *worker, int code, const char *file, uint64_t line, const char *format, ...);
+int worker_temp_run_error(Worker *worker, const char *file, uint64_t line);
+int parse_record_line(Worker *worker, Chunk *chunk, char *line,
+                             const char *filename, uint32_t input_id,
+                             uint64_t line_no, size_t length, char **path, int *keep_path,
+                             int *section_open, char **pending_tn,
+                             uint64_t *fnl_index, uint64_t *fnl_line,
+                             uint64_t *fnl_end, int *fnl_valid);
+int parse_direct_da(Worker *worker, char *line, size_t length,
+                           uint32_t input_id, uint64_t line_no, char *path, int keep_path);
+int parse_direct_brda(Worker *worker, char *line, size_t length,
+                             uint32_t input_id, uint64_t line_no, char *path,
+                             int keep_path);
+int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, uint32_t input_id);
+
 #endif
