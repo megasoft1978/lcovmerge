@@ -264,7 +264,7 @@ void direct_partition_run(const DirectJob *job, DirectResult *result) {
     size_t count = options->inputs.count;
     memset(result, 0, sizeof(*result));
     result->file.handle = LM_INVALID_HANDLE;
-    FILE *diagnostics = tmpfile();
+    FILE *diagnostics = job->diagnostics ? job->diagnostics : tmpfile();
     result->diagnostics = diagnostics;
     if (!diagnostics) { result->fallback = 1; return; }
     size_t fixed_cost = direct_fixed_cost(count);

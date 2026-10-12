@@ -268,6 +268,7 @@ typedef struct {
     unsigned part;
     OutputFile *prepared_output; /* partitioned: staged file created (and later removed) by the caller */
     atomic_bool *abort_flag;     /* partitioned: set by the caller when any partition gave up */
+    FILE *diagnostics;           /* partitioned: created by the caller (see direct_run_partitioned), adopted by the run */
 } DirectJob;
 
 typedef struct {

@@ -55,7 +55,11 @@ static void partition_cleanup(PartitionTask *tasks, OutputFile *outputs, lm_thre
             (void)lm_close(outputs[p].handle);
         if (outputs[p].path) (void)lm_remove(outputs[p].path);
         free(outputs[p].path);
-        if (tasks) direct_result_free(&tasks[p].result);
+        if (tasks) {
+            if (tasks[p].job.diagnostics && tasks[p].result.diagnostics != tasks[p].job.diagnostics)
+                fclose(tasks[p].job.diagnostics);
+            direct_result_free(&tasks[p].result);
+        }
     }
     free(tasks);
     free(outputs);
@@ -80,7 +84,15 @@ int direct_run_partitioned(const Options *options) {
     }
     for (; prepared < parts; ++prepared) {
         outputs[prepared].handle = LM_INVALID_HANDLE;
+        /* tmpfile() must not run concurrently: on macOS it blocks signals around mkstemp, and racing
+         * calls leave INT/TERM/HUP blocked for good, so interrupts are never delivered. */
+        FILE *diagnostics = tmpfile();
+        if (!diagnostics) {
+            partition_cleanup(tasks, outputs, threads, &plan, prepared);
+            return DIRECT_RERUN;
+        }
         if (create_output_temp_quiet(options->output, &outputs[prepared]) != 0) {
+            fclose(diagnostics);
             partition_cleanup(tasks, outputs, threads, &plan, prepared);
             return DIRECT_RERUN;
         }
@@ -89,6 +101,7 @@ int direct_run_partitioned(const Options *options) {
         tasks[prepared].job.part = prepared;
         tasks[prepared].job.prepared_output = &outputs[prepared];
         tasks[prepared].job.abort_flag = &abort_flag;
+        tasks[prepared].job.diagnostics = diagnostics;
     }
     unsigned started = 0;
     int thread_failed = 0;
