@@ -6,6 +6,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-12
+
 ### Fixed
 
 - Size merge aggregation storage for the maximum source path, text, and extra fields; normalize numeric branch identifiers before merging; and omit testcase names when merged coverage combines conflicting or unnamed testcases.
@@ -17,7 +19,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Add a coverage-guided Clang fuzz target, per-sample benchmark and binary provenance, and list-file input handling in the GitHub Action.
 - Exclude an existing Action output file when it matches an input glob.
-
 - Add an XXL local benchmark workload targeting about 20 GB of LCOV input, with disk-space checks, peak-RSS measurements, and a streaming semantic comparison against lcov.
 
 ### Documentation

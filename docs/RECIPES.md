@@ -54,7 +54,7 @@ jobs:
           path: coverage/shards
           merge-multiple: true
       - name: Merge LCOV shards
-        uses: megasoft1978/lcovmerge@v1.0.2 # For immutable pinning, replace the tag with the reviewed release commit SHA.
+        uses: megasoft1978/lcovmerge@v1.1.0 # For immutable pinning, replace the tag with the reviewed release commit SHA.
         with:
           files: coverage/shards/*.info
           output: coverage/merged.info
@@ -66,7 +66,7 @@ jobs:
           if-no-files-found: error
 ```
 
-`download-artifact` flattens the shard files into `coverage/shards/`. The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk. The action verifies its release archive against SHA256SUMS. For immutable pinning, replace `@v1.0.2` with a reviewed full commit SHA and keep `# v1.0.2` as its label. Feed the merged file to your existing report step.
+`download-artifact` flattens the shard files into `coverage/shards/`. The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk. The action verifies its release archive against SHA256SUMS. For immutable pinning, replace `@v1.1.0` with a reviewed full commit SHA and keep `# v1.1.0` as its label. Feed the merged file to your existing report step.
 
 See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations), [upload action](https://github.com/actions/upload-artifact), and [download action](https://github.com/actions/download-artifact).
 
@@ -103,8 +103,8 @@ merge-coverage:
       set -eu
       apt-get update
       apt-get install -y --no-install-recommends curl lcov
-      asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
-      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
+      asset=lcovmerge-1.1.0-linux-x86_64.tar.gz
+      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0
       curl -fL "$base/$asset" -o "$asset"
       curl -fL "$base/SHA256SUMS" -o SHA256SUMS
       awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -166,8 +166,8 @@ pipeline {
         unstash 'lcov-integration'
         sh '''
           set -eu
-          asset=lcovmerge-1.0.2-linux-x86_64.tar.gz
-          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.0.2
+          asset=lcovmerge-1.1.0-linux-x86_64.tar.gz
+          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0
           curl -fL "$base/$asset" -o "$asset"
           curl -fL "$base/SHA256SUMS" -o SHA256SUMS
           awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -371,7 +371,7 @@ The container writes into the mounted working directory. The temporary directory
 set -eu
 mkdir -p coverage
 
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.0.2 \
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.1.0 \
   --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
 ```
 
