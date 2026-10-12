@@ -24,6 +24,10 @@ int lm_create_temp(const char *directory, char **path_out, lm_handle *out,
 void lm_format_error(unsigned long error, char *buffer, size_t capacity);
 int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,
             const atomic_bool *cancelled);
+/* Positional read: does not use or move the handle's file offset; safe from several threads. */
+int lm_pread(lm_handle handle, void *buffer, size_t capacity, uint64_t offset,
+             size_t *read_out, const atomic_bool *cancelled);
+int lm_file_size(lm_handle handle, uint64_t *size_out);
 int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out,
              const atomic_bool *cancelled);
 int lm_close(lm_handle handle);

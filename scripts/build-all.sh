@@ -19,7 +19,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-dist.XXXXXX")
 cleanup() { python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' "$work"; }
 trap cleanup EXIT HUP INT TERM
 
-core_src="src/lcovmerge.c src/lm_util.c src/lm_io.c src/lm_record.c src/lm_path.c src/lm_chunk.c src/lm_emit.c src/lm_parse.c src/lm_direct.c src/lm_merge.c"
+core_src="src/lcovmerge.c src/lm_util.c src/lm_io.c src/lm_record.c src/lm_path.c src/lm_chunk.c src/lm_emit.c src/lm_parse.c src/lm_direct.c src/lm_partition.c src/lm_merge.c"
 
 # core_src is a fixed list of space-free repository paths and is split into arguments on purpose.
 # shellcheck disable=SC2086

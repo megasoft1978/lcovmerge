@@ -95,6 +95,9 @@ typedef struct {
     size_t line_len, line_capacity;
     uint64_t line_no;
     uint64_t bytes_read;
+    /* Range mode (sorted-input threaded path only): positional reads from next_offset. */
+    int ranged;
+    uint64_t next_offset, block_offset;
 } LineReader;
 
 typedef struct {
@@ -223,6 +226,52 @@ typedef struct {
 
 #define DIRECT_FALLBACK (-1)
 
+/* Sorted-input threaded direct path: partition finder (lm_partition.c). */
+#define PART_CHUNK ((size_t)64u << 10)
+#define PART_LOOKBEHIND ((size_t)16u)
+
+typedef struct {
+    uint64_t offset;   /* start of the first kept SF line with path >= splitter, else file size */
+    char *pending_tn;  /* TN text that precedes that line (owned), or NULL */
+} PartPoint;
+
+typedef struct {
+    unsigned char *chunk;
+    char *line;
+    size_t line_capacity;
+    uint64_t spent, budget;  /* bytes examined overall / allowed (0 = unlimited) */
+    uint64_t used;           /* bytes examined by the current probe */
+    uint64_t probe_limit, linear_threshold, tn_window;
+} PartScanner;
+
+typedef struct {
+    unsigned parts;      /* P_eff >= 2 */
+    size_t input_count;
+    size_t stride;       /* points per input */
+    lm_handle *handles;  /* shared, read with lm_pread only */
+    uint64_t *sizes;
+    uint64_t total_bytes;
+    char **splitters;    /* parts - 1 real kept rewritten SF paths, strictly increasing */
+    PartPoint *points;   /* [input * stride + p]; p = 0 is offset 0, p = parts is the size */
+} PartitionPlan;
+
+int part_scanner_init(PartScanner *scanner);
+void part_scanner_destroy(PartScanner *scanner);
+/* First kept SF line starting in [from, limit) (and, when splitter is not NULL, with a path
+   >= splitter): 1 found, 0 none, -1 give up (limit, I/O, oversized line, rewrite failure). */
+int part_find_kept_sf(PartScanner *scanner, const Options *options, lm_handle handle,
+                      uint64_t size, uint64_t from, uint64_t limit, const char *splitter,
+                      size_t splitter_length, uint64_t *start_out, char **path_out,
+                      int *joined_out);
+/* Locate the first kept SF line (start >= lo) whose path >= splitter, for a sorted input.
+   0 ok, -1 give up, -2 TN scan window exceeded (drop this splitter). */
+int part_locate(PartScanner *scanner, const Options *options, lm_handle handle, uint64_t size,
+                const char *splitter, size_t splitter_length, uint64_t lo,
+                uint64_t *offset_out, char **pending_tn_out);
+/* 1 = plan ready, 0 = not partitioning (exactly today's path). */
+int partition_plan_build(const Options *options, PartitionPlan *plan);
+void partition_plan_destroy(PartitionPlan *plan);
+
 extern atomic_bool interrupted;
 
 int record_key_compare(const Record *left, const Record *right);
@@ -242,6 +291,12 @@ int path_selected(const Options *options, const char *path);
 char *duplicate_string(const char *text);
 int line_reader_init(LineReader *reader, lm_handle handle);
 int line_reader_next(LineReader *reader);
+/* Range mode: continue at byte `offset` (a line start) of a shared handle via lm_pread. */
+void line_reader_seek(LineReader *reader, uint64_t offset);
+/* File offset of the next line to be returned; valid only in range mode. */
+static inline uint64_t line_reader_offset(const LineReader *reader) {
+    return reader->block_offset + (uint64_t)reader->pos;
+}
 void line_reader_destroy(LineReader *reader);
 
 static inline uint64_t saturating_add(uint64_t left, uint64_t right) {
@@ -310,6 +365,7 @@ int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, uint32_
 
 void print_worker_error(const Worker *worker);
 int run_direct_merge(const Options *options);
+size_t direct_fixed_cost(size_t count);
 
 int run_merge(const Options *options);
 

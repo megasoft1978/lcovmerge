@@ -92,6 +92,28 @@ int lm_read(lm_handle handle, void *buffer, size_t capacity, size_t *read_out,
     return 0;
 }
 
+int lm_pread(lm_handle handle, void *buffer, size_t capacity, uint64_t offset,
+             size_t *read_out, const atomic_bool *cancelled) {
+    off_t position = (off_t)offset;
+    if (position < 0 || (uint64_t)position != offset) { errno = EINVAL; return -1; }
+    size_t request = capacity;
+    if (request > (size_t)INT_MAX) request = (size_t)INT_MAX;
+    ssize_t result;
+    do { result = pread((int)handle, buffer, request, position); }
+    while (result < 0 && errno == EINTR &&
+           !atomic_load_explicit(cancelled, memory_order_relaxed));
+    if (result < 0) return -1;
+    *read_out = (size_t)result;
+    return 0;
+}
+
+int lm_file_size(lm_handle handle, uint64_t *size_out) {
+    struct stat info;
+    if (fstat((int)handle, &info) != 0 || info.st_size < 0) return -1;
+    *size_out = (uint64_t)info.st_size;
+    return 0;
+}
+
 int lm_write(lm_handle handle, const void *buffer, size_t length, size_t *written_out,
              const atomic_bool *cancelled) {
     size_t request = length;

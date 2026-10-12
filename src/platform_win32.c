@@ -300,6 +300,31 @@ int lm_read(lm_handle raw, void *buffer, size_t capacity, size_t *read_out,
     return 0;
 }
 
+int lm_pread(lm_handle raw, void *buffer, size_t capacity, uint64_t offset,
+             size_t *read_out, const atomic_bool *cancelled) {
+    (void)cancelled;
+    HANDLE handle = (HANDLE)(intptr_t)raw;
+    DWORD request = capacity > UINT32_MAX ? UINT32_MAX : (DWORD)capacity;
+    DWORD result = 0;
+    OVERLAPPED position;
+    memset(&position, 0, sizeof(position));
+    position.Offset = (DWORD)(offset & UINT64_C(0xFFFFFFFF));
+    position.OffsetHigh = (DWORD)(offset >> 32);
+    if (!ReadFile(handle, buffer, request, &result, &position)) {
+        if (GetLastError() != ERROR_HANDLE_EOF) return -1;
+        result = 0;
+    }
+    *read_out = (size_t)result;
+    return 0;
+}
+
+int lm_file_size(lm_handle raw, uint64_t *size_out) {
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx((HANDLE)(intptr_t)raw, &size) || size.QuadPart < 0) return -1;
+    *size_out = (uint64_t)size.QuadPart;
+    return 0;
+}
+
 int lm_write(lm_handle raw, const void *buffer, size_t length, size_t *written_out,
              const atomic_bool *cancelled) {
     (void)cancelled;

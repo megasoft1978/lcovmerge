@@ -134,13 +134,27 @@ void line_reader_destroy(LineReader *reader) {
     memset(reader, 0, sizeof(*reader));
 }
 
+void line_reader_seek(LineReader *reader, uint64_t offset) {
+    reader->ranged = 1;
+    reader->pos = reader->len = 0;
+    reader->line_len = 0;
+    reader->line_no = 0;
+    reader->bytes_read = 0;
+    reader->next_offset = reader->block_offset = offset;
+}
+
 /* Returns 1 for a line, 0 at EOF, -1 for I/O, and -2 for an invalid line. */
 int line_reader_next(LineReader *reader) {
     reader->line_len = 0;
     for (;;) {
         if (reader->pos == reader->len) {
             size_t amount = 0;
-            if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount,
+            if (reader->ranged) {
+                reader->block_offset = reader->next_offset;
+                if (lm_pread(reader->handle, reader->block, sizeof(reader->block),
+                             reader->next_offset, &amount, &interrupted) != 0) return -1;
+                reader->next_offset += (uint64_t)amount;
+            } else if (lm_read(reader->handle, reader->block, sizeof(reader->block), &amount,
                         &interrupted) != 0) return -1;
             reader->pos = 0;
             reader->len = amount;

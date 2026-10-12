@@ -442,6 +442,345 @@ cleanup:
     return result;
 }
 
+/* ---- sorted-input partition finder vs a brute-force scan ---- */
+
+typedef struct {
+    uint64_t offset;
+    char *path;
+    char *tn;
+    int joined;
+} BruteLine;
+
+static uint64_t unit_random_state = UINT64_C(88172645463325252);
+static uint64_t unit_random(void) {
+    unit_random_state ^= unit_random_state << 13;
+    unit_random_state ^= unit_random_state >> 7;
+    unit_random_state ^= unit_random_state << 17;
+    return unit_random_state;
+}
+
+/* Builds a sorted synthetic tracefile exercising TN/blank/comment/CRLF/joined/KF/excluded lines. */
+static unsigned char *build_partition_file(size_t sections, size_t *length_out) {
+    size_t capacity = sections * 4096u + 4096u, length = 0;
+    char *data = malloc(capacity);
+    if (!data) return NULL;
+    char line[512];
+    int previous_unterminated = 0;
+    for (size_t i = 0; i < sections; ++i) {
+        unsigned flavor = (unsigned)(unit_random() % 12u);
+        size_t extra_dup = unit_random() % 5u == 0 ? 1u : 0u;  /* equal consecutive paths */
+        for (size_t copy = 0; copy <= extra_dup; ++copy) {
+            const char *eol = flavor == 3u ? "\r\n" : "\n";
+            int skipped = flavor == 4u;
+            int n = 0;
+            if (flavor == 5u) n = snprintf(line, sizeof(line), "SUM:unknown record\n");
+            else n = 0;
+            if (n > 0) { memcpy(data + length, line, (size_t)n); length += (size_t)n; }
+            if (!previous_unterminated || flavor != 6u) {
+                if (flavor == 7u || flavor == 8u) {
+                    n = snprintf(line, sizeof(line), "TN:first%zu%s", i, eol);
+                    memcpy(data + length, line, (size_t)n); length += (size_t)n;
+                }
+                if (flavor == 8u) {
+                    n = snprintf(line, sizeof(line), "\n# comment\n%s\n", eol);
+                    memcpy(data + length, line, (size_t)n); length += (size_t)n;
+                }
+                if (flavor == 9u) {
+                    n = snprintf(line, sizeof(line), "TN:x\nTN:y%s", eol);
+                    memcpy(data + length, line, (size_t)n); length += (size_t)n;
+                }
+            }
+            const char *tag = flavor == 10u ? "KF" : "SF";
+            if (previous_unterminated && flavor == 6u)
+                n = snprintf(line, sizeof(line), "end_of_record%s:/p/%s/f%05zu.c%s", tag,
+                             skipped ? "skip" : "keep", i, eol);
+            else
+                n = snprintf(line, sizeof(line), "%s:/p/%s/f%05zu.c%s", tag,
+                             skipped ? "skip" : "keep", i, eol);
+            memcpy(data + length, line, (size_t)n); length += (size_t)n;
+            size_t rows = unit_random() % 60u;
+            for (size_t row = 0; row < rows; ++row) {
+                n = snprintf(line, sizeof(line), "DA:%zu,%u%s", row + 1u, (unsigned)(unit_random() % 9u), eol);
+                memcpy(data + length, line, (size_t)n); length += (size_t)n;
+            }
+            n = snprintf(line, sizeof(line), "SUM:not-an-sf-line%s", eol);
+            memcpy(data + length, line, (size_t)n); length += (size_t)n;
+            /* Sometimes lose the final newline so the next SF is joined to end_of_record. */
+            previous_unterminated = flavor == 11u;
+            n = snprintf(line, sizeof(line), previous_unterminated ? "end_of_record" : "end_of_record%s", eol);
+            memcpy(data + length, line, (size_t)n); length += (size_t)n;
+            if (!previous_unterminated && flavor == 1u) { data[length++] = '\n'; }
+        }
+    }
+    if (previous_unterminated) data[length++] = '\n';
+    *length_out = length;
+    return (unsigned char *)data;
+}
+
+static void brute_scan(const Options *options, const unsigned char *data, size_t length,
+                       BruteLine **lines_out, size_t *count_out) {
+    BruteLine *lines = calloc(length / 8u + 8u, sizeof(*lines));
+    size_t count = 0;
+    char *pending = NULL;
+    size_t position = 0;
+    while (position < length) {
+        size_t end = position;
+        while (end < length && data[end] != '\n') ++end;
+        size_t line_length = end - position;
+        const unsigned char *line = data + position;
+        if (line_length != 0 && line[line_length - 1u] == '\r') --line_length;
+        const char *source = NULL;
+        int joined = 0;
+        if (line_length >= 16u && memcmp(line, "end_of_record", 13u) == 0 &&
+            (memcmp(line + 13, "SF:", 3u) == 0 || memcmp(line + 13, "KF:", 3u) == 0)) {
+            source = (const char *)line + 16u; joined = 1;
+        } else if (line_length >= 3u && (memcmp(line, "SF:", 3u) == 0 || memcmp(line, "KF:", 3u) == 0)) {
+            source = (const char *)line + 3u;
+        }
+        if (source) {
+            char *text = duplicate_range(source, line_length - (size_t)(source - (const char *)line));
+            char *rewritten = rewrite_path(options, text);
+            if (path_selected(options, rewritten)) {
+                lines[count].offset = position;
+                lines[count].path = rewritten;
+                lines[count].joined = joined;
+                lines[count].tn = joined || !pending ? NULL : duplicate_string(pending);
+                ++count;
+            } else free(rewritten);
+            free(text);
+            free(pending);
+            pending = NULL;
+        } else if (line_length >= 3u && memcmp(line, "TN:", 3u) == 0) {
+            free(pending);
+            pending = duplicate_range((const char *)line + 3u, line_length - 3u);
+        } else if (line_length != 0 && line[0] != '#') {
+            free(pending);
+            pending = NULL;
+        }
+        position = end + 1u;
+    }
+    free(pending);
+    *lines_out = lines;
+    *count_out = count;
+}
+
+static int same_tn(const char *left, const char *right) {
+    return (left == NULL && right == NULL) || (left && right && strcmp(left, right) == 0);
+}
+
+static int test_partition_finder(void) {
+    Options options;
+    memset(&options, 0, sizeof(options));
+    CHECK(list_add_string(&options.excludes, "/p/skip/*") == 0);
+    size_t length = 0;
+    unsigned char *data = build_partition_file(1500u, &length);
+    CHECK(data != NULL);
+    char *path = NULL;
+    lm_handle handle = LM_INVALID_HANDLE, read_handle = LM_INVALID_HANDLE;
+    BruteLine *lines = NULL;
+    size_t count = 0;
+    PartScanner scanner;
+    memset(&scanner, 0, sizeof(scanner));
+    int scanner_ready = 0;
+    int result = 0;
+    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle, NULL) == 0);
+    CHECK_CLEANUP(write_all(handle, data, length) == 0);
+    CHECK_CLEANUP(lm_close(handle) == 0);
+    handle = LM_INVALID_HANDLE;
+    CHECK_CLEANUP(lm_open_read(path, &read_handle) == 0);
+    uint64_t size = 0;
+    CHECK_CLEANUP(lm_file_size(read_handle, &size) == 0 && size == (uint64_t)length);
+    CHECK_CLEANUP(length > 3u * PART_CHUNK);  /* probes cross chunk boundaries */
+    brute_scan(&options, data, length, &lines, &count);
+    CHECK_CLEANUP(count > 100u);
+    CHECK_CLEANUP(part_scanner_init(&scanner) == 0);
+    scanner_ready = 1;
+
+    /* First kept SF line at or after arbitrary offsets, with and without a splitter. */
+    for (unsigned round = 0; round < 600u; ++round) {
+        uint64_t from = round < 40u ? (uint64_t)round * 3u : unit_random() % (uint64_t)length;
+        if (round % 7u == 0) from = lines[unit_random() % count].offset;
+        if (round % 11u == 0) from = lines[unit_random() % count].offset + 1u;
+        const char *splitter = NULL;
+        size_t splitter_length = 0;
+        if (round % 2u) {
+            splitter = lines[unit_random() % count].path;
+            splitter_length = strlen(splitter);
+        }
+        size_t expected = count;
+        for (size_t i = 0; i < count; ++i)
+            if (lines[i].offset >= from &&
+                (!splitter || bytes_compare(lines[i].path, strlen(lines[i].path), splitter, splitter_length) >= 0)) {
+                expected = i;
+                break;
+            }
+        uint64_t start = 0;
+        char *found_path = NULL;
+        int joined = 0;
+        int found = part_find_kept_sf(&scanner, &options, read_handle, size, from, size, splitter,
+                                      splitter_length, &start, &found_path, &joined);
+        CHECK_CLEANUP(found == (expected < count ? 1 : 0));
+        if (found) {
+            CHECK_CLEANUP(start == lines[expected].offset && joined == lines[expected].joined &&
+                          strcmp(found_path, lines[expected].path) == 0);
+            free(found_path);
+        }
+    }
+
+    /* Limit is exclusive for the line start. */
+    {
+        uint64_t start = 0;
+        char *found_path = NULL;
+        int joined = 0;
+        CHECK_CLEANUP(part_find_kept_sf(&scanner, &options, read_handle, size, 0, lines[0].offset,
+                                        NULL, 0, &start, &found_path, &joined) == 0);
+        CHECK_CLEANUP(part_find_kept_sf(&scanner, &options, read_handle, size, 0, lines[0].offset + 1u,
+                                        NULL, 0, &start, &found_path, &joined) == 1 &&
+                      start == lines[0].offset);
+        free(found_path);
+    }
+
+    /* part_locate (binary search + linear tail + pending TN) for every kind of splitter. */
+    static const uint64_t thresholds[] = {0u, 1u, 100u, 5000u, 65536u, UINT64_C(1) << 40};
+    for (size_t t = 0; t < sizeof(thresholds) / sizeof(thresholds[0]); ++t) {
+        scanner.linear_threshold = thresholds[t];
+        for (size_t k = 0; k < count + 3u; k += (k < 40u ? 1u : 7u)) {
+            char *splitter;
+            if (k < count) splitter = duplicate_string(lines[k].path);
+            else if (k == count) splitter = duplicate_string("");
+            else if (k == count + 1u) splitter = duplicate_string("/p/keep/f99999.c");
+            else splitter = duplicate_string("/p/keep/f00100.cz");
+            uint64_t lo = k % 5u == 0 && k < count ? lines[k / 2u].offset : 0u;
+            size_t expected = count;
+            for (size_t i = 0; i < count; ++i)
+                if (lines[i].offset >= lo &&
+                    bytes_compare(lines[i].path, strlen(lines[i].path), splitter, strlen(splitter)) >= 0) {
+                    expected = i;
+                    break;
+                }
+            uint64_t offset = 0;
+            char *tn = NULL;
+            int status = part_locate(&scanner, &options, read_handle, size, splitter, strlen(splitter),
+                                     lo, &offset, &tn);
+            free(splitter);
+            CHECK_CLEANUP(status == 0);
+            if (expected == count) {
+                CHECK_CLEANUP(offset == size && tn == NULL);
+            } else {
+                CHECK_CLEANUP(offset == lines[expected].offset && same_tn(tn, lines[expected].tn));
+            }
+            free(tn);
+        }
+    }
+
+    /* Resource limits: tiny probe limit and tiny TN window give up or drop the splitter. */
+    scanner.linear_threshold = 65536u;
+    scanner.probe_limit = 16u;
+    {
+        uint64_t start = 0;
+        char *found_path = NULL;
+        int joined = 0;
+        CHECK_CLEANUP(part_find_kept_sf(&scanner, &options, read_handle, size, lines[0].offset + 1u, size,
+                                        NULL, 0, &start, &found_path, &joined) == -1);
+    }
+    scanner.probe_limit = MAX_LINE;
+    scanner.budget = 100u;
+    scanner.spent = 0;
+    {
+        uint64_t start = 0;
+        char *found_path = NULL;
+        int joined = 0;
+        scanner.probe_limit = UINT64_MAX;  /* only the overall budget may trip here */
+        CHECK_CLEANUP(part_find_kept_sf(&scanner, &options, read_handle, size, 0, size, "~", 1u,
+                                        &start, &found_path, &joined) == -1);
+        scanner.probe_limit = MAX_LINE;
+    }
+    scanner.budget = 0;
+    scanner.tn_window = 8u;
+    {
+        int dropped = 0;
+        for (size_t i = 0; i < count && !dropped; ++i) {
+            if (lines[i].offset == 0 || lines[i].joined) continue;
+            uint64_t offset;
+            char *tn = NULL;
+            int status = part_locate(&scanner, &options, read_handle, size, lines[i].path,
+                                     strlen(lines[i].path), lines[i].offset, &offset, &tn);
+            free(tn);
+            if (status == -2) dropped = 1;
+            else CHECK_CLEANUP(status == 0);
+        }
+        CHECK_CLEANUP(dropped);
+    }
+
+cleanup:
+    for (size_t i = 0; lines && i < count; ++i) { free(lines[i].path); free(lines[i].tn); }
+    free(lines);
+    if (scanner_ready) part_scanner_destroy(&scanner);
+    if (read_handle != LM_INVALID_HANDLE && lm_close(read_handle) != 0) result = -1;
+    if (handle != LM_INVALID_HANDLE && lm_close(handle) != 0) result = -1;
+    if (path) { if (lm_remove(path) != 0) result = -1; free(path); }
+    free(data);
+    list_free(&options.excludes);
+    return result;
+}
+
+static int test_line_reader_ranges(void) {
+    size_t length = 0;
+    unsigned char *data = build_partition_file(80u, &length);
+    CHECK(data != NULL);
+    char *path = NULL;
+    lm_handle handle = LM_INVALID_HANDLE, read_handle = LM_INVALID_HANDLE;
+    LineReader sequential, ranged;
+    memset(&sequential, 0, sizeof(sequential));
+    memset(&ranged, 0, sizeof(ranged));
+    int result = 0;
+    CHECK_CLEANUP(lm_create_temp(scratch_directory(), &path, &handle, NULL) == 0);
+    CHECK_CLEANUP(write_all(handle, data, length) == 0);
+    CHECK_CLEANUP(lm_close(handle) == 0);
+    handle = LM_INVALID_HANDLE;
+    CHECK_CLEANUP(lm_open_read(path, &read_handle) == 0);
+    CHECK_CLEANUP(line_reader_init(&sequential, read_handle) == 0);
+    CHECK_CLEANUP(line_reader_init(&ranged, read_handle) == 0);
+    /* Sequential pass records every line start; ranged readers must agree from any of them. */
+    size_t capacity = length + 1u, lines = 0;
+    uint64_t *starts = malloc(capacity * sizeof(*starts));
+    CHECK_CLEANUP(starts != NULL);
+    uint64_t offset = 0;
+    for (;;) {
+        int got = line_reader_next(&sequential);
+        if (got == 0) break;
+        CHECK_CLEANUP(got == 1);
+        starts[lines++] = offset;
+        offset += sequential.line_len + 1u;
+    }
+    CHECK_CLEANUP(lines > 100u);
+    for (unsigned round = 0; round < 40u; ++round) {
+        size_t first = (size_t)(unit_random() % lines);
+        line_reader_seek(&ranged, starts[first]);
+        for (size_t index = first; index < lines && index < first + 700u; ++index) {
+            CHECK_CLEANUP(line_reader_offset(&ranged) == starts[index]);
+            int got = line_reader_next(&ranged);
+            CHECK_CLEANUP(got == 1);
+            size_t expected_length = (index + 1u < lines ? (size_t)(starts[index + 1u] - starts[index]) - 1u
+                                                           : length - (size_t)starts[index]);
+            if (index + 1u == lines && length != 0 && data[length - 1u] == '\n') expected_length -= 1u;
+            CHECK_CLEANUP(ranged.line_len == expected_length);
+            CHECK_CLEANUP(memcmp(ranged.line, data + starts[index], expected_length) == 0);
+            CHECK_CLEANUP(ranged.line_no == index - first + 1u);
+        }
+    }
+    line_reader_seek(&ranged, (uint64_t)length);
+    CHECK_CLEANUP(line_reader_next(&ranged) == 0);
+    free(starts);
+cleanup:
+    line_reader_destroy(&sequential);
+    line_reader_destroy(&ranged);
+    if (read_handle != LM_INVALID_HANDLE && lm_close(read_handle) != 0) result = -1;
+    if (path) { if (lm_remove(path) != 0) result = -1; free(path); }
+    free(data);
+    return result;
+}
+
 int main(void) {
     static const struct {
         const char *name;
@@ -454,7 +793,9 @@ int main(void) {
         {"path rewriting and globs", test_path_rewriting_and_globs},
         {"UTF-8 and NUL validation", test_utf8_validation},
         {"line reader 1 MiB boundaries", test_line_reader_boundaries},
-        {"line reader NUL rejection", test_line_reader_nul}
+        {"line reader NUL rejection", test_line_reader_nul},
+        {"line reader range mode", test_line_reader_ranges},
+        {"partition finder vs brute force", test_partition_finder}
     };
     for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {
         if (tests[i].run() != 0) return 1;

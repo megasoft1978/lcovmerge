@@ -331,3 +331,20 @@ int run_direct_merge(const Options *options) {
     fclose(diagnostics);
     return fallback ? DIRECT_FALLBACK : status;
 }
+
+/* Per-partition fixed memory of the direct path; SIZE_MAX if the sizes overflow. */
+size_t direct_fixed_cost(size_t count) {
+    if (count == 0 || count > UINT32_MAX || count > SIZE_MAX / count ||
+        count * count > SIZE_MAX / sizeof(PathCompareCache)) return SIZE_MAX;
+    size_t leaf_count = 1u;
+    while (leaf_count < count) {
+        if (leaf_count > SIZE_MAX / 2u) return SIZE_MAX;
+        leaf_count *= 2u;
+    }
+    if (leaf_count > SIZE_MAX / 2u / sizeof(size_t) || count > SIZE_MAX / sizeof(DirectInput) ||
+        count > SIZE_MAX / LINE_INITIAL_CAPACITY) return SIZE_MAX;
+    size_t cost = sizeof(DirectInput) * count + sizeof(size_t) * leaf_count * 2u +
+                  sizeof(PathCompareCache) * count * count + WRITE_BLOCK;
+    if (cost > SIZE_MAX - count * LINE_INITIAL_CAPACITY) return SIZE_MAX;
+    return cost + count * LINE_INITIAL_CAPACITY;
+}
