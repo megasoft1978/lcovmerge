@@ -28,7 +28,8 @@ endif
 
 CORE_SRC = src/lcovmerge.c \
 	src/lm_util.c \
-	src/lm_io.c
+	src/lm_io.c \
+	src/lm_record.c
 SOURCES = $(CORE_SRC) $(PLATFORM_SRC) $(ENTRY_SRC)
 HEADERS = include/platform.h include/version.h src/lm_internal.h
 UNIT_SOURCE = tests/unit/helpers.c

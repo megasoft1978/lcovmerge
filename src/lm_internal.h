@@ -256,4 +256,8 @@ int writer_text(Writer *writer, const char *text);
 int writer_char(Writer *writer, char value);
 int writer_format(Writer *writer, const char *format, ...);
 
+int record_key_compare_same_path(const Record *left, const Record *right);
+int record_qsort_compare(const void *left, const void *right);
+int same_key(const Record *left, const Record *right);
+
 #endif
