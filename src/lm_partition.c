@@ -10,7 +10,7 @@
 #define PART_SAMPLES_PER_PART 128u
 #define PART_MIN_PARTITION_BYTES ((uint64_t)32u << 20)
 #define PART_FINDER_CAP ((uint64_t)1u << 30)
-#define PART_FINDER_DIVISOR 4u
+#define PART_FINDER_DIVISOR 2u
 #define PART_JOINED_PREFIX_LENGTH 13u
 
 int part_scanner_init(PartScanner *scanner) {
