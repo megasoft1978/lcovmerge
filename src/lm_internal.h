@@ -274,4 +274,11 @@ int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Record *rec
 int chunk_init(Chunk *chunk, size_t budget);
 void chunk_destroy(Chunk *chunk);
 
+int output_record(OutputState *output, const Record *record);
+int output_finish_file(OutputState *output);
+void aggregate_copy(Record *destination, const Record *source, char *storage);
+int merge_aggregate(Record *aggregate, const Record *next, const Options *options,
+                           FILE *diagnostics);
+int create_output_temp(const char *output_path, OutputFile *file);
+
 #endif
