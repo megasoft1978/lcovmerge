@@ -73,20 +73,6 @@ void list_free(StringList *list) {
     memset(list, 0, sizeof(*list));
 }
 
-int parse_u64(const char *text, size_t length, uint64_t *value) {
-    if (length == 0) return 0;
-    uint64_t result = 0;
-    for (size_t i = 0; i < length; ++i) {
-        unsigned char ch = (unsigned char)text[i];
-        if (ch < (unsigned char)'0' || ch > (unsigned char)'9') return 0;
-        uint64_t digit = (uint64_t)(ch - (unsigned char)'0');
-        if (result > (UINT64_MAX - digit) / UINT64_C(10)) return 0;
-        result = result * UINT64_C(10) + digit;
-    }
-    *value = result;
-    return 1;
-}
-
 int parse_size(const char *text, size_t *value) {
     size_t length = strlen(text);
     uint64_t multiplier = 1;

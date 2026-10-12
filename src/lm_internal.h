@@ -256,14 +256,10 @@ static inline int string_compare(const char *left, const char *right) {
 int install_signal_handlers(void);
 char *duplicate_range(const char *text, size_t length);
 void list_free(StringList *list);
-int parse_u64(const char *text, size_t length, uint64_t *value);
 int run_list_add(RunList *list, char *path);
 void run_list_cleanup(RunList *list);
 
 int writer_flush(Writer *writer);
-int writer_bytes(Writer *writer, const void *data, size_t length);
-int writer_text(Writer *writer, const char *text);
-int writer_char(Writer *writer, char value);
 int writer_format(Writer *writer, const char *format, ...);
 
 int record_key_compare_same_path(const Record *left, const Record *right);
@@ -278,7 +274,6 @@ void chunk_destroy(Chunk *chunk);
 
 int output_record(OutputState *output, const Record *record);
 int output_finish_file(OutputState *output);
-void aggregate_copy(Record *destination, const Record *source, char *storage);
 int merge_aggregate(Record *aggregate, const Record *next, const Options *options,
                            FILE *diagnostics);
 int create_output_temp(const char *output_path, OutputFile *file);
@@ -302,5 +297,66 @@ void print_worker_error(const Worker *worker);
 int run_direct_merge(const Options *options);
 
 int run_merge(const Options *options);
+
+int writer_bytes_slow(Writer *writer, const void *data, size_t length);
+
+static inline int writer_bytes(Writer *writer, const void *data, size_t length) {
+    if (length <= writer->capacity - writer->used) {
+        memcpy(writer->buffer + writer->used, data, length);
+        writer->used += length;
+        return 0;
+    }
+    return writer_bytes_slow(writer, data, length);
+}
+
+static inline int writer_text(Writer *writer, const char *text) {
+    return writer_bytes(writer, text, strlen(text));
+}
+
+static inline int writer_char(Writer *writer, char value) {
+    if (writer->used < writer->capacity) {
+        writer->buffer[writer->used++] = (unsigned char)value;
+        return 0;
+    }
+    return writer_bytes_slow(writer, &value, 1);
+}
+
+static inline int parse_u64(const char *text, size_t length, uint64_t *value) {
+    if (length == 0) return 0;
+    uint64_t result = 0;
+    for (size_t i = 0; i < length; ++i) {
+        unsigned char ch = (unsigned char)text[i];
+        if (ch < (unsigned char)'0' || ch > (unsigned char)'9') return 0;
+        uint64_t digit = (uint64_t)(ch - (unsigned char)'0');
+        if (result > (UINT64_MAX - digit) / UINT64_C(10)) return 0;
+        result = result * UINT64_C(10) + digit;
+    }
+    *value = result;
+    return 1;
+}
+
+static inline void aggregate_copy(Record *destination, const Record *source, char *storage) {
+    size_t path_length = source->path_length;
+    size_t text_length = source->text_length;
+    size_t extra_length = source->extra_length;
+    destination->path = storage;
+    memcpy(destination->path, source->path, path_length + 1);
+    destination->text = destination->path + path_length + 1;
+    memcpy(destination->text, source->text, text_length + 1);
+    destination->extra = destination->text + text_length + 1;
+    memcpy(destination->extra, source->extra, extra_length + 1);
+    destination->path_length = source->path_length;
+    destination->text_length = source->text_length;
+    destination->extra_length = source->extra_length;
+    destination->a = source->a;
+    destination->b = source->b;
+    destination->c = source->c;
+    destination->value = source->value;
+    destination->origin_line = source->origin_line;
+    destination->input_id = source->input_id;
+    destination->type = source->type;
+    destination->flags = source->flags;
+    destination->path_id = source->path_id;
+}
 
 #endif

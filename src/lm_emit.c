@@ -188,30 +188,6 @@ int output_finish_file(OutputState *output) {
     return 0;
 }
 
-void aggregate_copy(Record *destination, const Record *source, char *storage) {
-    size_t path_length = source->path_length;
-    size_t text_length = source->text_length;
-    size_t extra_length = source->extra_length;
-    destination->path = storage;
-    memcpy(destination->path, source->path, path_length + 1);
-    destination->text = destination->path + path_length + 1;
-    memcpy(destination->text, source->text, text_length + 1);
-    destination->extra = destination->text + text_length + 1;
-    memcpy(destination->extra, source->extra, extra_length + 1);
-    destination->path_length = source->path_length;
-    destination->text_length = source->text_length;
-    destination->extra_length = source->extra_length;
-    destination->a = source->a;
-    destination->b = source->b;
-    destination->c = source->c;
-    destination->value = source->value;
-    destination->origin_line = source->origin_line;
-    destination->input_id = source->input_id;
-    destination->type = source->type;
-    destination->flags = source->flags;
-    destination->path_id = source->path_id;
-}
-
 static const char *input_name_for(const Options *options, uint32_t input_id) {
     return (size_t)input_id < options->inputs.count ? options->inputs.items[input_id] : "<input>";
 }

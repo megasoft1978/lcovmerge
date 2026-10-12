@@ -24,7 +24,7 @@ int writer_init(Writer *writer, lm_handle handle) {
     return 0;
 }
 
-int writer_bytes(Writer *writer, const void *data, size_t length) {
+int writer_bytes_slow(Writer *writer, const void *data, size_t length) {
     const unsigned char *bytes = data;
     while (length) {
         size_t available = writer->capacity - writer->used;
@@ -37,14 +37,6 @@ int writer_bytes(Writer *writer, const void *data, size_t length) {
         length -= amount;
     }
     return 0;
-}
-
-int writer_text(Writer *writer, const char *text) {
-    return writer_bytes(writer, text, strlen(text));
-}
-
-int writer_char(Writer *writer, char value) {
-    return writer_bytes(writer, &value, 1);
 }
 
 int writer_u64(Writer *writer, uint64_t value) {
