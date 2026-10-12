@@ -445,6 +445,7 @@ int partition_plan_build(const Options *options, PartitionPlan *plan) {
     size_t candidate_count = 0;
     if (choose_splitters(&scanner, options, plan, want, &candidates, &candidate_count) != 0 ||
         candidate_count == 0) {
+        free(candidates);
         part_scanner_destroy(&scanner);
         goto fail;
     }
