@@ -250,4 +250,10 @@ int parse_u64(const char *text, size_t length, uint64_t *value);
 int run_list_add(RunList *list, char *path);
 void run_list_cleanup(RunList *list);
 
+int writer_flush(Writer *writer);
+int writer_bytes(Writer *writer, const void *data, size_t length);
+int writer_text(Writer *writer, const char *text);
+int writer_char(Writer *writer, char value);
+int writer_format(Writer *writer, const char *format, ...);
+
 #endif
