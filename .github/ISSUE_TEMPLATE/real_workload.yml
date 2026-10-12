@@ -1,0 +1,47 @@
+name: Share a real-workload benchmark summary
+description: Optionally share reviewed aggregate measurements without uploading coverage files.
+title: "benchmark: real workload summary"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for considering a report. Please read the [privacy and measurement guide](https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md).
+        This issue is public. Do not attach `.info` files, raw logs, source code, project names, hostnames, or unreviewed machine-readable reports. Share only aggregate fields you are comfortable making public. All fields are optional.
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload shape
+      description: Input size, shard count, approximate output size, and whether the inputs are from a work project, open source project, or generated fixture. Omit project identity.
+      placeholder: "e.g. about 900 MB across 40 shards; work project"
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Host and tool versions
+      description: OS, broad CPU description, and tool versions. Leave out hostnames, usernames, paths, and account details.
+      placeholder: "e.g. Linux x86-64, 8-core runner; lcovmerge 1.0.2, LCOV 2.6"
+    validations:
+      required: false
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Aggregate measurements
+      description: Per-tool elapsed time, peak resident memory, number of runs, warm/cold conditions, and any timeout or error. Do not paste raw benchmark logs.
+      placeholder: "e.g. 3 warm runs; lcovmerge median 4.2 s / 12 MiB RSS; existing merge 31 s / 700 MiB RSS"
+    validations:
+      required: false
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Downstream result and notes
+      description: Did the same report/upload consumer accept each output? Summarize meaningful normalized differences without paths or coverage tied to identifiable files.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I reviewed this public report and removed project identity, source paths, hostnames, source code, and private coverage data.
+          required: true

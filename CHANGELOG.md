@@ -22,6 +22,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- Clarify lcovmerge's niche for costly LCOV shard merges and add an opt-in, privacy-conscious path for reporting real-workload measurements.
 - Display benchmark input sizes, elapsed times, and memory in readable units across the README and site; retain exact measurements in the published JSON record.
 - Use the profile-guided host build in the main benchmark presentation and record the lcov-result-merger 6.0.0 XXL measurement with updated toolchain provenance.
 - Simplify the README and landing page around a generated, largest-valid-pair benchmark summary and a short install/run path.

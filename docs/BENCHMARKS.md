@@ -101,6 +101,19 @@ copies to increase path diversity and input size; it is explicitly synthetic sca
 The separate public-CI compatibility investigation is summarized in [COMPATIBILITY.md](COMPATIBILITY.md); it is
 not part of the generated `REAL` benchmark row or the measured project-derived workload below.
 
+### Evidence still needed
+
+The largest published performance result is a generated 20.3 GB workload. Project-derived correctness checks
+exist, but their inputs are much smaller. To judge how much the speed and memory gains help real CI, we need
+optional reports from varied workflows: input size and shard count, host and operating system, merge time and
+peak RSS for the existing merger and lcovmerge, plus whether the downstream report accepted each output.
+Small and medium inputs matter too; they show when the simpler existing path is already sufficient.
+
+No coverage file is needed. The [private-input measurement guide](REAL-WORKLOADS.md) explains how to run the
+local `REAL` workload and share only reviewed aggregate values. Do not publish logs or machine-readable reports:
+they can contain absolute input paths and host details. Real-workload evidence is opt-in and is not a condition
+for using the tool.
+
 To reproduce a final lcovmerge measurement for M:
 
 ```sh

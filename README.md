@@ -2,6 +2,11 @@
 
 lcovmerge combines exported LCOV `.info` files into one for your existing report or upload step.
 
+It is for the point where separately produced coverage shards have to become one artifact, especially when
+the merge is taking too long or using too much memory. If your collector or report service can combine the
+shards already, keep that simpler path. lcovmerge is a focused merger; it does not collect raw profiles or
+replace the report tools around it.
+
 ## The benchmark
 
 <!-- README-BENCHMARK:START -->
@@ -41,6 +46,10 @@ genhtml coverage/merged.info --output-directory coverage/html
 - Your report service accepts each shard.
 - You need raw profiles (`.gcda`, `.profraw`); export LCOV first.
 - `lcov -a` is already fast enough.
+
+The largest published performance run uses generated input. Smaller project-derived checks are documented,
+but more representative workload reports would show where the speed and memory difference matters in actual
+CI. If you can share only sanitized aggregate results, see the [private-input measurement guide](docs/REAL-WORKLOADS.md).
 
 ## Limits
 

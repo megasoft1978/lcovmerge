@@ -6,9 +6,13 @@ It merges already-exported LCOV `.info` files into one file. An `.info` file is 
 
 ## When should I use lcovmerge?
 
-### Should I use this?
-
 Use lcovmerge when separate test jobs produce LCOV files and a later local report or upload step requires one file. Skip it when your consumer accepts all shards, a native LLVM/Go/Python/JavaScript merge fits your source data, hosted Codecov or Coveralls combining is enough, or `lcov -a` is already fast on your files. Raw profiles must first be exported to LCOV. See the [matrix recipe](RECIPES.md#github-actions) for the artifact handoff.
+
+The clearest reason to adopt it is a merge stage that has become a measurable CI time or memory cost. For an
+ordinary small report, your existing collector, report service, or `lcov -a` may be simpler. lcovmerge is not
+a general coverage collector or report generator. The large benchmark is generated input; the project-derived
+checks are smaller. If you can share sanitized aggregate results from a real workflow, follow the [private-input
+measurement guide](REAL-WORKLOADS.md).
 
 ## What if strict lcov failed on my inputs?
 

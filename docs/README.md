@@ -7,6 +7,7 @@ lcovmerge combines exported LCOV `.info` files. It does not collect raw coverage
 - [Limits and LCOV behavior](LIMITATIONS.md)
 - [Migrate from `lcov -a`](MIGRATING-FROM-LCOV.md)
 - [Benchmark results and method](BENCHMARKS.md)
+- [Measure a private real workload and share safe aggregates](REAL-WORKLOADS.md)
 - [FAQ](FAQ.md)
 
 Maintainers: [architecture](ARCHITECTURE.md) · [validation records](validation/SUMMARY.md) · [release checklist](RELEASING.md)
