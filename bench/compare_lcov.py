@@ -94,7 +94,8 @@ def read_records(path: Path) -> Iterator[SourceRecord]:
             elif sf is not None:
                 if line.startswith("FNL:"):
                     fields = line[4:].split(",")
-                    if len(fields) < 3:
+                    # LCOV 2.2+ permits the function end line to be omitted.
+                    if len(fields) < 2:
                         raise ValueError(f"malformed FNL record: {line[:160]}")
                     function_starts[fields[0]] = fields[1]
                 elif line.startswith("FNA:"):
