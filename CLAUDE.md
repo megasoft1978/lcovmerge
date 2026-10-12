@@ -19,7 +19,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-- `src/lcovmerge.c` (~2.7k lines): all core logic (parse, sort, merge, emit, CLI). Shared behavior goes here.
+- Core logic is split by responsibility; shared declarations live in `src/lm_internal.h` (see `docs/ARCHITECTURE.md` for the module map). Shared behavior goes in the core modules:
+  - `lcovmerge.c` CLI/options/main; `lm_util.c` helpers and signals; `lm_io.c` writer/line reader; `lm_record.c` comparators; `lm_path.c` path rewrite/filter; `lm_chunk.c` chunk arena and spill; `lm_parse.c` parser; `lm_direct.c` direct merge; `lm_emit.c` summaries/output; `lm_merge.c` workers and k-way merge.
+  - New core files go in `CORE_SRC` (`Makefile`), `core_src` (`scripts/build-all.sh`), and `.github/workflows/bench-windows.yml`. Keep each file under 800 lines.
 - `src/platform_posix.c` / `src/platform_win32.c` + `include/platform.h`: file I/O, temp files, rename/remove, CPU count, threads. Platform APIs stay in these layers. `platform_entry.c` is the POSIX `main` shim; Windows uses `wmain` + UTF-8 conversion.
 - Pipeline (details in `docs/ARCHITECTURE.md`):
   1. Streaming parse with 1 MiB line cap, NUL/UTF-8 validation, SF path rewrite/filter.

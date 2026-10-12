@@ -6,6 +6,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Split the core source into `src/lcovmerge.c` (CLI) and `src/lm_*.c` modules sharing `src/lm_internal.h`. Internal refactor only; behavior, output, and diagnostics are unchanged.
+
 ## [1.1.0] - 2026-10-12
 
 ### Fixed

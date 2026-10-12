@@ -7,6 +7,25 @@
 3. **Sort through temporary files.** The fallback keeps coverage records in memory up to the configured limit. When a batch is full, it orders the records and writes a temporary sorted file (called a sort run in the implementation). Later merge passes reopen these files by name. The sizing rule reserves up to 24 MiB of `--mem-limit` from worker storage for anticipated non-record overhead; the minimum 8 MiB per active worker takes precedence for smaller settings.
 4. **Merge and write output.** Tournament or heap merges combine sorted files in bounded-fan-in passes, writing intermediate files as needed. External-merge fan-in is capped by both the memory setting and the process file-descriptor limit. Counts are combined while rows stream through the merge. Function, branch, line, and MC/DC coverage records feed recalculated summary rows. File output is staged in the destination directory and renamed only after all reads, writes, closes, and summary emission succeed. Output to stdout (`-o -`) streams directly and cannot be rolled back after a later failure.
 
+## Core modules
+
+The core lives in `src/` and shares one internal header, `src/lm_internal.h`, which holds constants, types, and cross-file prototypes.
+
+| File | Responsibility |
+| --- | --- |
+| `src/lcovmerge.c` | CLI: usage text, option and `@listfile` parsing, `lcovmerge_main` |
+| `src/lm_util.c` | Cancellation flag and signal handlers, string, list, and number helpers, run list |
+| `src/lm_io.c` | Buffered writer, UTF-8 validation, bounded line reader |
+| `src/lm_record.c` | Record comparators and the deterministic ordering rules |
+| `src/lm_path.c` | `SF:` rewrite, include/exclude glob matching |
+| `src/lm_chunk.c` | In-memory chunk arena and spilling sorted runs to temporary files |
+| `src/lm_parse.c` | Streaming LCOV parser, including the DA/BRDA fast paths |
+| `src/lm_direct.c` | Direct tournament-tree merge for already-sorted inputs |
+| `src/lm_emit.c` | Aggregate merge, summary recomputation, and output emission |
+| `src/lm_merge.c` | Worker driver, run reduction, k-way merge, and `run_merge` |
+
+New core files must be added to `CORE_SRC` in `Makefile`, `core_src` in `scripts/build-all.sh`, and `core_src` in `.github/workflows/bench-windows.yml`.
+
 ## Memory model
 
 The default `--mem-limit` value of 64 MiB limits memory reserved for coverage records while sorting; it is not a limit on total process memory. The implementation can hold back up to 24 MiB from worker storage for parser/writer buffers, merge bookkeeping, thread stacks, and runtime state. The 8 MiB minimum per active worker takes precedence for smaller settings. Actual resident memory also includes merge readers and allocator state. Temporary disk use is separate and grows with parsed input and intermediate merge passes.

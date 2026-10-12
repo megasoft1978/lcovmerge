@@ -14,7 +14,7 @@
 
 ## Coding Style & Naming Conventions
 
-Follow `.editorconfig`: UTF-8, LF endings, final newline, no trailing whitespace, and four spaces for source files; Makefile recipes use tabs. C builds with strict warnings as errors. Keep platform APIs in the matching `src/platform_*.c` layer and shared behavior in `src/lcovmerge.c`. Name test cases descriptively in `tests/run_tests.py` and keep generated fixtures small and synthetic.
+Follow `.editorconfig`: UTF-8, LF endings, final newline, no trailing whitespace, and four spaces for source files; Makefile recipes use tabs. C builds with strict warnings as errors. Keep platform APIs in the matching `src/platform_*.c` layer and shared behavior in the core modules (`src/lcovmerge.c` CLI and `src/lm_*.c`, declared in `src/lm_internal.h`; see `docs/ARCHITECTURE.md`). Register new core files in `CORE_SRC` (`Makefile`), `scripts/build-all.sh`, and `.github/workflows/bench-windows.yml`. Name test cases descriptively in `tests/run_tests.py` and keep generated fixtures small and synthetic.
 
 ## Testing Guidelines
 
