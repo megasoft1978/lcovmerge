@@ -27,7 +27,7 @@ UNIT_LDFLAGS = -pthread
 endif
 
 SOURCES = src/lcovmerge.c $(PLATFORM_SRC) $(ENTRY_SRC)
-HEADERS = include/platform.h include/version.h
+HEADERS = include/platform.h include/version.h src/lm_internal.h
 UNIT_SOURCE = tests/unit/helpers.c
 UNIT_CPPFLAGS = -Dlcovmerge_main=lcovmerge_unit_unused_main -Dwmain=lcovmerge_unit_unused_wmain
 ASAN_CFLAGS = -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
