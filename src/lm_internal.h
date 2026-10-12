@@ -221,6 +221,8 @@ typedef struct {
     uint32_t input_id;
 } DiskRecord;
 
+#define DIRECT_FALLBACK (-1)
+
 extern atomic_bool interrupted;
 
 int record_key_compare(const Record *left, const Record *right);
@@ -295,5 +297,8 @@ int parse_direct_brda(Worker *worker, char *line, size_t length,
                              uint32_t input_id, uint64_t line_no, char *path,
                              int keep_path);
 int parse_input_file(Worker *worker, Chunk *chunk, const char *filename, uint32_t input_id);
+
+void print_worker_error(const Worker *worker);
+int run_direct_merge(const Options *options);
 
 #endif
