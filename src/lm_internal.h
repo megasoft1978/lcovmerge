@@ -248,10 +248,25 @@ static inline uint64_t saturating_add(uint64_t left, uint64_t right) {
     return left > UINT64_MAX - right ? UINT64_MAX : left + right;
 }
 
-static inline int string_compare(const char *left, const char *right) {
-    int result = strcmp(left, right);
-    return (result > 0) - (result < 0);
+/*
+ * Same ordering as strcmp (unsigned bytes, shorter string first on a common
+ * prefix) for strings whose stored lengths equal strlen. Record strings are
+ * NUL-free (utf8_valid rejects NUL; lengths are always strlen results).
+ */
+static inline int bytes_compare(const char *left, size_t left_length,
+                                const char *right, size_t right_length) {
+    if (left == right) return 0;
+    if (left_length == 0 || right_length == 0) return (left_length != 0) - (right_length != 0);
+    if (left[0] != right[0])
+        return (unsigned char)left[0] < (unsigned char)right[0] ? -1 : 1;
+    size_t common = left_length < right_length ? left_length : right_length;
+    int result = memcmp(left, right, common);
+    if (result) return (result > 0) - (result < 0);
+    return (left_length > right_length) - (left_length < right_length);
 }
+
+#define FIELD_COMPARE(left, right, field) \
+    bytes_compare((left)->field, (left)->field##_length, (right)->field, (right)->field##_length)
 
 int install_signal_handlers(void);
 char *duplicate_range(const char *text, size_t length);

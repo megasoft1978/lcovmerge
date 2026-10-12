@@ -94,8 +94,9 @@ static int direct_heap_less(size_t left, size_t right, DirectInput *inputs,
     uint64_t high_generation = inputs[high].worker.direct_path_generation;
     if (!entry->valid || entry->generation_left != low_generation ||
         entry->generation_right != high_generation) {
-        entry->comparison = string_compare(direct_current_row(&inputs[low])->path,
-                                           direct_current_row(&inputs[high])->path);
+        const Record *low_row = direct_current_row(&inputs[low]);
+        const Record *high_row = direct_current_row(&inputs[high]);
+        entry->comparison = FIELD_COMPARE(low_row, high_row, path);
         entry->generation_left = low_generation;
         entry->generation_right = high_generation;
         entry->valid = 1;
@@ -127,7 +128,8 @@ static void direct_tree_update(size_t *tree, size_t leaf_count, size_t input_ind
 
 static int direct_same_key(const Record *left, const Record *right) {
     if (left->type == REC_EXT || right->type == REC_EXT ||
-        strcmp(left->path, right->path) != 0) return 0;
+        left->path_length != right->path_length ||
+        memcmp(left->path, right->path, left->path_length) != 0) return 0;
     if (left->type == REC_TN && right->type == REC_TN) return 1;
     return record_key_compare_same_path(left, right) == 0;
 }

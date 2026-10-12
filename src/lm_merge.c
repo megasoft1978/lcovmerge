@@ -185,8 +185,7 @@ static int heap_less(size_t left, size_t right, RunReader *readers,
         entry->generation_right == right_reader->path_generation) {
         path_comparison = entry->comparison;
     } else {
-        int raw_comparison = strcmp(left_reader->row.path, right_reader->row.path);
-        path_comparison = (raw_comparison > 0) - (raw_comparison < 0);
+        path_comparison = FIELD_COMPARE(&left_reader->row, &right_reader->row, path);
         entry->generation_left = left_reader->path_generation;
         entry->generation_right = right_reader->path_generation;
         entry->comparison = path_comparison;

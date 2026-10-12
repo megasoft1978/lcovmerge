@@ -218,20 +218,23 @@ int merge_aggregate(Record *aggregate, const Record *next, const Options *option
         } else if (!(next->flags & FLAG_DASH)) aggregate->value = saturating_add(aggregate->value, next->value);
     } else if (next->type == REC_DA) {
         aggregate->value = saturating_add(aggregate->value, next->value);
-        if (aggregate->extra[0] && next->extra[0] && strcmp(aggregate->extra, next->extra) != 0) {
-            if (options->strict_checksum) {
-                fprintf(diagnostics, "lcovmerge: %s:%" PRIu64 ": checksum mismatch for %s:%" PRIu64 "\n",
-                        input_name_for(options, next->input_id), next->origin_line,
-                        next->path, next->a);
-                return 2;
-            }
-            fprintf(diagnostics, "lcovmerge: %s:%" PRIu64 ": checksum mismatch for %s:%" PRIu64 "\n",
-                    input_name_for(options, next->input_id), next->origin_line, next->path, next->a);
-        }
-        if (!aggregate->extra[0] || (next->extra[0] && strcmp(next->extra, aggregate->extra) < 0)) {
+        if (!aggregate->extra[0]) {
             size_t length = next->extra_length;
             memcpy(aggregate->extra, next->extra, length + 1);
             aggregate->extra_length = next->extra_length;
+        } else if (next->extra[0]) {
+            int order = FIELD_COMPARE(aggregate, next, extra);
+            if (order != 0) {
+                fprintf(diagnostics, "lcovmerge: %s:%" PRIu64 ": checksum mismatch for %s:%" PRIu64 "\n",
+                        input_name_for(options, next->input_id), next->origin_line,
+                        next->path, next->a);
+                if (options->strict_checksum) return 2;
+                if (order > 0) {
+                    size_t length = next->extra_length;
+                    memcpy(aggregate->extra, next->extra, length + 1);
+                    aggregate->extra_length = next->extra_length;
+                }
+            }
         }
     }
     return 0;

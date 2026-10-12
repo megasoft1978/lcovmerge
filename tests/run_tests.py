@@ -146,6 +146,30 @@ def golden_cases() -> list[dict]:
         mk_case("rebase-path-boundary", ["SF:/old/projectile/a.c\nDA:1,1\nend_of_record\n"],
             path="/old/projectile/a.c", rows="DA:1,1\n", summary=(0,0,0,0,0,0,1,1),
             options=("--rebase", "/old/project=/new/project")),
+        # Comparator ordering: prefix strings sort first and bytes >= 0x80 sort after ASCII.
+        mk_case("source-path-prefix-and-multibyte-order", [
+            "SF:/p/a\nDA:1,1\nend_of_record\nSF:/p/a.c\nDA:1,1\nend_of_record\n"
+            "SF:/p/z.c\nDA:1,1\nend_of_record\nSF:/p/\u00e9.c\nDA:1,1\nend_of_record\n",
+            "SF:/p/\u00e9.c\nDA:1,2\nend_of_record\nSF:/p/a.c\nDA:1,2\nend_of_record\n"
+            "SF:/p/a\nDA:1,2\nend_of_record\nSF:/p/z.c\nDA:1,2\nend_of_record\n",
+            "SF:/p/a\nDA:1,4\nend_of_record\nSF:/p/a.c\nDA:1,4\nend_of_record\n"
+            "SF:/p/z.c\nDA:1,4\nend_of_record\nSF:/p/\u00e9.c\nDA:1,4\nend_of_record\n",
+        ], expected="".join(expected_trace(name, "DA:1,7\n", summary=(0,0,0,0,0,0,1,1))
+                            for name in ("/p/a", "/p/a.c", "/p/z.c", "/p/\u00e9.c"))),
+        mk_case("function-name-prefix-and-multibyte-order", [
+            "SF:/fn.c\nFNDA:1,run\nFNDA:1,run2\nFNDA:1,run\u00e9\nFNDA:1,ru\nend_of_record\n",
+            "SF:/fn.c\nFNDA:2,ru\nFNDA:2,run\u00e9\nFNDA:2,run2\nFNDA:2,run\nend_of_record\n",
+        ], rows="FNDA:3,ru\nFNDA:3,run\nFNDA:3,run2\nFNDA:3,run\u00e9\n", summary=(0,4,0,0,0,0,0,0)),
+        mk_case("equal-keys-checksum-prefix-picks-shortest", [
+            "SF:/cs.c\nDA:1,1,abc\nend_of_record\n",
+            "SF:/cs.c\nDA:1,2,ab\nend_of_record\n",
+            "SF:/cs.c\nDA:1,4,ab\u00e9\nend_of_record\n",
+        ], rows="DA:1,7,ab\n", summary=(0,0,0,0,0,0,1,1), warning="checksum mismatch"),
+        mk_case("equal-keys-checksum-multibyte-sorts-after-ascii", [
+            "SF:/cs.c\nDA:1,1,\u00e9\nend_of_record\n",
+            "SF:/cs.c\nDA:1,2,z\nend_of_record\n",
+            "SF:/cs.c\nDA:1,4\nend_of_record\n",
+        ], rows="DA:1,7,z\n", summary=(0,0,0,0,0,0,1,1), warning="checksum mismatch", options=("-j", "2", "--mem-limit", "16M")),
     ]
     return cases
 
