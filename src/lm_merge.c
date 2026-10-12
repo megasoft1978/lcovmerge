@@ -108,7 +108,8 @@ static int run_reader_set_path_id(RunReader *reader, size_t reader_index,
                                   RunReader *readers) {
     for (size_t i = 0; i < reader_count; ++i) {
         if (i != reader_index && readers[i].has_row &&
-            strcmp(reader->path_storage, readers[i].row.path) == 0) {
+            readers[i].row.path_length == reader->path_length &&
+            memcmp(reader->path_storage, readers[i].row.path, reader->path_length) == 0) {
             reader->path_id = readers[i].row.path_id;
             return 0;
         }
