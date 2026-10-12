@@ -213,6 +213,14 @@ typedef struct {
     int have_fn_group, fn_group_hit;
 } OutputState;
 
+typedef struct {
+    uint32_t path_length, text_length, extra_length;
+    uint8_t type, flags;
+    uint16_t reserved;
+    uint64_t a, b, c, value, origin_line;
+    uint32_t input_id;
+} DiskRecord;
+
 extern atomic_bool interrupted;
 
 int record_key_compare(const Record *left, const Record *right);
@@ -259,5 +267,11 @@ int writer_format(Writer *writer, const char *format, ...);
 int record_key_compare_same_path(const Record *left, const Record *right);
 int record_qsort_compare(const void *left, const void *right);
 int same_key(const Record *left, const Record *right);
+
+int write_record(Writer *writer, const Record *record);
+int flush_chunk(Chunk *chunk, RunList *runs, const char *tmpdir);
+int chunk_add(Chunk *chunk, RunList *runs, const char *tmpdir, const Record *record);
+int chunk_init(Chunk *chunk, size_t budget);
+void chunk_destroy(Chunk *chunk);
 
 #endif
