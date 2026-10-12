@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "measured_on": "2026-10-11",
+  "version": "1.1.0",
+  "measured_on": "2026-10-12",
   "source": "bench/run.py; Hyperfine 2.0.0; Apple Clang profile-guided build trained on Dataset M; Node.js 24.18.0/npm 12.2.0; LCOV 2.6; lcov-result-merger 6.0.0",
   "external_evidence": {
     "bazel_issue_26383": {
@@ -12,7 +12,7 @@
     }
   },
   "tool_labels": {
-    "lcovmerge": "lcovmerge 1.0.2 (PGO)",
+    "lcovmerge": "lcovmerge 1.1.0 (PGO)",
     "lcov": "lcov 2.6",
     "lcov-result-merger": "lcov-result-merger 6.0.0",
     "grcov": "grcov 0.10.8 (not measured in this validation run)"
@@ -50,10 +50,10 @@
       "REAL": 0,
       "XXL": 3
     },
-    "large_runs": "All listed lcovmerge results use the Dataset M-trained profile-guided build. S, M, L, XL-single, and PATH-HEAVY used one warmup and five measured runs; XXL used one warmup and three measured runs. LCOV 2.6 was measured once on XXL. lcov-result-merger 6.0.0 did not finish its XXL warmup before the user-requested 60-minute cutoff; no measured run completed.",
-    "measurement_order": "PGO lcovmerge timing was collected on each deterministic fixture; LCOV 2.6 and lcov-result-merger 6.0.0 were invoked in the XXL run. The lcov-result-merger warmup was stopped at the 60-minute cutoff.",
+    "large_runs": "All listed lcovmerge results come from the 2026-10-12 run of lcovmerge 1.1.0 (git 33ced0b26ade) with the Dataset M-trained profile-guided build. S, M, L, XL-single, and PATH-HEAVY used one warmup and five measured runs; XXL used one warmup and three measured runs. LCOV 2.6 was measured once on XXL in the same run. The lcov-result-merger 6.0.0 XXL result is from the 2026-10-11 run and was not rerun for 1.1.0: it did not finish its XXL warmup before the user-requested 60-minute cutoff; no measured run completed.",
+    "measurement_order": "lcovmerge 1.1.0 PGO timing was collected on 2026-10-12 on each deterministic fixture, then LCOV 2.6 was invoked once in the XXL run and its output compared with the lcovmerge output. The lcov-result-merger 6.0.0 XXL timeout is from the 2026-10-11 run; it was not invoked on 2026-10-12.",
     "cache_state": "No explicit cache flush. Paired measurements used one warmup except S, which used three; operating-system cache and machine load remain uncontrolled.",
-    "rss_source": "PGO lcovmerge RSS uses Hyperfine 2.0.0 memory_peak_resident; XXL LCOV RSS uses the measured system peak. The XXL lcov-result-merger value is the largest periodic process RSS sample before cutoff; its full-run peak is unavailable. Earlier comparator RSS values retain their recorded measurements.",
+    "rss_source": "PGO lcovmerge RSS uses Hyperfine 2.0.0 memory_peak_resident; XXL LCOV RSS uses the measured system peak from the 2026-10-12 run. The XXL lcov-result-merger value is the largest periodic process RSS sample before cutoff in the 2026-10-11 run; its full-run peak is unavailable. Earlier comparator RSS values retain their recorded measurements.",
     "throughput": "Decimal MB/s. lcovmerge uses input bytes divided by median hyperfine wall time; lcov 2.6 uses the single bench/run.py wall time and reports throughput only after success."
   },
   "datasets": [
@@ -65,35 +65,53 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 80.966641,
-          "rss_bytes": 6684672,
-          "rss_mib": 6.37109375,
-          "throughput_mb_s": 250.4,
+          "time_s": 68.269883,
+          "rss_bytes": 6635520,
+          "rss_mib": 6.328125,
+          "throughput_mb_s": 297.0,
           "status": "OK",
           "exit_code": 0,
           "run_count": 3,
           "run_samples_s": [
-            80.966641375,
-            81.182316291,
-            73.54196875
+            68.269882917,
+            69.070468542,
+            67.607820791
           ],
           "rss_samples_bytes": [
-            6684672,
-            6668288,
-            6668288
+            6619136,
+            6619136,
+            6635520
           ],
           "build": "profile-guided Apple Clang; Dataset M-trained profile",
-          "rss_source": "Hyperfine 2.0.0 memory_peak_resident; maximum over three measured runs"
+          "rss_source": "Hyperfine 2.0.0 memory_peak_resident; maximum over three measured runs",
+          "successful_run_count": 3,
+          "sample_exit_codes": [
+            0,
+            0,
+            0
+          ],
+          "warmup_count": 1
         },
         "lcov": {
-          "time_s": 1080.631659,
-          "rss_bytes": 3064250368,
-          "rss_mib": 2922.666015625,
-          "throughput_mb_s": 18.8,
+          "time_s": 827.629171,
+          "rss_bytes": 2883715072,
+          "rss_mib": 2750.125,
+          "throughput_mb_s": 24.5,
           "status": "OK",
           "exit_code": 0,
           "run_count": 1,
-          "rss_source": "measured in the 2026-10-11 XXL rerun"
+          "rss_source": "measured in the 2026-10-12 XXL run",
+          "successful_run_count": 1,
+          "run_samples_s": [
+            827.62917125
+          ],
+          "sample_exit_codes": [
+            0
+          ],
+          "rss_samples_bytes": [
+            2883715072
+          ],
+          "warmup_count": 1
         },
         "lcov-result-merger": {
           "time_s": 3615.812606,
@@ -118,7 +136,8 @@
         "lcovmerge_vs_lcov": {
           "method": "per-SF streaming comparison of normalized SF/DA/FN/FNDA/BRDA keys and counts",
           "status": "PASS",
-          "details": "Compared 480 SF records and 10771200 metric keys"
+          "exit_code": 0,
+          "details": "PASS normalized SF/DA/FN/FNDA/BRDA keys and counts; compared 480 SF records and 10771200 metric keys"
         }
       }
     },
@@ -130,19 +149,19 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 0.191332,
+          "time_s": 0.196619,
           "rss_bytes": 2605056,
-          "throughput_mb_s": 522.6,
+          "throughput_mb_s": 508.6,
           "status": "OK",
           "exit_code": 0,
           "run_count": 5,
           "successful_run_count": 5,
           "run_samples_s": [
-            0.19133191600000002,
-            0.192389,
-            0.191432917,
-            0.1888775,
-            0.189137583
+            0.200911042,
+            0.19583604200000002,
+            0.19917720900000002,
+            0.196618917,
+            0.189762709
           ],
           "sample_exit_codes": [
             0,
@@ -152,9 +171,9 @@
             0
           ],
           "rss_samples_bytes": [
-            2588672,
-            2588672,
             2605056,
+            2588672,
+            2588672,
             2605056,
             2605056
           ],
@@ -187,9 +206,9 @@
           "throughput_mb_s": 378.3,
           "run_count": 10
         },
-        "speedup_vs_baseline": 1.3814,
+        "speedup_vs_baseline": 1.3442,
         "lcov_2_6_single_run_time_s": 5.317,
-        "speedup_vs_lcov": 20.452
+        "speedup_vs_lcov": 27.042
       }
     },
     {
@@ -200,19 +219,19 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 2.897713,
-          "rss_bytes": 3375104,
-          "throughput_mb_s": 386.1,
+          "time_s": 2.940169,
+          "rss_bytes": 3342336,
+          "throughput_mb_s": 380.5,
           "status": "OK",
           "exit_code": 0,
           "run_count": 5,
           "successful_run_count": 5,
           "run_samples_s": [
-            2.887148667,
-            2.900636708,
-            2.897712542,
-            2.902525791,
-            2.884951083
+            3.0197785,
+            3.297865208,
+            2.940169125,
+            2.864681666,
+            2.898256041
           ],
           "sample_exit_codes": [
             0,
@@ -222,14 +241,14 @@
             0
           ],
           "rss_samples_bytes": [
-            3375104,
-            3375104,
-            3375104,
-            3375104,
-            3375104
+            3342336,
+            3342336,
+            3342336,
+            3342336,
+            3342336
           ],
           "warmup_count": 1,
-          "rss_mib": 3.21875,
+          "rss_mib": 3.1875,
           "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
@@ -257,9 +276,9 @@
           "throughput_mb_s": 311.4,
           "run_count": 5
         },
-        "speedup_vs_baseline": 1.2396,
+        "speedup_vs_baseline": 1.2217,
         "lcov_2_6_single_run_time_s": 50.542,
-        "speedup_vs_lcov": 14.489
+        "speedup_vs_lcov": 17.19
       }
     },
     {
@@ -270,19 +289,19 @@
       "description": "Generated sharded LCOV input.",
       "results": {
         "lcovmerge": {
-          "time_s": 14.081418,
-          "rss_bytes": 4456448,
-          "throughput_mb_s": 344.7,
+          "time_s": 14.008243,
+          "rss_bytes": 4407296,
+          "throughput_mb_s": 346.5,
           "status": "OK",
           "exit_code": 0,
           "run_count": 5,
           "successful_run_count": 5,
           "run_samples_s": [
-            14.164762958,
-            14.293410417,
-            13.91758975,
-            14.081418458,
-            14.026805875
+            14.112902125,
+            14.069698084,
+            14.008243417,
+            13.98247,
+            13.847211084
           ],
           "sample_exit_codes": [
             0,
@@ -292,14 +311,14 @@
             0
           ],
           "rss_samples_bytes": [
-            4456448,
-            4423680,
             4407296,
-            4456448,
-            4456448
+            4407296,
+            4407296,
+            4407296,
+            4407296
           ],
           "warmup_count": 1,
-          "rss_mib": 4.25,
+          "rss_mib": 4.203125,
           "build": "profile-guided Apple Clang; Dataset M-trained profile"
         },
         "lcov": {
@@ -327,9 +346,9 @@
           "throughput_mb_s": 167.8,
           "run_count": 2
         },
-        "speedup_vs_baseline": 2.054,
+        "speedup_vs_baseline": 2.0647,
         "lcov_2_6_single_run_time_s": 203.235,
-        "speedup_vs_lcov": 7.331
+        "speedup_vs_lcov": 14.508
       }
     },
     {
@@ -340,19 +359,19 @@
       "description": "Generated single tracefile.",
       "results": {
         "lcovmerge": {
-          "time_s": 1.136468,
+          "time_s": 1.17555,
           "rss_bytes": 2310144,
-          "throughput_mb_s": 655.5,
+          "throughput_mb_s": 633.7,
           "status": "OK",
           "exit_code": 0,
           "run_count": 5,
           "successful_run_count": 5,
           "run_samples_s": [
-            1.129616083,
-            1.136467584,
-            1.1746645,
-            1.1621677080000001,
-            1.13055175
+            1.134969292,
+            1.130862959,
+            1.175550167,
+            1.626678916,
+            1.752866292
           ],
           "sample_exit_codes": [
             0,
@@ -397,9 +416,9 @@
           "throughput_mb_s": 521.2,
           "run_count": 5
         },
-        "speedup_vs_baseline": 1.2577,
+        "speedup_vs_baseline": 1.2159,
         "lcov_2_6_single_run_time_s": 37.803,
-        "speedup_vs_lcov": 25.969
+        "speedup_vs_lcov": 32.158
       }
     },
     {
@@ -410,19 +429,19 @@
       "description": "Generated input with two million distinct source paths.",
       "results": {
         "lcovmerge": {
-          "time_s": 2.712556,
+          "time_s": 2.755896,
           "rss_bytes": 18644992,
-          "throughput_mb_s": 47.9,
+          "throughput_mb_s": 47.2,
           "status": "OK",
           "exit_code": 0,
           "run_count": 5,
           "successful_run_count": 5,
           "run_samples_s": [
-            2.708324584,
-            2.725274667,
-            2.736931875,
-            2.708620334,
-            2.712556
+            2.75658825,
+            2.747087334,
+            2.740457375,
+            2.758180083,
+            2.755896416
           ],
           "sample_exit_codes": [
             0,
@@ -432,10 +451,10 @@
             0
           ],
           "rss_samples_bytes": [
-            18644992,
-            18612224,
             18628608,
             18644992,
+            18628608,
+            18628608,
             18644992
           ],
           "warmup_count": 1,
@@ -471,7 +490,7 @@
           "throughput_mb_s": 58.2,
           "run_count": 5
         },
-        "speedup_vs_baseline": 0.8229,
+        "speedup_vs_baseline": 0.81,
         "lcov_2_6_single_run_time_s": 98.805,
         "speedup_vs_lcov": null
       }
@@ -513,117 +532,157 @@
   "scaling": {
     "M": {
       "default": {
-        "time_s": 2.897713,
-        "rss_bytes": 3375104,
-        "throughput_mb_s": 386.1,
+        "time_s": 2.940169,
+        "rss_bytes": 3342336,
+        "throughput_mb_s": 380.5,
         "status": "OK",
         "exit_code": 0,
         "run_count": 5,
+        "successful_run_count": 5,
         "run_samples_s": [
-          2.887148667,
-          2.900636708,
-          2.897712542,
-          2.902525791,
-          2.884951083
+          3.0197785,
+          3.297865208,
+          2.940169125,
+          2.864681666,
+          2.898256041
+        ],
+        "sample_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0
         ],
         "rss_samples_bytes": [
-          3375104,
-          3375104,
-          3375104,
-          3375104,
-          3375104
+          3342336,
+          3342336,
+          3342336,
+          3342336,
+          3342336
         ],
         "warmup_count": 1
       },
       "1": {
-        "time_s": 2.890234,
-        "rss_bytes": 3375104,
-        "throughput_mb_s": 387.1,
-        "status": "OK",
-        "exit_code": 0,
-        "run_count": 5,
-        "run_samples_s": [
-          2.9326381660000003,
-          2.897194,
-          2.890234167,
-          2.872159,
-          2.860650541
-        ],
-        "rss_samples_bytes": [
-          3342336,
-          3342336,
-          3375104,
-          3342336,
-          3358720
-        ],
-        "warmup_count": 1
-      },
-      "2": {
         "time_s": 2.905369,
-        "rss_bytes": 3375104,
+        "rss_bytes": 3358720,
         "throughput_mb_s": 385.0,
         "status": "OK",
         "exit_code": 0,
         "run_count": 5,
+        "successful_run_count": 5,
         "run_samples_s": [
-          2.943486542,
-          2.892545417,
-          2.8622461660000003,
-          2.998745166,
-          2.905369208
+          2.905369167,
+          2.878770958,
+          2.8494095,
+          2.943244709,
+          2.9864605
+        ],
+        "sample_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0
         ],
         "rss_samples_bytes": [
           3358720,
-          3375104,
+          3342336,
+          3342336,
+          3342336,
+          3342336
+        ],
+        "warmup_count": 1
+      },
+      "2": {
+        "time_s": 3.025565,
+        "rss_bytes": 3358720,
+        "throughput_mb_s": 369.7,
+        "status": "OK",
+        "exit_code": 0,
+        "run_count": 5,
+        "successful_run_count": 5,
+        "run_samples_s": [
+          3.025564583,
+          3.036333125,
+          3.036274583,
+          2.951275,
+          2.9542850410000003
+        ],
+        "sample_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rss_samples_bytes": [
           3358720,
-          3358720,
-          3375104
+          3342336,
+          3342336,
+          3342336,
+          3342336
         ],
         "warmup_count": 1
       },
       "4": {
-        "time_s": 2.878825,
-        "rss_bytes": 3375104,
-        "throughput_mb_s": 388.6,
+        "time_s": 2.914516,
+        "rss_bytes": 3358720,
+        "throughput_mb_s": 383.8,
         "status": "OK",
         "exit_code": 0,
         "run_count": 5,
+        "successful_run_count": 5,
         "run_samples_s": [
-          2.878825292,
-          2.915997791,
-          2.871468375,
-          2.852757875,
-          3.049469375
+          3.037893834,
+          2.894155834,
+          2.881152708,
+          2.914515542,
+          2.946039
+        ],
+        "sample_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0
         ],
         "rss_samples_bytes": [
-          3375104,
-          3375104,
+          3342336,
           3342336,
           3358720,
-          3358720
+          3342336,
+          3342336
         ],
         "warmup_count": 1
       },
       "8": {
-        "time_s": 2.90778,
-        "rss_bytes": 3375104,
-        "throughput_mb_s": 384.7,
+        "time_s": 2.873977,
+        "rss_bytes": 3358720,
+        "throughput_mb_s": 389.2,
         "status": "OK",
         "exit_code": 0,
         "run_count": 5,
+        "successful_run_count": 5,
         "run_samples_s": [
-          2.843102083,
-          2.907779542,
-          2.986133375,
-          2.98099225,
-          2.885529333
+          3.060232166,
+          2.873976792,
+          2.856820042,
+          2.897770291,
+          2.853825375
+        ],
+        "sample_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0
         ],
         "rss_samples_bytes": [
           3358720,
           3358720,
           3358720,
-          3375104,
-          3325952
+          3342336,
+          3358720
         ],
         "warmup_count": 1
       }
@@ -634,8 +693,8 @@
     "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available.",
     "All displayed lcovmerge measurements use a Dataset M-trained Apple Clang profile-guided host build. Release binaries remain portable target builds; this is not a cross-platform speed claim.",
     "lcovmerge timing uses one hyperfine warmup and five measured runs for S, M, L, XL-single, and PATH-HEAVY; XXL uses one warmup and three measured runs. Cache warmups were used, but no explicit cache flush was applied.",
-    "lcov 2.6 ran once on the XXL input and completed in 1080.632 s. Its PATH-HEAVY run exited with status 1 after 98.805 s; no valid speedup or current-run peak resident memory is reported for that failure.",
-    "lcov-result-merger 6.0.0 did not finish its XXL warmup before the 60-minute cutoff. It was stopped with SIGTERM after 3615.813 s wall time; no measured run completed. Periodic RSS samples peaked at 2.34 GiB, but the full-run peak is unavailable. Other lcov-result-merger rows are earlier measurements made with Node v24.14.0.",
+    "lcov 2.6 ran once on the XXL input on 2026-10-12 and completed in 827.629 s; the 2026-10-11 run recorded 1080.632 s on the same host with machine load uncontrolled. Its S, M, L, XL-single, and PATH-HEAVY values are earlier recorded measurements that were not rerun; the PATH-HEAVY run exited with status 1 after 98.805 s, so no valid speedup or current-run peak resident memory is reported for that failure.",
+    "lcov-result-merger 6.0.0 did not finish its XXL warmup before the 60-minute cutoff in the 2026-10-11 run and was not rerun for 1.1.0. It was stopped with SIGTERM after 3615.813 s wall time; no measured run completed. Periodic RSS samples peaked at 2.34 GiB, but the full-run peak is unavailable. Other lcov-result-merger rows are earlier measurements made with Node v24.14.0.",
     "Dataset M sorted regular shards use the direct single-threaded path; --jobs timings show run variation, not the effect of adding workers.",
     "grcov 0.10.8 is identified as the current release but was not included in the measured benchmark runs.",
     "The external Bazel issue is context only and was not measured with these commands."
@@ -1179,7 +1238,7 @@
     "target": "host-specific Apple M5 Max build",
     "training_dataset": "M",
     "training_input_bytes": 1118686233,
-    "training_source_revision": "2882b1f2ef784cfee4ca6f5482fc028ebe3137b8",
+    "training_source_revision": "33ced0b26adeffe47ed2d2041c8558a667566a51",
     "training_method": "One instrumented merge of generated Dataset M; LLVM profile reused for all listed lcovmerge workloads.",
     "instrumentation_flags": [
       "-O2",
@@ -1191,8 +1250,8 @@
       "-mcpu=native",
       "-fprofile-instr-use"
     ],
-    "profile_sha256": "69adeae7b6179cb5b9d1f88cd21e9a60a1b595d5e96fa17c250c7a781c4e9533",
-    "binary_sha256": "403994a28e278ceae3c758f671cbded02f89a56c0b684459784628a96c1eee5b",
+    "profile_sha256": "9af971605273ff8aa6a5af6784f6c1f891a5af8265aed8c59e43329b5043b709",
+    "binary_sha256": "5e4bafbc93335d4779ca84db3df45b17717dd078a740e59d11e42300cac74062",
     "release_build": "portable target builds; no host-specific PGO profile"
   }
 }

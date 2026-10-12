@@ -115,7 +115,7 @@ def check_featured_rendering(root, renderer):
             raise AssertionError(f"homepage prose did not render {code_markup} as code")
     if len(re.findall(r"<section\b", home)) > 4:
         raise AssertionError("landing page has more than four sections")
-    if "20.3 GB" not in home or "1m 21s" not in home:
+    if "20.3 GB" not in home or "1m 8.3s" not in home:
         raise AssertionError("homepage benchmark omitted readable input or elapsed units")
     if 'role="tablist"' in home:
         raise AssertionError("landing page should not add tabs")

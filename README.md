@@ -5,15 +5,15 @@ lcovmerge combines exported LCOV `.info` files into one for your existing report
 ## The benchmark
 
 <!-- README-BENCHMARK:START -->
-**Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-11. Builds: lcovmerge 1.0.2 (PGO) / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger timeout at 1h 15.8s.**
+**Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-12. Builds: lcovmerge 1.1.0 (PGO) / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger timeout at 1h 15.8s.**
 
 | Tool | Time | Peak resident memory | Runs / status |
 | --- | ---: | ---: | --- |
-| lcovmerge 1.0.2 (PGO) | 1m 21s | 6.38 MiB | 3 measured runs; median time · OK |
-| lcov 2.6 | 18m 0.6s | 2.85 GiB | 1 measured run · OK |
+| lcovmerge 1.1.0 (PGO) | 1m 8.3s | 6.33 MiB | 3 measured runs; median time · OK |
+| lcov 2.6 | 13m 47.6s | 2.69 GiB | 1 measured run · OK |
 | lcov-result-merger 6.0.0 | TIMEOUT · stopped after 1h 15.8s | 2.34 GiB peak sampled during run; full-run peak resident memory unavailable | Not measured · TIMEOUT |
 
-**13.3× faster than lcov 2.6; 458.4× less recorded peak resident memory than lcov 2.6.**
+**12.1× faster than lcov 2.6; 434.6× less recorded peak resident memory than lcov 2.6.**
 
 Dataset M-trained PGO; portable release binaries.
 

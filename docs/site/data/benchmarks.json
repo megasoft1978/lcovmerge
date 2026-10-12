@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
+  "version": "1.1.0",
   "machine": "Apple M5 Max",
-  "measured_on": "2026-10-11",
+  "measured_on": "2026-10-12",
   "repeat_counts": {
     "S": 5,
     "M": 5,
@@ -35,7 +35,7 @@
     "target": "host-specific Apple M5 Max build",
     "training_dataset": "M",
     "training_input_bytes": 1118686233,
-    "training_source_revision": "2882b1f2ef784cfee4ca6f5482fc028ebe3137b8",
+    "training_source_revision": "33ced0b26adeffe47ed2d2041c8558a667566a51",
     "training_method": "One instrumented merge of generated Dataset M; LLVM profile reused for all listed lcovmerge workloads.",
     "instrumentation_flags": [
       "-O2",
@@ -47,8 +47,8 @@
       "-mcpu=native",
       "-fprofile-instr-use"
     ],
-    "profile_sha256": "69adeae7b6179cb5b9d1f88cd21e9a60a1b595d5e96fa17c250c7a781c4e9533",
-    "binary_sha256": "403994a28e278ceae3c758f671cbded02f89a56c0b684459784628a96c1eee5b",
+    "profile_sha256": "9af971605273ff8aa6a5af6784f6c1f891a5af8265aed8c59e43329b5043b709",
+    "binary_sha256": "5e4bafbc93335d4779ca84db3df45b17717dd078a740e59d11e42300cac74062",
     "release_build": "portable target builds; no host-specific PGO profile"
   },
   "datasets": [
@@ -60,13 +60,13 @@
       "shards": "32 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 2.897713,
-          "seconds_display": "2.90 s",
-          "peak_rss_mib": 3.21875,
-          "rss_display": "3.22 MiB",
-          "throughput_mbs": 386.1,
-          "throughput_display": "386.1 MB/s",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 2.940169,
+          "seconds_display": "2.94 s",
+          "peak_rss_mib": 3.1875,
+          "rss_display": "3.19 MiB",
+          "throughput_mbs": 380.5,
+          "throughput_display": "380.5 MB/s",
           "status": "OK"
         },
         {
@@ -99,13 +99,13 @@
       "shards": "64 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 14.081418,
-          "seconds_display": "14.08 s",
-          "peak_rss_mib": 4.25,
-          "rss_display": "4.25 MiB",
-          "throughput_mbs": 344.7,
-          "throughput_display": "344.7 MB/s",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 14.008243,
+          "seconds_display": "14.01 s",
+          "peak_rss_mib": 4.203125,
+          "rss_display": "4.20 MiB",
+          "throughput_mbs": 346.5,
+          "throughput_display": "346.5 MB/s",
           "status": "OK"
         },
         {
@@ -138,13 +138,13 @@
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 1.136468,
-          "seconds_display": "1.14 s",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 1.17555,
+          "seconds_display": "1.18 s",
           "peak_rss_mib": 2.203125,
           "rss_display": "2.20 MiB",
-          "throughput_mbs": 655.5,
-          "throughput_display": "655.5 MB/s",
+          "throughput_mbs": 633.7,
+          "throughput_display": "633.7 MB/s",
           "status": "OK"
         },
         {
@@ -177,13 +177,13 @@
       "shards": "8 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 0.191332,
-          "seconds_display": "191 ms",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 0.196619,
+          "seconds_display": "197 ms",
           "peak_rss_mib": 2.484375,
           "rss_display": "2.48 MiB",
-          "throughput_mbs": 522.6,
-          "throughput_display": "522.6 MB/s",
+          "throughput_mbs": 508.6,
+          "throughput_display": "508.6 MB/s",
           "status": "OK"
         },
         {
@@ -216,13 +216,13 @@
       "shards": "1 file",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 2.712556,
-          "seconds_display": "2.71 s",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 2.755896,
+          "seconds_display": "2.76 s",
           "peak_rss_mib": 17.78125,
           "rss_display": "17.78 MiB",
-          "throughput_mbs": 47.9,
-          "throughput_display": "47.9 MB/s",
+          "throughput_mbs": 47.2,
+          "throughput_display": "47.2 MB/s",
           "status": "OK"
         },
         {
@@ -255,7 +255,7 @@
       "shards": "not supplied",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
+          "tool": "lcovmerge 1.1.0 (PGO)",
           "seconds": null,
           "seconds_display": "NOT MEASURED",
           "peak_rss_mib": null,
@@ -294,23 +294,23 @@
       "shards": "128 shards",
       "results": [
         {
-          "tool": "lcovmerge 1.0.2 (PGO)",
-          "seconds": 80.966641,
-          "seconds_display": "1m 21s",
-          "peak_rss_mib": 6.375,
-          "rss_display": "6.38 MiB",
-          "throughput_mbs": 250.4,
-          "throughput_display": "250.4 MB/s",
+          "tool": "lcovmerge 1.1.0 (PGO)",
+          "seconds": 68.269883,
+          "seconds_display": "1m 8.3s",
+          "peak_rss_mib": 6.328125,
+          "rss_display": "6.33 MiB",
+          "throughput_mbs": 297.0,
+          "throughput_display": "297.0 MB/s",
           "status": "OK"
         },
         {
           "tool": "lcov 2.6",
-          "seconds": 1080.631659,
-          "seconds_display": "18m 0.6s",
-          "peak_rss_mib": 2922.296875,
-          "rss_display": "2.85 GiB",
-          "throughput_mbs": 18.8,
-          "throughput_display": "18.8 MB/s",
+          "seconds": 827.629171,
+          "seconds_display": "13m 47.6s",
+          "peak_rss_mib": 2750.125,
+          "rss_display": "2.69 GiB",
+          "throughput_mbs": 24.5,
+          "throughput_display": "24.5 MB/s",
           "status": "OK"
         },
         {
