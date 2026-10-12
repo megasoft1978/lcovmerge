@@ -22,7 +22,7 @@ Add regression cases for parser or merge changes, including boundary and malform
 
 ## Agent Workflow & Workspace Boundaries
 
-- Follow the global model and effort policy in `~/.codex/AGENTS.md`; this repository does not pin a Codex model.
+- Use Anthropic models only (Opus to plan and review, Sonnet to implement, Haiku for mechanical runs); do not use OpenAI/Codex models for this repository.
 - Keep retained prompts, terminal logs, session markers, scratch files, generated inputs, and benchmark results under ignored repo-local `.cache/<run>/` directories. Never leave them beside the repository in its parent folder or on the Desktop.
 - Prefer scripts that clean temporary benchmark data automatically. If retaining their outputs for later comparison, place them under `.cache/` and preserve the source inputs and reports together.
 - The CLI's system temporary directory is an intentional default. For project runs that need retained temporary runs, pass `--tmpdir` under `.cache/`; remove those runs after the operation.
