@@ -103,7 +103,8 @@ def check_featured_rendering(root, renderer):
         raise AssertionError("stale generated landing-page benchmark section")
     if expected_home.count('class="home-stat"') != 2:
         raise AssertionError("featured benchmark should render two side-by-side statistics")
-    if "faster than lcov 2.6" not in expected_home or "less peak memory" not in expected_home:
+    if ("faster than lcov 2.6" not in expected_home or
+            "lower recorded peak memory" not in expected_home):
         raise AssertionError("featured benchmark statistics are missing their compact captions")
     if re.search(r"`(?:\.info|\.gcda|\.profraw|lcov -a)`", home):
         raise AssertionError("homepage prose contains literal Markdown backticks")

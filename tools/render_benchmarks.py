@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "data/benchmarks.json").read_text())
+REAL_PROJECTS = json.loads((ROOT / "data/real-projects.json").read_text())
 VERSION_MATCH = re.search(
     r'^#define LCOVMERGE_VERSION "([^"]+)"$',
     (ROOT / "include/version.h").read_text(),
@@ -427,29 +428,41 @@ def featured_metadata(source):
 def featured_readme():
     source = featured_dataset()
     labels = display_tool_labels()
-    keys = ("lcovmerge", "lcov", "lcov-result-merger")
-    rows = [
-        f'**{featured_metadata(source)}**',
-        "",
-        "| Tool | Time | Peak resident memory | Runs / status |",
-        "| --- | ---: | ---: | --- |",
-    ]
-    for key in keys:
-        result = source.get("results", {}).get(key, {})
-        rows.append(
-            f'| {labels[key]} | {result_elapsed(result)} | {featured_memory(key, result)} | '
-            f'{measurement_note(source, key, result)} · {result.get("status", "Not reported")} |'
-        )
-    for key in ("lcov", "lcov-result-merger"):
-        copy = ratio_copy(source, key)
-        if copy:
-            rows.extend(["", f"**{copy}**"])
+    results = source.get("results", {})
+    merge = results.get("lcovmerge", {})
+    lcov = results.get("lcov", {})
+    merger = results.get("lcov-result-merger", {})
+    rows = [f'**{featured_metadata(source)}**', ""]
+    rows.append(
+        f'{labels["lcovmerge"]}: {result_elapsed(merge)} / '
+        f'{featured_memory("lcovmerge", merge)} peak resident memory '
+        f'({measurement_note(source, "lcovmerge", merge)}); '
+        f'{labels["lcov"]}: {result_elapsed(lcov)} / '
+        f'{featured_memory("lcov", lcov)} peak resident memory '
+        f'({measurement_note(source, "lcov", lcov)}).'
+    )
+    if merger:
+        if merger.get("status") == "TIMEOUT":
+            rows.append(
+                f'{labels["lcov-result-merger"]}: timed out after '
+                f'{seconds_display(merger["time_s"])}; '
+                f'{featured_memory("lcov-result-merger", merger)}. '
+                'No measured run completed.'
+            )
+        else:
+            rows.append(
+                f'{labels["lcov-result-merger"]}: {result_elapsed(merger)} / '
+                f'{featured_memory("lcov-result-merger", merger)} peak resident memory '
+                f'({measurement_note(source, "lcov-result-merger", merger)}).'
+            )
     if default_build_note():
         rows.extend(["", default_build_note()])
     rows.extend([
         "",
-        "Input sizes and durations are rounded for readability; exact measurements are in the "
-        "[published benchmark record](data/benchmarks.json).",
+        "Generated input measured on one host; this is not an estimate for every workload.",
+        project_derived_readme(),
+        "Rounded figures; see the [full benchmark record](data/benchmarks.json) for methods, "
+        "run statuses, and exact measurements.",
     ])
     return "\n".join(rows)
 
@@ -477,13 +490,13 @@ def featured_site():
         if lcov_mem_ratio is not None:
             headline_html += (
                 f'<span class="home-stat"><strong>{lcov_mem_ratio:,.1f}×</strong>'
-                '<small>less peak memory</small></span>'
+                '<small>lower recorded peak memory</small></span>'
             )
         headline_html += '</h2>'
     else:
         headline_html = '<h2 id="home-title">Benchmark ratio unavailable.</h2>'
 
-    chart_items = ['<p class="bar-caption">Time · peak resident memory</p>']
+    chart_items = []
     for key in keys:
         result = results.get(key, {})
         status = result.get("status", "Not reported")
@@ -530,13 +543,46 @@ def featured_site():
         headline_html,
         f'<p class="featured-meta">{input_size_display(source["input_bytes"])} input · '
         f'{html.escape(str(source.get("shards", "shard count not reported")))}</p>',
-        f'<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown">{"".join(chart_items)}</ul>',
+        '<p class="bar-caption">Time · peak resident memory</p>',
+        f'<ul class="home-bars" aria-label="Elapsed time; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
-        f'<p class="generated-note">Generated; <span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
-        f'{html.escape(default_build_note())} '
-        f'Release v{html.escape(VERSION_MATCH.group(1))}.</p>',
+        f'<p class="generated-note">Generated; '
+        f'<span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
+        f'One host. {html.escape(default_build_note())} v{html.escape(VERSION_MATCH.group(1))}.</p>',
+        f'<p class="project-check-note">{html.escape(project_derived_site_copy())} '
+        '<a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">'
+        'Full project results ↗</a></p>',
         '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
     ])
+
+
+def project_derived_copy():
+    """Summarize the separate public-project run without mixing it into generated results."""
+    projects = REAL_PROJECTS["projects"]
+    composite = next(item for item in projects if item["project"] == "REAL composite")
+    project_count = len(projects) - 1
+    merge = composite["lcovmerge"]
+    lcov = composite["lcov"]
+    return (
+        f"Public-project check: {project_count} pinned projects, {composite['shards']} LCOV shards, "
+        f"{composite['input_mb']:.1f} MB composite. lcovmerge {merge['wall_seconds']:.3f} s / "
+        f"{merge['peak_rss_mib']:.2f} MiB; lcov 2.6: {lcov['wall_seconds']:.3f} s / "
+        f"{lcov['peak_rss_mib']:.2f} MiB. One host; small input, not a production forecast."
+    )
+
+
+def project_derived_readme():
+    """Keep the README claim in sync with the project-validation record."""
+    return project_derived_copy() + " See [the full project results](docs/validation/real-projects.md)."
+
+
+def project_derived_site_copy():
+    projects = REAL_PROJECTS["projects"]
+    composite = next(item for item in projects if item["project"] == "REAL composite")
+    return (
+        f"{len(projects) - 1} public projects · {composite['shards']} shards · "
+        f"{composite['input_mb']:.1f} MB; one host, not a forecast."
+    )
 
 
 def seconds_display(value):
@@ -784,8 +830,10 @@ def site_benchmark_scope():
         f'{html.escape(labels["lcov"])} and '
         f'{html.escape(labels["lcov-result-merger"])}. '
         f'The release is v{html.escape(VERSION_MATCH.group(1))}. Generated measurements do not establish a universal speedup '
-        'or output compatibility. The REAL dataset was not measured because no project-derived '
-        f'capture was supplied.{html.escape(windows_note)}</p>'
+        'or output compatibility. The generated benchmark matrix REAL row remains unmeasured; '
+        'separate public-project results are summarized on the <a href="https://github.com/'
+        'megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">validation page</a>.'
+        f'{html.escape(windows_note)}</p>'
     )
 
 

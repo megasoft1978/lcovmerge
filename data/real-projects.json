@@ -9,7 +9,7 @@
       "lcovmerge_comparison": "PASS with LCOV consistency override",
       "project": "libpng",
       "repro_status": "PASS",
-      "synthetic_repro": "generated transiently under .luna-tmp and removed after validation"
+      "synthetic_repro": "generated transiently under .cache/real-projects-run and removed after validation"
     },
     {
       "capture": "FAILED: no .gcda files found in the configured CMake build directory",
@@ -29,10 +29,10 @@
     "gcc_command": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
     "genhtml": "genhtml: LCOV version 2.6-0",
     "lcov": "lcov: LCOV version 2.6-0",
-    "os": "macOS 27.0"
+    "os": "macOS 27.0.1"
   },
-  "measurement_date": "2026-10-09",
-  "measurement_method": "time.perf_counter and isolated resource.getrusage(RUSAGE_CHILDREN); /usr/bin/time -l blocked: sysctl kern.clockrate access denied",
+  "measurement_date": "2026-10-13",
+  "measurement_method": "time.perf_counter and isolated resource.getrusage(RUSAGE_CHILDREN); /usr/bin/time -l available",
   "method_notes": [
     "Lua used documented _port=true mode, which skips upstream nonportable tests.",
     "Projects use the capture_runs count pinned in the manifest; SQLite's full test suite was captured once because one run took several minutes.",
@@ -51,20 +51,20 @@
       "genhtml": "PASS",
       "input_mb": 0.18,
       "lcov": {
-        "peak_rss_mib": 42.42,
-        "wall_seconds": 0.108
+        "peak_rss_mib": 42.34,
+        "wall_seconds": 0.122
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.08,
-        "wall_seconds": 0.005
+        "peak_rss_mib": 3.98,
+        "wall_seconds": 0.008
       },
       "lcovmerge_output_mb": 0.091,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.31,
-        "wall_seconds": 0.065
+        "peak_rss_mib": 4.14,
+        "wall_seconds": 0.077
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -78,22 +78,22 @@
       "commit_date": "2024-06-13",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.579,
+      "input_mb": 0.578,
       "lcov": {
-        "peak_rss_mib": 46.78,
-        "wall_seconds": 0.173
+        "peak_rss_mib": 46.97,
+        "wall_seconds": 0.21
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 6.77,
-        "wall_seconds": 0.008
+        "peak_rss_mib": 6.75,
+        "wall_seconds": 0.01
       },
-      "lcovmerge_output_mb": 0.293,
+      "lcovmerge_output_mb": 0.292,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 4.67,
-        "wall_seconds": 0.192
+        "peak_rss_mib": 5.09,
+        "wall_seconds": 0.193
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -107,22 +107,22 @@
       "commit_date": "2024-05-13",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.203,
+      "input_mb": 0.202,
       "lcov": {
-        "peak_rss_mib": 42.83,
-        "wall_seconds": 0.116
+        "peak_rss_mib": 42.8,
+        "wall_seconds": 0.138
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.22,
-        "wall_seconds": 0.004
+        "peak_rss_mib": 3.92,
+        "wall_seconds": 0.006
       },
-      "lcovmerge_output_mb": 0.103,
+      "lcovmerge_output_mb": 0.102,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.41,
-        "wall_seconds": 0.069
+        "peak_rss_mib": 3.88,
+        "wall_seconds": 0.08
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -136,22 +136,22 @@
       "commit_date": "2024-09-15",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.21,
+      "input_mb": 0.208,
       "lcov": {
-        "peak_rss_mib": 42.95,
-        "wall_seconds": 0.116
+        "peak_rss_mib": 42.81,
+        "wall_seconds": 0.147
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.28,
-        "wall_seconds": 0.005
+        "peak_rss_mib": 4.23,
+        "wall_seconds": 0.007
       },
       "lcovmerge_output_mb": 0.106,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.44,
-        "wall_seconds": 0.075
+        "peak_rss_mib": 4.39,
+        "wall_seconds": 0.081
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -165,22 +165,22 @@
       "commit_date": "2020-06-01",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 0.051,
+      "input_mb": 0.05,
       "lcov": {
-        "peak_rss_mib": 40.88,
-        "wall_seconds": 0.093
+        "peak_rss_mib": 40.8,
+        "wall_seconds": 0.113
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 2.86,
-        "wall_seconds": 0.003
+        "peak_rss_mib": 2.7,
+        "wall_seconds": 0.005
       },
       "lcovmerge_output_mb": 0.025,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 2.8,
-        "wall_seconds": 0.022
+        "peak_rss_mib": 3.84,
+        "wall_seconds": 0.03
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -196,20 +196,20 @@
       "genhtml": "PASS",
       "input_mb": 0.281,
       "lcov": {
-        "peak_rss_mib": 43.73,
-        "wall_seconds": 0.129
+        "peak_rss_mib": 43.92,
+        "wall_seconds": 0.155
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 4.47,
-        "wall_seconds": 0.005
+        "peak_rss_mib": 4.38,
+        "wall_seconds": 0.006
       },
       "lcovmerge_output_mb": 0.141,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 3.55,
-        "wall_seconds": 0.08
+        "peak_rss_mib": 4.23,
+        "wall_seconds": 0.09
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -223,22 +223,22 @@
       "commit_date": "2025-07-30",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 6.091,
+      "input_mb": 6.089,
       "lcov": {
-        "peak_rss_mib": 90.41,
-        "wall_seconds": 0.898
+        "peak_rss_mib": 90.08,
+        "wall_seconds": 1.032
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 16.38,
-        "wall_seconds": 0.07
+        "peak_rss_mib": 16.02,
+        "wall_seconds": 0.074
       },
-      "lcovmerge_output_mb": 6.092,
+      "lcovmerge_output_mb": 6.09,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 6.33,
-        "wall_seconds": 3.443
+        "peak_rss_mib": 6.67,
+        "wall_seconds": 3.754
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -252,22 +252,22 @@
       "commit_date": "2025-06-01",
       "external_sort_order_jobs": "PASS",
       "genhtml": "PASS",
-      "input_mb": 3.631,
+      "input_mb": 3.608,
       "lcov": {
-        "peak_rss_mib": 78.28,
-        "wall_seconds": 0.58
+        "peak_rss_mib": 77.62,
+        "wall_seconds": 0.693
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 16.83,
-        "wall_seconds": 0.036
+        "peak_rss_mib": 16.31,
+        "wall_seconds": 0.041
       },
-      "lcovmerge_output_mb": 1.839,
+      "lcovmerge_output_mb": 1.825,
       "mem_limit_8m": "PASS",
       "mem_limit_8m_input_shards": 34,
       "mem_limit_8m_measurement": {
-        "peak_rss_mib": 5.72,
-        "wall_seconds": 1.385
+        "peak_rss_mib": 6.2,
+        "wall_seconds": 1.312
       },
       "order_jobs_determinism": "PASS",
       "path_rewrite_checks": "PASS",
@@ -280,17 +280,17 @@
       "commit": "8 pinned commits",
       "commit_date": null,
       "genhtml": "PASS",
-      "input_mb": 11.225,
+      "input_mb": 11.196,
       "lcov": {
-        "peak_rss_mib": 139.55,
-        "wall_seconds": 1.635
+        "peak_rss_mib": 140.27,
+        "wall_seconds": 2.043
       },
       "lcov_comparison": "PASS",
       "lcovmerge": {
-        "peak_rss_mib": 20.11,
-        "wall_seconds": 0.078
+        "peak_rss_mib": 15.94,
+        "wall_seconds": 0.085
       },
-      "lcovmerge_output_mb": 8.69,
+      "lcovmerge_output_mb": 8.671,
       "mem_limit_8m": "per-project runs PASS",
       "mem_limit_8m_input_shards": 0,
       "mem_limit_8m_measurement": null,
@@ -305,26 +305,26 @@
   "real_derived_scaled": {
     "external_sort": "PASS (8 MiB, --jobs 1, more than 32 inputs)",
     "genhtml": "not run for synthetic SF prefixes; actual REAL composite was checked",
-    "input_bytes": 55482820,
+    "input_bytes": 55483440,
     "label": "REAL-DERIVED SCALED",
     "lcov": {
-      "peak_rss_mib": 454.27,
-      "wall_seconds": 8.091
+      "peak_rss_mib": 454.72,
+      "wall_seconds": 9.074
     },
     "lcov_comparison": "PASS",
-    "lcov_throughput_mb_s": 6.9,
+    "lcov_throughput_mb_s": 6.1,
     "lcovmerge": {
-      "peak_rss_mib": 19.42,
-      "wall_seconds": 0.433
+      "peak_rss_mib": 19.19,
+      "wall_seconds": 0.449
     },
-    "lcovmerge_throughput_mb_s": 128.2,
+    "lcovmerge_throughput_mb_s": 123.6,
     "order_jobs_determinism": "PASS",
-    "output_bytes": 43109245,
+    "output_bytes": 43091840,
     "prefix_count": 5,
     "scaled": true,
     "scaling_reason": "real captures were below 50 MB; re-rooted copies raise the measured input size",
     "shards": 75,
-    "source_real_input_bytes": 11225342,
+    "source_real_input_bytes": 11196263,
     "source_real_shards": 15
   },
   "schema_version": 1,

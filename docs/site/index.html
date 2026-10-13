@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f2e9">
-  <meta name="description" content="Combine exported LCOV .info coverage files into one file for your existing report or upload step.">
+  <meta name="description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a C11 CLI, GitHub Action, and measured workload results.">
   <meta name="robots" content="index,follow">
-  <title>lcovmerge — one LCOV file after parallel tests</title>
+  <title>LCOV file merger for parallel CI tests | lcovmerge</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="site.css?v=readable-benchmarks-1">
   <script src="site.js" defer></script>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
-  <meta property="og:title" content="lcovmerge — one LCOV file after parallel tests">
-  <meta property="og:description" content="Combine exported LCOV .info coverage files into one file for your existing report or upload step.">
+  <meta property="og:title" content="LCOV file merger for parallel CI tests | lcovmerge">
+  <meta property="og:description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a C11 CLI, GitHub Action, and measured workload results.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
   <meta property="og:image:alt" content="lcovmerge combines exported LCOV files">
@@ -28,56 +28,63 @@
         <span class="brand-mark" aria-hidden="true">LC</span><span class="brand-word">lcov<span>merge</span></span>
       </a>
       <nav class="main-nav" aria-label="Main navigation">
-        <a href="#install">Get started</a>
+        <a href="#fit">Fit</a>
+        <a href="#install">Start</a>
         <a href="benchmarks.html">Benchmarks</a>
-        <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/README.md">Docs</a>
+        <a href="docs.html">Usage</a>
         <a class="nav-github" href="https://github.com/megasoft1978/lcovmerge">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
   </header>
 
   <main id="main" class="home-main">
-    <section class="home-hero" aria-labelledby="hero-title">
+    <header class="home-hero" aria-labelledby="hero-title">
       <div class="shell">
         <p class="eyebrow"><span class="signal-dot" aria-hidden="true"></span> For parallel test suites</p>
         <div class="home-story">
           <div class="home-story-copy">
-            <p class="home-kicker">One report. All your shards.</p>
             <h1 id="hero-title">Many shards.<br><em>One report.</em></h1>
-            <p class="home-intro">Merge exported LCOV <code>.info</code> shards into one handoff when merging costs CI time or memory. Keep your report and upload steps.</p>
-            <div class="home-actions"><a class="home-primary" href="#install">Get lcovmerge <span aria-hidden="true">↓</span></a><a class="home-secondary" href="benchmarks.html">See how it performs <span aria-hidden="true">↗</span></a></div>
+            <p class="home-intro">Join exported LCOV <code>.info</code> shards when a local report needs one file.</p>
+            <div class="home-actions"><a class="home-primary" href="#fit">Check fit <span aria-hidden="true">↓</span></a><a class="home-secondary" href="docs.html#github-actions">Use the GitHub Action <span aria-hidden="true">↗</span></a></div>
           </div>
           <div class="shard-art" role="img" aria-label="Several LCOV shard files flow into one merged coverage report">
-            <div class="shard-stack" aria-hidden="true"><span>shard-01.info</span><span>shard-02.info</span><span>shard-03.info</span><span class="shard-more">+ 125 more</span></div>
+            <div class="shard-stack" aria-hidden="true"><span>01</span><span>02</span><span>03</span><span class="shard-more">+ 125</span></div>
             <div class="shard-connector" aria-hidden="true"><i></i><i></i><i></i><i></i><b>merge</b><i></i></div>
             <div class="report-sheet" aria-hidden="true"><span class="report-mark">LC</span><strong>coverage.info</strong><small>one report-ready file</small><div class="report-lines"><i></i><i></i><i></i><i></i><i></i></div><span class="report-check">✓</span></div>
-            <p class="art-caption">128 shards in <span>→</span> one report-ready file out</p>
+            <p class="art-caption">128 shards <span>→</span> one report</p>
           </div>
         </div>
-        <div class="featured-benchmark" role="group" aria-label="Featured benchmark">
-          <!-- HOME-BENCHMARK:START -->
-<h2 id="home-title" class="home-stats"><span class="home-stat"><strong>12.1×</strong><small>faster than lcov 2.6</small></span><span class="home-stat"><strong>434.6×</strong><small>less peak memory</small></span></h2>
-<p class="featured-meta">20.3 GB input · 128 shards</p>
-<ul class="home-bars" aria-label="Elapsed time on a zero-based scale; peak resident memory values are shown"><p class="bar-caption">Time · peak resident memory</p><li class="home-bar lcovmerge"><div class="home-bar-label"><span>lcovmerge 1.1.0 (PGO)</span><strong>1m 8.3s · 6.33 MiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:8.249%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov"><div class="home-bar-label"><span>lcov 2.6</span><strong>13m 47.6s · 2.69 GiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov-result-merger"><div class="home-bar-label"><span>lcov-result-merger 6.0.0</span><strong>TIMEOUT · stopped after 1h 15.8s · 2.34 GiB sampled</strong></div><div class="bar-track" aria-hidden="true"></div><span class="home-bar-status">TIMEOUT</span></li></ul>
-<div class="bar-axis" role="img" aria-label="Elapsed-time scale from 0 to 13m 47.6s"><span>0 s</span><span>6m 53.8s</span><span>13m 47.6s</span></div>
-<p class="generated-note">Generated; <span class="generated-prefix">normalized outputs matched</span>. Dataset M-trained PGO; portable release binaries. Release v1.1.0.</p>
-<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>
-<!-- HOME-BENCHMARK:END -->
+      </div>
+    </header>
+
+    <section class="fit-section" id="fit" aria-labelledby="fit-title">
+      <div class="shell">
+        <p class="eyebrow">A quick decision</p>
+        <h2 id="fit-title">Do you need a local merge?</h2>
+        <div class="fit-grid">
+          <article class="fit-card fit-card-yes">
+            <h3>Use it when</h3>
+            <p>Separate jobs leave LCOV shards, one local file is required, and merging costs time.</p>
+          </article>
+          <article class="fit-card">
+            <h3>Keep your path when</h3>
+            <p>Your service accepts shards, native merging fits, or <code>lcov -a</code> is fast enough.</p>
+          </article>
         </div>
+        <p class="fit-links"><a href="docs.html#workflow-fit">Compare workflow options ↗</a> · <a href="docs.html#compatibility">Compare before switching ↗</a></p>
       </div>
     </section>
 
     <section class="home-start" id="install" aria-labelledby="start-title">
       <div class="shell">
-        <h2 id="start-title">A small step in your pipeline</h2>
-        <p class="start-lede">Merge once, then carry on with the report command you already use.</p>
+        <h2 id="start-title">Add it to your pipeline</h2>
         <div class="home-columns">
           <div>
             <h3><span class="step-number">01</span> Install · Linux x86-64</h3>
             <pre class="code-block" data-copy-label="Copy install and checksum commands"><code>set -eu
 asset=lcovmerge-1.1.0-linux-x86_64.tar.gz; base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0; curl -fL "$base/$asset" -o "$asset"; curl -fL "$base/SHA256SUMS" -o SHA256SUMS
 awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS &gt; "$asset.sha256" &amp;&amp; sha256sum -c "$asset.sha256" &amp;&amp; tar -xzf "$asset"</code></pre>
-            <p class="home-note">Other OS: <a href="https://github.com/megasoft1978/lcovmerge/releases">releases and checksums</a>.</p>
+            <p class="home-note"><a href="https://github.com/megasoft1978/lcovmerge/releases">Other releases and checksums</a>.</p>
           </div>
           <div>
             <h3><span class="step-number">02</span> Merge, then report</h3>
@@ -86,6 +93,34 @@ lcovmerge coverage/shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html</code></pre>
           </div>
         </div>
+        <div class="home-action-guide">
+          <h3>GitHub Actions</h3>
+          <p>Merge downloaded LCOV shards in your final job.</p>
+          <pre class="code-block" data-copy-label="Copy GitHub Action step"><code>- name: Merge LCOV shards
+  uses: megasoft1978/lcovmerge@v1.1.0
+  with:
+    files: coverage/shards/*.info
+    output: coverage/merged.info</code></pre>
+          <p class="fit-links"><a href="docs.html#github-actions">Read the complete Action recipe ↗</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="benchmark-section" aria-labelledby="benchmark-heading">
+      <div class="shell">
+        <h2 id="benchmark-heading" class="sr-only">Generated workload benchmark</h2>
+        <div class="featured-benchmark" role="group" aria-label="Generated workload benchmark">
+          <!-- HOME-BENCHMARK:START -->
+<h2 id="home-title" class="home-stats"><span class="home-stat"><strong>12.1×</strong><small>faster than lcov 2.6</small></span><span class="home-stat"><strong>434.6×</strong><small>lower recorded peak memory</small></span></h2>
+<p class="featured-meta">20.3 GB input · 128 shards</p>
+<p class="bar-caption">Time · peak resident memory</p>
+<ul class="home-bars" aria-label="Elapsed time; peak resident memory values are shown"><li class="home-bar lcovmerge"><div class="home-bar-label"><span>lcovmerge 1.1.0 (PGO)</span><strong>1m 8.3s · 6.33 MiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:8.249%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov"><div class="home-bar-label"><span>lcov 2.6</span><strong>13m 47.6s · 2.69 GiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov-result-merger"><div class="home-bar-label"><span>lcov-result-merger 6.0.0</span><strong>TIMEOUT · stopped after 1h 15.8s · 2.34 GiB sampled</strong></div><div class="bar-track" aria-hidden="true"></div><span class="home-bar-status">TIMEOUT</span></li></ul>
+<div class="bar-axis" role="img" aria-label="Elapsed-time scale from 0 to 13m 47.6s"><span>0 s</span><span>6m 53.8s</span><span>13m 47.6s</span></div>
+<p class="generated-note">Generated; <span class="generated-prefix">normalized outputs matched</span>. One host. Dataset M-trained PGO; portable release binaries. v1.1.0.</p>
+<p class="project-check-note">8 public projects · 15 shards · 11.2 MB; one host, not a forecast. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">Full project results ↗</a></p>
+<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>
+<!-- HOME-BENCHMARK:END -->
+        </div>
       </div>
     </section>
 
@@ -93,20 +128,12 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
       <div class="shell home-columns">
         <div>
           <h2 id="limits-title">Built for this handoff</h2>
-          <ul>
-            <li>Your test jobs produce separate LCOV files.</li>
-            <li>Your report tool expects one combined file.</li>
-            <li>You want to keep the rest of your pipeline.</li>
-          </ul>
+          <p>Exported LCOV shards · one local file · measurable merge cost.</p>
         </div>
         <div>
-          <h2>Know the edges</h2>
-          <ul>
-            <li>Input must already be LCOV; raw <code>.gcda</code> and <code>.profraw</code> are not collected. <code>lcov -a</code> may already be fast enough.</li>
-            <li>It does not create reports. It is not a drop-in for <code>lcov -a</code>; compare records and reports before switching.</li>
-            <li><code>--mem-limit</code> bounds record memory during sorting; process memory can be higher and temporary disk is required.</li>
-          </ul>
-          <p class="home-doc-links"><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/README.md">Full documentation ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">All limits ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Real-workload results ↗</a></p>
+          <h2>Limits</h2>
+          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Records can differ from <code>lcov -a</code>.</p>
+          <p class="home-doc-links"><a href="docs.html">Usage and workflow guide ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Share a safe workload measurement ↗</a></p>
         </div>
       </div>
     </section>

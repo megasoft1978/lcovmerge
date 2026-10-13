@@ -2,9 +2,11 @@
 
 lcovmerge reads existing LCOV `.info` files. Run it after test jobs have exported coverage; it does not collect raw coverage or generate reports. Export each shard to a distinct file.
 
+Check whether a local merge is needed before choosing a recipe: see [the workflow decision guide](DECISION.md) for service-side aggregation and native profile merge options.
+
 ## GitHub Actions
 
-This is the canonical complete matrix workflow, mirrored in [README](../README.md#github-actions-matrix). Replace the example test patterns and test command with your project's. Each matrix job must upload one uniquely named artifact containing the `.info` file at the path shown.
+This is the canonical complete matrix workflow, linked from the [site's workflow fit guide](site/docs.html#workflow-fit). Replace the example test patterns and test command with your project's. Each matrix job must upload one uniquely named artifact containing the `.info` file at the path shown.
 
 ```yaml
 name: coverage

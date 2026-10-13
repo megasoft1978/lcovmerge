@@ -690,7 +690,7 @@
   },
   "caveats": [
     "Measurements cover one macOS 27 arm64 Apple M5 Max host; results are not a cross-platform claim.",
-    "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived capture was available.",
+    "S, M, L, XL-single, and PATH-HEAVY are generated fixtures. The generated benchmark matrix REAL row remains unmeasured; separate public-project captures and comparisons are recorded in docs/validation/real-projects.md.",
     "All displayed lcovmerge measurements use a Dataset M-trained Apple Clang profile-guided host build. Release binaries remain portable target builds; this is not a cross-platform speed claim.",
     "lcovmerge timing uses one hyperfine warmup and five measured runs for S, M, L, XL-single, and PATH-HEAVY; XXL uses one warmup and three measured runs. Cache warmups were used, but no explicit cache flush was applied.",
     "lcov 2.6 ran once on the XXL input on 2026-10-12 and completed in 827.629 s; the 2026-10-11 run recorded 1080.632 s on the same host with machine load uncontrolled. Its S, M, L, XL-single, and PATH-HEAVY values are earlier recorded measurements that were not rerun; the PATH-HEAVY run exited with status 1 after 98.805 s, so no valid speedup or current-run peak resident memory is reported for that failure.",

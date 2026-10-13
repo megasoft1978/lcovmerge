@@ -4,21 +4,21 @@
 
 | Host | Compiler | `gcc` command | Coverage flags | lcov | genhtml | Measurement |
 | --- | --- | --- | --- | --- | --- | --- |
-| macOS 27.0 arm64 | Apple clang version 21.0.0 (clang-2100.3.34.2) | Apple clang version 21.0.0 (clang-2100.3.34.2) | `--coverage` | lcov: LCOV version 2.6-0 | genhtml: LCOV version 2.6-0 | `time.perf_counter and isolated resource.getrusage(RUSAGE_CHILDREN); /usr/bin/time -l blocked: sysctl kern.clockrate access denied` |
+| macOS 27.0.1 arm64 | Apple clang version 21.0.0 (clang-2100.3.34.2) | Apple clang version 21.0.0 (clang-2100.3.34.2) | `--coverage` | lcov: LCOV version 2.6-0 | genhtml: LCOV version 2.6-0 | `time.perf_counter and isolated resource.getrusage(RUSAGE_CHILDREN); /usr/bin/time -l available` |
 
 ## Results
 
 | Project | Tag | Commit | Shards | Input MB | Output MB | lcovmerge seconds / peak RSS MiB | lcov seconds / peak RSS MiB | lcov verdict | Tests | genhtml | Order / -j | Rewrites | 8 MiB sort |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |
-| zlib | — | 51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf | 2 | 0.180 | 0.091 | 0.005 / 4.08 | 0.108 / 42.42 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
-| lua | — | 1ab3208a1fceb12fca8f24ba57d6e13c5bff15e3 | 2 | 0.579 | 0.293 | 0.008 / 6.77 | 0.173 / 46.78 | PASS | PASS x2 (portable mode; upstream skips nonportable tests) | PASS | PASS | PASS | PASS |
-| cjson | — | acc76239bee01d8e9c858ae2cab296704e52d916 | 2 | 0.203 | 0.103 | 0.004 / 4.22 | 0.116 / 42.83 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
-| json-c | — | 41a55cfcedb54d9c1874f2f0eb07b504091d7e37 | 2 | 0.210 | 0.106 | 0.005 / 4.28 | 0.116 / 42.95 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
-| libyaml | — | 2c891fc7a770e8ba2fec34fc6b545c672beb37e6 | 2 | 0.051 | 0.025 | 0.003 / 2.86 | 0.093 / 40.88 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
-| tinyxml2 | — | 9148bdf719e997d1f474be6bcc7943881046dba1 | 2 | 0.281 | 0.141 | 0.005 / 4.47 | 0.129 / 43.73 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
-| sqlite | version-3.50.4 | 8ed5e7365e6f12f427910188bbf6b254daad2ef6 | 1 | 6.091 | 6.092 | 0.070 / 16.38 | 0.898 / 90.41 | PASS | PASS x1 | PASS | PASS | PASS | PASS |
-| libarchive | v3.8.1 | 9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf | 2 | 3.631 | 1.839 | 0.036 / 16.83 | 0.580 / 78.28 | PASS | PASS x2; 2 known platform/toolchain tests excluded | PASS | PASS | PASS | PASS |
-| REAL composite | — | 8 pinned commits | 15 | 11.225 | 8.690 | 0.078 / 20.11 | 1.635 / 139.55 | PASS | PASS | PASS | PASS | n/a | per-project runs PASS |
+| zlib | — | 51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf | 2 | 0.180 | 0.091 | 0.008 / 3.98 | 0.122 / 42.34 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
+| lua | — | 1ab3208a1fceb12fca8f24ba57d6e13c5bff15e3 | 2 | 0.578 | 0.292 | 0.010 / 6.75 | 0.210 / 46.97 | PASS | PASS x2 (portable mode; upstream skips nonportable tests) | PASS | PASS | PASS | PASS |
+| cjson | — | acc76239bee01d8e9c858ae2cab296704e52d916 | 2 | 0.202 | 0.102 | 0.006 / 3.92 | 0.138 / 42.8 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
+| json-c | — | 41a55cfcedb54d9c1874f2f0eb07b504091d7e37 | 2 | 0.208 | 0.106 | 0.007 / 4.23 | 0.147 / 42.81 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
+| libyaml | — | 2c891fc7a770e8ba2fec34fc6b545c672beb37e6 | 2 | 0.050 | 0.025 | 0.005 / 2.7 | 0.113 / 40.8 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
+| tinyxml2 | — | 9148bdf719e997d1f474be6bcc7943881046dba1 | 2 | 0.281 | 0.141 | 0.006 / 4.38 | 0.155 / 43.92 | PASS | PASS x2 | PASS | PASS | PASS | PASS |
+| sqlite | version-3.50.4 | 8ed5e7365e6f12f427910188bbf6b254daad2ef6 | 1 | 6.089 | 6.090 | 0.074 / 16.02 | 1.032 / 90.08 | PASS | PASS x1 | PASS | PASS | PASS | PASS |
+| libarchive | v3.8.1 | 9525f90ca4bd14c7b335e2f8c84a4607b0af6bdf | 2 | 3.608 | 1.825 | 0.041 / 16.31 | 0.693 / 77.62 | PASS | PASS x2; 2 known platform/toolchain tests excluded | PASS | PASS | PASS | PASS |
+| REAL composite | — | 8 pinned commits | 15 | 11.196 | 8.671 | 0.085 / 15.94 | 2.043 / 140.27 | PASS | PASS | PASS | PASS | n/a | per-project runs PASS |
 
 ## Capture notices
 
@@ -33,9 +33,8 @@
 | Additional non-fatal LCOV capture warnings occurred. |
 | `gcc` reports Apple Clang too; a distinct GNU compiler comparison was unavailable on this host. |
 | Lua ran with its documented `_port=true` mode; its upstream suite skips nonportable tests in this mode. |
-| Projects used the capture counts recorded in the manifest; SQLite used one full-suite capture because its run took several minutes. External-sort checks used 34 inputs (above the 32-input direct-path limit), comparing 8 MiB -j1 with LCOV and reverse-order / 32 MiB -j4 outputs bytewise. |
-| The separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; its synthetic reproducer was generated under .luna-tmp and removed after validation. |
-| `/usr/bin/time -l` was blocked reading kern.clockrate; elapsed time and peak RSS came from an isolated Python resource sampler. |
+| Each project used two independent full-suite captures; external-sort checks used 34 inputs (above the 32-input direct-path limit), comparing 8 MiB -j1 with LCOV and reverse-order / 32 MiB -j4 outputs bytewise. |
+| The separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; its synthetic reproducer was generated under .cache/real-projects-run and removed after validation. |
 
 ## Comparison
 
@@ -45,11 +44,11 @@
 
 ## Real-derived workload
 
-The captured real shard set totals 11,225,342 bytes. Scaling note: real captures were below 50 MB; re-rooted copies raise the measured input size. The measured set uses captured shards re-rooted under distinct `/real-scaled/` prefixes when expansion was required; this is synthetic scaling and is not presented as real project input.
+The captured real shard set totals 11,196,263 bytes. Scaling note: real captures were below 50 MB; re-rooted copies raise the measured input size. The measured set uses captured shards re-rooted under distinct `/real-scaled/` prefixes when expansion was required; this is synthetic scaling and is not presented as real project input.
 
 | Label | Source bytes | Measured bytes | Prefixes | Shards | lcovmerge s / MiB RSS / MB/s | lcov s / MiB RSS / MB/s | Correctness | External sort | Order / -j |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| REAL-DERIVED SCALED | 11,225,342 | 55,482,820 | 5 | 75 | 0.433 / 19.42 / 128.2 | 8.091 / 454.27 / 6.9 | PASS | PASS (8 MiB, --jobs 1, more than 32 inputs) | PASS |
+| REAL-DERIVED SCALED | 11,196,263 | 55,483,440 | 5 | 75 | 0.449 / 19.19 / 123.6 | 9.074 / 454.72 / 6.1 | PASS | PASS (8 MiB, --jobs 1, more than 32 inputs) | PASS |
 
 Output record presentation order may differ from LCOV by design, as described in `docs/LIMITATIONS.md`. Comparisons normalize SF paths and compare keyed DA, FN, FNDA, and BRDA records and counts.
 
@@ -61,9 +60,9 @@ On this Apple gcov and LCOV toolchain, genhtml rejects the trace because line 1 
 From the repository root, recreate the source and trace under scratch and run genhtml:
 
 ```sh
-mkdir -p .luna-tmp/branch-repro/src
-printf '%s\n' 'int branch(int x) { if (x) return 1; return 0; }' > .luna-tmp/branch-repro/src/branch.c
-cat > .luna-tmp/branch-repro/input.info <<'EOF'
+mkdir -p .cache/real-projects-run/branch-repro/src
+printf '%s\n' 'int branch(int x) { if (x) return 1; return 0; }' > .cache/real-projects-run/branch-repro/src/branch.c
+cat > .cache/real-projects-run/branch-repro/input.info <<'EOF'
 TN:
 SF:src/branch.c
 DA:1,0
@@ -74,8 +73,8 @@ LF:1
 LH:0
 end_of_record
 EOF
-genhtml --branch-coverage --quiet --source-directory .luna-tmp/branch-repro \
-  --output-directory .luna-tmp/branch-repro-html .luna-tmp/branch-repro/input.info
+genhtml --branch-coverage --quiet --source-directory .cache/real-projects-run/branch-repro \
+  --output-directory .cache/real-projects-run/branch-repro-html .cache/real-projects-run/branch-repro/input.info
 ```
 
 ```text

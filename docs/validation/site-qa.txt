@@ -14,3 +14,6 @@ Lighthouse 13.5.0 using Chromium against local /lcovmerge/ routes:
   benchmarks.html: performance 100, accessibility 100, best-practices 100, SEO 100
 
 Pages workflow upload path: docs/site.
+
+Supplemental local visual review: 2026-10-13
+Chromium headless rendered the homepage at 1440x1350 and 390x844 and the workflow guide at 1440x1200 and 390x844. Local page, CSS, and script requests returned HTTP 200. The mobile workflow table now keeps readable column widths, scrolls horizontally, and displays a scroll hint. Screenshots are retained under ignored .cache/site-qa-2026-10-13/. Lighthouse was not rerun for this supplemental review.

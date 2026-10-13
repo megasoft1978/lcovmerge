@@ -3,7 +3,6 @@ set -eu
 
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
-export TMPDIR=./.luna-tmp
 exec python3 -I - "$repo" "$repo/bench/real-projects-manifest.json" <<'PY'
 import datetime
 import json
@@ -19,7 +18,8 @@ import time
 
 ROOT = pathlib.Path(sys.argv[1]).resolve()
 MANIFEST = pathlib.Path(sys.argv[2])
-SCRATCH = ROOT / ".luna-tmp" / "real-projects"
+GIT_TIMEOUT_SECONDS = int(os.environ.get("LCOVMERGE_REAL_PROJECT_GIT_TIMEOUT", "300"))
+SCRATCH = ROOT / ".cache/real-projects-run" / "real-projects"
 RAW = SCRATCH / "raw"
 RUN = SCRATCH / "run"
 BINARY = ROOT / "bin/lcovmerge"
@@ -45,15 +45,15 @@ class RunFailure(RuntimeError):
     pass
 
 
-def command(argv, label, *, timed=False, check=True, cwd=ROOT, extra_env=None):
+def command(argv, label, *, timed=False, check=True, cwd=ROOT, extra_env=None,
+            timeout_s=None):
     env = os.environ.copy()
-    env["TMPDIR"] = "./.luna-tmp"
     if extra_env:
         env.update(extra_env)
-    if pathlib.Path(cwd).resolve() != ROOT:
-        env["TMPDIR"] = str(RUN / "tmp")
     target = [str(part) for part in argv]
     started = time.perf_counter()
+    log = RUN / "logs" / (re.sub(r"[^A-Za-z0-9_.-]+", "_", label) + ".log")
+    log.parent.mkdir(parents=True, exist_ok=True)
     if timed:
         result = subprocess.run([sys.executable, "-I", "-c", MEASURE_RUNNER, *target],
                                 cwd=cwd, env=env, stdout=subprocess.PIPE,
@@ -70,13 +70,19 @@ def command(argv, label, *, timed=False, check=True, cwd=ROOT, extra_env=None):
             elapsed = time.perf_counter() - started
             rss_bytes = None
     else:
-        result = subprocess.run(target, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True, errors="replace")
+        try:
+            result = subprocess.run(target, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace",
+                                    timeout=timeout_s)
+        except subprocess.TimeoutExpired as error:
+            output = error.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            log.write_text(output, encoding="utf-8")
+            raise RunFailure(f"{label} timed out after {timeout_s}s; log: {log}") from error
         output = result.stdout
         elapsed = time.perf_counter() - started
         rss_bytes = None
-    log = RUN / "logs" / (re.sub(r"[^A-Za-z0-9_.-]+", "_", label) + ".log")
-    log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(output, encoding="utf-8")
     if check and result.returncode != 0:
         tail = "\n".join(output.splitlines()[-45:])
@@ -426,9 +432,10 @@ def main():
             sources[name] = source
             roots.append((name, source))
             command(["git", "clone", "--filter=blob:none", "--no-checkout",
-                     project["url"], source], f"{name}-clone")
+                     project["url"], source], f"{name}-clone",
+                    timeout_s=GIT_TIMEOUT_SECONDS)
             command(["git", "-C", source, "checkout", "--detach", project["commit"]],
-                    f"{name}-checkout")
+                    f"{name}-checkout", timeout_s=GIT_TIMEOUT_SECONDS)
             if project.get("tag"):
                 tags = command(["git", "-C", source, "tag", "--points-at", "HEAD"],
                                f"{name}-tag-check")["output"].splitlines()
@@ -661,7 +668,7 @@ def main():
         lcov_version = command([LCOV, "--version"], "lcov-version")["output"].strip().splitlines()[-1]
         genhtml_version = command([GENHTML, "--version"], "genhtml-version")["output"].strip().splitlines()[-1]
         time_probe = subprocess.run([TIME, "-l", "true"], cwd=ROOT,
-                                    env={**os.environ, "TMPDIR": "./.luna-tmp"},
+                                    env=os.environ.copy(),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, errors="replace")
         time_tool = ("available" if time_probe.returncode == 0 else
@@ -686,7 +693,7 @@ def main():
                 "ctest": "PASS x2",
                 "lcovmerge_comparison": "PASS with LCOV consistency override",
                 "genhtml": "not included; Apple gcov branch/line inconsistency",
-                "synthetic_repro": "generated transiently under .luna-tmp and removed after validation",
+                "synthetic_repro": "generated transiently under .cache/real-projects-run and removed after validation",
                 "repro_status": "PASS" if lcov_repro else "NOT_REPRODUCED"
             }, {
                 "project": "curl",
@@ -770,7 +777,7 @@ def write_report(report):
     if any(row["project"] == "lua" for row in rows):
         notices.append("Lua ran with its documented `_port=true` mode; its upstream suite skips nonportable tests in this mode.")
     notices.append("Each project used two independent full-suite captures; external-sort checks used 34 inputs (above the 32-input direct-path limit), comparing 8 MiB -j1 with LCOV and reverse-order / 32 MiB -j4 outputs bytewise.")
-    notices.append("The separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; its synthetic reproducer was generated under .luna-tmp and removed after validation.")
+    notices.append("The separate libpng 1.6.50 test run passed, but Apple gcov's DA/BRDA consistency mismatch prevented standard downstream genhtml validation; its synthetic reproducer was generated under .cache/real-projects-run and removed after validation.")
     if "blocked:" in report["measurement_method"]:
         notices.append("`/usr/bin/time -l` was blocked reading kern.clockrate; elapsed time and peak RSS came from an isolated Python resource sampler.")
     if not notices:
@@ -793,12 +800,12 @@ def write_report(report):
         lines += ["", "## Minimal compatibility reproducer", "",
                   "On this Apple gcov and LCOV toolchain, genhtml rejects the trace because line 1 is marked unhit while a branch on that line is hit. The trace exercises a capture-consistency issue; no lcovmerge source change was made.", "",
                   "From the repository root, recreate the source and trace under scratch and run genhtml:", "",
-                  "```sh", "mkdir -p .luna-tmp/branch-repro/src",
-                  "printf '%s\\n' 'int branch(int x) { if (x) return 1; return 0; }' > .luna-tmp/branch-repro/src/branch.c",
-                  "cat > .luna-tmp/branch-repro/input.info <<'EOF'",
+                  "```sh", "mkdir -p .cache/real-projects-run/branch-repro/src",
+                  "printf '%s\\n' 'int branch(int x) { if (x) return 1; return 0; }' > .cache/real-projects-run/branch-repro/src/branch.c",
+                  "cat > .cache/real-projects-run/branch-repro/input.info <<'EOF'",
                   "TN:", "SF:src/branch.c", "DA:1,0", "BRDA:1,0,0,1", "BRF:1", "BRH:1", "LF:1", "LH:0", "end_of_record", "EOF",
-                  "genhtml --branch-coverage --quiet --source-directory .luna-tmp/branch-repro \\",
-                  "  --output-directory .luna-tmp/branch-repro-html .luna-tmp/branch-repro/input.info",
+                  "genhtml --branch-coverage --quiet --source-directory .cache/real-projects-run/branch-repro \\",
+                  "  --output-directory .cache/real-projects-run/branch-repro-html .cache/real-projects-run/branch-repro/input.info",
                   "```", "",
                   "```text", "TN:", "SF:src/branch.c", "DA:1,0", "BRDA:1,0,0,1",
                   "BRF:1", "BRH:1", "LF:1", "LH:0", "end_of_record", "```", ""]

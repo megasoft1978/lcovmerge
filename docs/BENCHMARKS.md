@@ -103,8 +103,9 @@ not part of the generated `REAL` benchmark row or the measured project-derived w
 
 ### Evidence still needed
 
-The largest published performance result is a generated 20.3 GB workload. Project-derived correctness checks
-exist, but their inputs are much smaller. To judge how much the speed and memory gains help real CI, we need
+The largest published performance result is a generated 20.3 GB workload. Project-derived correctness and
+performance checks cover eight pinned public projects; their composite is 11.2 MB and was measured on one
+host. To judge how much the speed and memory gains help real CI, we need
 optional reports from varied workflows: input size and shard count, host and operating system, merge time and
 peak RSS for the existing merger and lcovmerge, plus whether the downstream report accepted each output.
 Small and medium inputs matter too; they show when the simpler existing path is already sufficient.
@@ -181,8 +182,9 @@ observed command variation for the requested values; they do not measure paralle
 
 <!-- BENCH-CAVEATS:START -->
 - Measurements cover one macOS 27 arm64 Apple M5 Max host; results are not a cross-platform claim.
-- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. REAL was not measured because no project-derived
-  capture was available.
+- S, M, L, XL-single, and PATH-HEAVY are generated fixtures. The generated benchmark matrix REAL row remains
+  unmeasured; separate public-project captures and comparisons are recorded in
+  docs/validation/real-projects.md.
 - All displayed lcovmerge measurements use a Dataset M-trained Apple Clang profile-guided host build. Release
   binaries remain portable target builds; this is not a cross-platform speed claim.
 - lcovmerge timing uses one hyperfine warmup and five measured runs for S, M, L, XL-single, and PATH-HEAVY;
