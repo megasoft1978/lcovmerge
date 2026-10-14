@@ -126,16 +126,23 @@ python3 tests/compat_bounded.py --binary /absolute/path/to/lcovmerge \
   --workdir .cache/compat-bounded
 ```
 
-The runner makes three single-source tracefiles with more than 24 million
-records each, at least three times the 8 million record budget, then invokes
-the candidate with `--mem-limit 8M`. The shapes cover DA plus modern function
-aliases, distinct legacy functions, and sparse modern function IDs. It checks
-the emitted tracefile in a streaming pass: one section, exact FNL/FNA/FN/FNDA
-and DA counts, every DA hit value and line range, and exact LF/LH totals. The
+The 8 MiB setting is a byte budget. Each generated input is at least 24 MiB
+(about 28 MiB by default), not 24 million records. The three workloads
+separately stress DA line volume, many distinct sparse modern function IDs,
+and one very large alias group. The validator streams the output against
+independently generated expectations, checking every DA value and line,
+function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy
+function input to FNL/FNA records; the validator accepts TN before SF and
+checks FNF/FNH summaries when emitted. It also checks temporary directory
+cleanup after success, samples peak temporary disk usage, and records peak
+process RSS where Linux `/proc` provides an explicit high-water measurement.
+Other platforms report RSS as unsupported instead of estimating it. The
 default per-command timeout is 240 seconds and can be changed with
-`--timeout`. The generated inputs, commands, stdout/stderr logs, outputs, and
-`report.json` stay in `--workdir`; failures are recorded rather than skipped.
-These runs do not invoke LCOV or genhtml on the large files.
+`--timeout`. Generated inputs, commands, logs, outputs, and `report.json` stay
+in the requested ignored `--workdir`; failures are recorded rather than
+skipped. The validator runs malformed-output self-checks for altered hits,
+IDs, summaries, and truncation. These runs do not invoke LCOV or genhtml on
+the large files; production runtime must be measured separately.
 
 ## Comparison rules and limits
 

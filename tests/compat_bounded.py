@@ -1,95 +1,253 @@
 #!/usr/bin/env python3
-"""Large synthetic bounded-runtime gates for lcovmerge.
-
-The records are generated in .cache and checked as a stream so the test does
-not need a second multi-million-record expected tracefile in memory.
-"""
+"""Bounded-memory compatibility stress cases with streaming verification."""
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import threading
 import time
 
-RECORD_BUDGET = 8_000_000
-MULTIPLIER = 3
+BYTE_BUDGET = 8 * 1024 * 1024
+MIN_INPUT_BYTES = 3 * BYTE_BUDGET
 TIMEOUT = 240
 
 
-def parse_output(path: Path, expected: dict) -> None:
-    """Assert one section's metadata and exact record totals without loading it."""
-    counts = {key: 0 for key in ("FNL", "FNA", "FN", "FNDA", "DA")}
-    lf = lh = None
-    seen_sf = seen_end = False
+def expected_records(spec: dict):
+    """Yield canonical record lines independently from the input writer."""
+    shape = spec["shape"]
+    if shape == "lines":
+        yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
+    elif shape == "functions":
+        for i in range(spec["functions"]):
+            fid = i * 7 + 2
+            yield f"FNL:{fid},{i + 1},{i + 1}\n"
+        for i in range(spec["functions"]):
+            fid = i * 7 + 2
+            yield f"FNA:{fid},1,fn_{i:08d}\n"
+        for i in range(spec["functions"]):
+            yield f"FNDA:{spec['hits']},fn_{i:08d}\n"
+    elif shape == "aliases":
+        yield f"FNL:17,1,1\n"
+        for i in range(spec["aliases"]):
+            yield f"FNA:17,1,alias_{i:08d}\n"
+        for i in range(spec["aliases"]):
+            yield f"FNDA:{spec['hits']},alias_{i:08d}\n"
+    else:
+        raise AssertionError(shape)
+
+
+def verify_output(path: Path, spec: dict) -> None:
+    """Stream output and compare every record and summary against expectations."""
+    source_seen = False
+    records = iter(expected_records(spec))
+    got_summary: dict[str, int] = {}
+    seen_end = False
     with path.open("rt", encoding="utf-8", errors="strict") as stream:
-        first = stream.readline()
-        if first != f"SF:{expected['source']}\n":
-            raise AssertionError(f"unexpected first output record: {first[:160]!r}")
-        seen_sf = True
-        for line in stream:
-            if line == "end_of_record\n":
-                seen_end = True
-                if stream.readline():
-                    raise AssertionError("unexpected second section or trailing output")
-                break
+        for raw in stream:
+            line = raw.rstrip("\n")
             key, sep, value = line.partition(":")
             if not sep:
-                raise AssertionError(f"malformed output line: {line[:160]!r}")
-            if key in counts:
-                counts[key] += 1
-            elif key == "LF":
-                lf = int(value)
-            elif key == "LH":
-                lh = int(value)
-            elif key in ("TN", "VER"):
+                if line == "end_of_record" and source_seen:
+                    seen_end = True
+                    if next(stream, ""):
+                        raise AssertionError("trailing output after end_of_record")
+                    break
+                raise AssertionError(f"malformed output line {line[:100]!r}")
+            if key == "SF":
+                if source_seen or value != spec["source"]:
+                    raise AssertionError(f"unexpected SF {value!r}")
+                source_seen = True
+            elif key == "TN":
                 continue
-            elif key == "DA":
-                counts["DA"] += 1
-                line_no, comma, hits = value.rstrip("\n").partition(",")
-                if not comma or int(hits) != expected["hits"]:
-                    raise AssertionError(f"unexpected DA row: {line[:100]!r}")
-                if int(line_no) > expected["lines"]:
-                    raise AssertionError(f"out-of-range DA line: {line_no}")
+            elif key in ("LF", "LH", "FNF", "FNH"):
+                if key in got_summary:
+                    raise AssertionError(f"duplicate summary {key}")
+                got_summary[key] = int(value)
+            elif key in ("DA", "FNL", "FNA", "FNDA", "FN"):
+                # LCOV 2.6 normalizes FN to FNL/FNA. Legacy input is checked
+                # through the normalized function records declared in spec.
+                want = next(records, None)
+                actual = raw if key != "FN" else ""
+                if want is None or actual != want:
+                    raise AssertionError(f"record mismatch: got {raw[:120]!r}, expected {want!r}")
             else:
                 raise AssertionError(f"unexpected output family {key!r}")
-    if not seen_sf or not seen_end:
-        raise AssertionError("output is missing SF or end_of_record")
-    for key in ("FNL", "FNA", "FN", "FNDA", "DA"):
-        if counts[key] != expected[key]:
-            raise AssertionError(f"{key} count {counts[key]} != {expected[key]}")
-    if lf != expected["LF"] or lh != expected["LH"]:
-        raise AssertionError(f"LF/LH {lf}/{lh} != {expected['LF']}/{expected['LH']}")
+    if not source_seen or not seen_end:
+        raise AssertionError("output missing SF or end_of_record")
+    extra = next(records, None)
+    if extra is not None:
+        raise AssertionError(f"truncated output; next expected record {extra[:100]!r}")
+    wanted = {"LF": spec["lines"], "LH": spec["lines"] if spec["hits"] else 0,
+              "FNF": spec["function_count"], "FNH": spec["function_count"] if spec["hits"] else 0}
+    # Some LCOV outputs omit function summaries when no function records exist.
+    wanted = {k: v for k, v in wanted.items() if v or k in got_summary}
+    if got_summary != wanted:
+        raise AssertionError(f"summaries {got_summary!r} != {wanted!r}")
 
 
-def write_single_source(path: Path, source: Path, lines: int, functions: int,
-                        modern: bool, legacy: bool, aliases: int = 3) -> dict:
+def validator_self_test() -> None:
+    """Guard against regressions that accept altered values, IDs or truncation."""
+    import tempfile
+    spec = {"source": "/tmp/verify.c", "shape": "functions", "hits": 2,
+            "lines": 0, "functions": 1, "aliases": 0, "function_count": 1}
+    good = ("TN:t\nSF:/tmp/verify.c\nFNL:2,1,1\nFNA:2,1,fn_00000000\n"
+            "FNDA:2,fn_00000000\nFNF:1\nFNH:1\nend_of_record\n")
+    mutants = (good.replace("FNDA:2,", "FNDA:3,"),
+               good.replace("FNL:2,", "FNL:9,"),
+               good.replace("FNH:1", "FNH:0"),
+               good.replace("FNDA:2,fn_00000000\n", ""))
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / "out.info"
+        target.write_text(good)
+        verify_output(target, spec)
+        for mutant in mutants:
+            target.write_text(mutant)
+            try:
+                verify_output(target, spec)
+            except (AssertionError, ValueError):
+                continue
+            raise AssertionError("validator accepted malformed-output self-test")
+
+
+def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     hits = 2
+    functions = aliases = lines = 0
     with path.open("wt", encoding="utf-8", newline="\n") as out:
         out.write(f"TN:bounded\nSF:{source}\n")
-        if legacy:
-            for i in range(functions):
-                out.write(f"FN:{i + 1},legacy_{i}\n")
-            for i in range(functions):
-                out.write(f"FNDA:1,legacy_{i}\n")
-        if modern:
-            # One definition list, then three aliases per distinct sparse ID.
+        if shape == "lines":
+            # DA payload itself drives a >24 MiB input.
+            lines = size
+            for i in range(1, lines + 1):
+                out.write(f"DA:{i},{hits}\n")
+        elif shape == "functions":
+            functions = size
             for i in range(functions):
                 out.write(f"FNL:{i * 7 + 2},{i + 1},{i + 1}\n")
             for i in range(functions):
-                fid = i * 7 + 2
-                for alias in range(aliases):
-                    out.write(f"FNA:{fid},1,modern_{i}_{alias}\n")
-        for i in range(lines):
-            out.write(f"DA:{i + 1},{hits}\n")
+                out.write(f"FNA:{i * 7 + 2},1,fn_{i:08d}\n")
+            for i in range(functions):
+                out.write(f"FNDA:{hits},fn_{i:08d}\n")
+        elif shape == "aliases":
+            aliases = size
+            out.write("FNL:17,1,1\n")
+            for i in range(aliases):
+                out.write(f"FNA:17,1,alias_{i:08d}\n")
+            for i in range(aliases):
+                out.write(f"FNDA:{hits},alias_{i:08d}\n")
         out.write("end_of_record\n")
-    row_count = lines + (functions * (1 + aliases) if modern else 0) + (functions * 2 if legacy else 0)
-    return {"source": str(source), "lines": lines, "hits": hits,
-            "FNL": functions if modern else 0, "FNA": functions * aliases if modern else 0,
-            "FN": functions if legacy else 0, "FNDA": functions if legacy else 0,
-            "DA": lines, "LF": lines, "LH": lines,
-            "input_records": row_count, "record_budget_multiplier": row_count / RECORD_BUDGET}
+    byte_size = path.stat().st_size
+    if byte_size < MIN_INPUT_BYTES:
+        raise AssertionError(f"{path.name} is {byte_size} bytes, below {MIN_INPUT_BYTES}")
+    # Each function has line 1 covered; DA shape uses its full line sequence.
+    return {"source": str(source), "shape": shape, "hits": hits, "lines": lines,
+            "functions": functions, "aliases": aliases,
+            "function_count": functions or aliases, "bytes": byte_size}
+
+
+class TempMeter:
+    def __init__(self, path: Path):
+        self.path = path
+        self.peak = 0
+        self.running = False
+
+    def _size(self):
+        total = 0
+        for base, _, files in os.walk(self.path):
+            for filename in files:
+                try:
+                    total += (Path(base) / filename).stat().st_size
+                except FileNotFoundError:
+                    pass
+        self.peak = max(self.peak, total)
+
+    def __enter__(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._sample, daemon=True)
+        self.thread.start()
+        return self
+
+    def _sample(self):
+        while self.running:
+            self._size()
+            time.sleep(.05)
+
+    def __exit__(self, *_):
+        self.running = False
+        self.thread.join()
+        self._size()
+
+
+def peak_rss_bytes(pid: int) -> tuple[int | None, str]:
+    """Use the platform's explicit resource support; units follow its API."""
+    try:
+        import resource
+    except ImportError:
+        return None, "unsupported: Python resource module unavailable"
+    # resource.ru_maxrss is bytes on macOS, KiB on Linux/BSD.
+    try:
+        with open(f"/proc/{pid}/status", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1]) * 1024, "Linux /proc VmHWM"
+    except OSError:
+        pass
+    return None, "unsupported: per-process peak RSS sampling unavailable on this platform"
+
+
+def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
+             name: str, spec: dict, timeout: int) -> dict:
+    output = root / f"{name}.out.info"
+    stdout, stderr = root / f"{name}.stdout.log", root / f"{name}.stderr.log"
+    output.unlink(missing_ok=True)
+    for child in tempdir.iterdir():
+        if child.is_dir(): shutil.rmtree(child)
+        else: child.unlink()
+    command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
+               "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
+               str(root / f"{name}.info"), "-o", str(output)]
+    started = time.monotonic()
+    meter = TempMeter(tempdir)
+    status, timed_out, rss, rss_note = None, False, None, "not measured"
+    with meter, stdout.open("wb") as out, stderr.open("wb") as err:
+        try:
+            proc = subprocess.Popen(command, cwd=root, stdout=out, stderr=err)
+            deadline = time.monotonic() + timeout
+            while True:
+                current_rss, current_note = peak_rss_bytes(proc.pid)
+                if current_rss is not None:
+                    rss = max(rss or 0, current_rss)
+                    rss_note = current_note
+                try:
+                    status = proc.wait(timeout=.05)
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        proc.kill(); status = proc.wait()
+                        break
+        except OSError as exc:
+            err.write(str(exc).encode())
+    row = {"name": name, "argv": command, "status": status, "timed_out": timed_out,
+           "seconds": round(time.monotonic() - started, 3), "input_bytes": spec["bytes"],
+           "peak_temp_bytes": meter.peak, "peak_rss_bytes": rss, "rss_measurement": rss_note,
+           "output": str(output), "stdout_log": str(stdout), "stderr_log": str(stderr), **spec}
+    try:
+        if status != 0 or timed_out:
+            raise AssertionError(f"command status={status} timed_out={timed_out}")
+        verify_output(output, spec)
+        leftovers = list(tempdir.iterdir())
+        if leftovers:
+            raise AssertionError(f"temporary files remain after success: {[p.name for p in leftovers[:5]]}")
+        row["output_verified"] = True
+        row["temp_cleanup_verified"] = True
+    except (AssertionError, OSError, ValueError, StopIteration) as exc:
+        row.update(output_verified=False, failure=str(exc))
+    return row
 
 
 def main() -> int:
@@ -97,80 +255,36 @@ def main() -> int:
     ap.add_argument("--binary", required=True, type=Path)
     ap.add_argument("--workdir", required=True, type=Path)
     ap.add_argument("--timeout", type=int, default=TIMEOUT)
-    ap.add_argument("--records", type=int, default=RECORD_BUDGET * MULTIPLIER + 17)
+    ap.add_argument("--target-bytes", type=int, default=28 * 1024 * 1024,
+                    help="approximate payload bytes per case (minimum is 24 MiB)")
     args = ap.parse_args()
-    if args.records < RECORD_BUDGET * MULTIPLIER:
-        ap.error(f"--records must be at least {RECORD_BUDGET * MULTIPLIER}")
-    root = args.workdir.resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    validator_self_test()
+    if args.target_bytes < MIN_INPUT_BYTES:
+        ap.error("--target-bytes must be at least 24 MiB")
+    root = args.workdir.resolve(); root.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
-    config = root / "lcovrc"
-    config.write_text("# bounded compatibility fixture\n")
-    tempdir = root / "tmp"
-    tempdir.mkdir(exist_ok=True)
-    results = []
-    failures = []
-    # Single-source current format with 3 aliases per sparse ID.
-    source = root / "modern.c"
-    source.write_text("\n" * args.records)
-    functions = 4096
-    lines = args.records - 4 * functions
-    spec = write_single_source(root / "modern.info", source, lines, functions, True, False)
-    results.append(run_case(binary, root, config, tempdir, "modern", spec, failures, args.timeout))
-    # Legacy distinct function names without modern IDs.
-    source2 = root / "legacy.c"
-    source2.write_text("\n" * args.records)
-    functions2 = 8192
-    lines2 = args.records - 2 * functions2
-    spec2 = write_single_source(root / "legacy.info", source2, lines2, functions2, False, True)
-    results.append(run_case(binary, root, config, tempdir, "legacy", spec2, failures, args.timeout))
-    # Sparse modern IDs are a separate alias-free shape to exercise ID indexing.
-    source3 = root / "sparse.c"
-    source3.write_text("\n" * args.records)
-    functions3 = 32768
-    lines3 = args.records - 2 * functions3
-    spec3 = write_single_source(root / "sparse.info", source3, lines3, functions3,
-                                True, False, aliases=1)
-    results.append(run_case(binary, root, config, tempdir, "sparse", spec3, failures, args.timeout))
-    report = {"binary": str(binary), "record_budget": RECORD_BUDGET,
-              "minimum_multiplier": MULTIPLIER, "cases": results, "failures": failures}
+    config = root / "lcovrc"; config.write_text("# bounded compatibility fixture\n")
+    tempdir = root / "tmp"; tempdir.mkdir(exist_ok=True)
+    # DA rows, many distinct function IDs, and one enormous alias group each
+    # independently occupy roughly 28 MiB. This is a byte budget, never rows.
+    cases = (("lines", "lines", args.target_bytes // 16),
+             ("function-ids", "functions", args.target_bytes // 82),
+             ("alias-group", "aliases", args.target_bytes // 54))
+    results, failures = [], []
+    for name, shape, size in cases:
+        source = root / f"{name}.c"; source.write_text("int x;\n")
+        spec = write_case(root / f"{name}.info", source, shape, size)
+        row = run_case(binary, root, config, tempdir, name, spec, args.timeout)
+        results.append(row)
+        if not row.get("output_verified"):
+            failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
+            print(f"FAIL {name}: {row.get('failure')}", file=sys.stderr)
+    report = {"binary": str(binary), "byte_budget": BYTE_BUDGET, "minimum_input_bytes": MIN_INPUT_BYTES,
+              "cases": results, "failures": failures}
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"workdir": str(root), "cases": len(results), "failures": len(failures),
                       "report": str(root / "report.json")}, indent=2))
-    return 1 if failures else 0
-
-
-def run_case(binary: Path, root: Path, config: Path, tempdir: Path, name: str, expected: dict,
-             failures: list, timeout: int) -> dict:
-    output = root / f"{name}.out.info"
-    stdout = root / f"{name}.stdout.log"
-    stderr = root / f"{name}.stderr.log"
-    output.unlink(missing_ok=True)
-    command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
-               "--mem-limit", "8M", "--tempdir", str(tempdir),
-               "-a", str(root / f"{name}.info"), "-o", str(output)]
-    started = time.monotonic()
-    try:
-        with stdout.open("wb") as out, stderr.open("wb") as err:
-            proc = subprocess.run(command, cwd=root, stdout=out, stderr=err, timeout=timeout)
-        row = {"name": name, "argv": command, "status": proc.returncode, "timed_out": False}
-    except subprocess.TimeoutExpired:
-        row = {"name": name, "argv": command, "status": None, "timed_out": True}
-    row.update({"seconds": round(time.monotonic() - started, 3), "output": str(output),
-                "stdout_log": str(stdout), "stderr_log": str(stderr), **expected})
-    try:
-        if row["status"] != 0 or row["timed_out"]:
-            raise AssertionError(f"command status={row['status']} timed_out={row['timed_out']}")
-        parse_output(output, expected)
-        row["output_verified"] = True
-    except (AssertionError, OSError, ValueError) as exc:
-        row["output_verified"] = False
-        row["failure"] = str(exc)
-        failures.append({"case": name, "failure": str(exc), "command": command,
-                         "stdout_log": str(stdout), "stderr_log": str(stderr),
-                         "output": str(output)})
-        print(f"FAIL {name}: {exc}", file=sys.stderr)
-    return row
+    return int(bool(failures))
 
 
 if __name__ == "__main__":
