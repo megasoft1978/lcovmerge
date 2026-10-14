@@ -243,16 +243,18 @@ The 8 MiB setting is a byte budget. Each generated input is at least 24 MiB
 (about 28 MiB by default), not 24 million records. The regular-file workloads
 separately stress DA line volume, many distinct sparse modern function IDs,
 legacy functions, one very large alias group, a large MC/DC group, and one huge
-branch block with sparse ID 70000 and mixed exception/unreachable records. A
-seventh case reuses the DA fixture through stdin and verifies every output record
-again.
+branch block with sparse ID 70000 and mixed exception/unreachable records.
+A checksum workload puts over a million producers into one source-line group
+and verifies its selected checksum, accumulated count, and source version.
+An eighth case reuses the DA fixture through stdin and verifies every output
+record again. Use `--case checksum-group` to run only that workload.
 The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy
 function input to FNL/FNA records; the validator accepts TN before SF and
 checks FNF/FNH summaries when emitted. It also checks temporary directory
 cleanup after success, samples peak temporary disk usage, and records peak
-process RSS where Linux `/proc` provides an explicit high-water measurement.
+process RSS using per-process `wait4` high-water measurements on supported platforms.
 Other platforms report RSS as unsupported instead of estimating it. The
 default per-command timeout is 240 seconds and can be changed with
 `--timeout`. Generated inputs, commands, logs, outputs, and `report.json` stay
