@@ -152,7 +152,7 @@ def fixtures(directory):
         "modern-fna-aliases-line-match.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:7,1,3\nFNA:7,0,fn\nFNA:7,1,alias\nend_of_record\n",
         "lambda-modern-fna-line-mismatch.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:7,1,3\nFNA:7,0,{{lambda()#1}}\nend_of_record\n",
         "fn-zero-cross-testcase-same-input.info": f"TN:a\nSF:{srcname}\nFN:1,zero_fn\nFNDA:0,zero_fn\nDA:1,0\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
-        "fn-hit-cross-testcase-same-input.info": f"TN:a\nSF:{srcname}\nFN:1,hit_fn\nFNDA:1,hit_fn\nDA:1,1\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
+        "fn-hit-cross-testcase-same-input.info": f"TN:a\nSF:{srcname}\nFN:1,hit_fn\nFNDA:1,hit_fn\nDA:1,0\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
         "fn-zero-cross-input.info": f"TN:a\nSF:{srcname}\nFN:1,zero_fn\nFNDA:0,zero_fn\nDA:1,0\nend_of_record\n",
         "fn-positive-later-input.info": f"TN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
         "fn-explicit-beyond-last-da.info": f"TN:alpha\nSF:{srcname}\nFNL:7,4,6\nFNA:7,1,late_fn\nDA:1,1\nend_of_record\n",

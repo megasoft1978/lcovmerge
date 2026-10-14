@@ -52,6 +52,13 @@ fixture, LCOV 2.6 XS emits `9007199254740992`, while pure Perl and Rust retain
 The harness records this reference disagreement explicitly; it is not an XS
 conformance pass or a guarantee of XS equivalence for arbitrary wide counts.
 
+Function consistency checks run on each input's source-wide summary, including
+all its testcases, and on the merged summary. Eligible missing ends are inferred
+before inputs merge. With default inconsistency recovery, a zero-hit function
+can receive count additions from its first contained hit line; disabling the
+checks preserves input counts. These policies are verified against both pinned
+backends in the required oracle matrix.
+
 ## Validation and operational differences
 
 The reference is [LCOV v2.6](https://github.com/linux-test-project/lcov/releases/tag/v2.6),
@@ -80,6 +87,6 @@ DA/function inputs and MC/DC sections containing DA records use external sort
 runs. A sole stdin input is staged to disk with fixed-size buffers and then uses the
 same eligible executors as a regular file. Branch-bearing inputs, checksums,
 version metadata, mixed stdin/file inputs, and MC/DC-only sections still use the
-collector; large working sets can exceed its record budget. Completing those bounded paths and strict function/line consistency
-checks remains part of the release work. The experimental profile should be
+collector; large working sets can exceed its record budget. Completing those
+bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.

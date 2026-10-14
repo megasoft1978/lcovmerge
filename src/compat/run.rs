@@ -13,6 +13,8 @@ use std::path::Path;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
+#[path = "function_check.rs"]
+mod function_check;
 #[path = "function_runtime.rs"]
 mod function_runtime;
 #[path = "function_spill.rs"]
@@ -188,6 +190,28 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             }
             return Err(e);
         }
+    }
+    let check_budget = (opt.mem_limit / 4).min(2 * MAX_LINE);
+    check_functions(
+        &mut sections,
+        &request,
+        "merged trace",
+        check_budget,
+        held,
+        opt.mem_limit,
+        true,
+    )?;
+    if sections.is_empty()
+        && !request.keep_going
+        && !request
+            .ignore_errors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case("empty"))
+    {
+        return Err(Error::new(
+            2,
+            "empty LCOV trace after selecting valid coverpoints",
+        ));
     }
     for s in &mut sections {
         for blocks in s.branches.values_mut() {
@@ -765,7 +789,146 @@ fn ioout(e: std::io::Error) -> Error {
     Error::new(3, format!("output write failed: {e}"))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn check_functions(
+    sections: &mut [Section],
+    req: &Request,
+    label: &str,
+    check_budget: usize,
+    held: usize,
+    limit: usize,
+    global: bool,
+) -> Result<(), Error> {
+    let mut additions = HashMap::new();
+    if sections.iter().any(|s| !s.functions.is_empty()) {
+        let mut checker = if global {
+            function_check::Checker::new_global(
+                &req.resources.tmpdir,
+                check_budget,
+                req.resources.jobs.max(1),
+            )?
+        } else {
+            function_check::Checker::new(
+                &req.resources.tmpdir,
+                check_budget,
+                req.resources.jobs.max(1),
+            )?
+        };
+        for section in &*sections {
+            for (&line, &(hits, _)) in &section.lines {
+                checker.push_line(&section.source, 0, line, hits)?;
+            }
+            for (name, function) in &section.functions {
+                checker.push_function(
+                    &section.source,
+                    0,
+                    function.line,
+                    function.end_line,
+                    function.hits,
+                    name,
+                    label,
+                    0,
+                )?;
+            }
+        }
+        let adjustments = checker.finish(req)?;
+        let mut cursor = adjustments.cursor()?;
+        let mut extra = 0usize;
+        while let Some(row) = cursor.next()? {
+            extra = extra.saturating_add(row.key.capacity()).saturating_add(128);
+            if held.saturating_add(extra) > limit {
+                return Err(Error::new(
+                    3,
+                    "LCOV function recovery working set exceeds --mem-limit",
+                ));
+            }
+            if row.value.len() != 18 {
+                return Err(Error::new(3, "corrupt function recovery row"));
+            }
+            additions.insert(
+                row.key,
+                (
+                    row.value[0],
+                    u64::from_be_bytes(row.value[1..9].try_into().unwrap()),
+                    (row.value[9] == 1)
+                        .then(|| u64::from_be_bytes(row.value[10..18].try_into().unwrap())),
+                ),
+            );
+        }
+        drop(cursor);
+        drop(adjustments);
+    }
+    for section in sections {
+        let source_key = function_check::prefix(&section.source, 0)?;
+        section.functions.retain(|_, function| {
+            let mut key = source_key.clone();
+            key.extend_from_slice(&function.line.to_be_bytes());
+            match additions.get(&key) {
+                Some((0, _, _)) => false,
+                Some((1, count, end)) => {
+                    if !global && end.is_some() {
+                        function.end_line = *end;
+                    }
+                    function.hits = function.hits.saturating_add(*count).min(i64::MAX as u64);
+                    true
+                }
+                _ => true,
+            }
+        });
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn parse_input(
+    reader: Box<dyn Read>,
+    label: &str,
+    req: &Request,
+    sections: &mut Vec<Section>,
+    indexes: &mut HashMap<(String, String), usize>,
+    held: &mut usize,
+    limit: usize,
+) -> Result<(), Error> {
+    // Validate each input's source-wide summaries before other inputs can
+    // contribute hits. Collector-only metadata keeps this same error contract.
+    let check_budget = if req.resources.function_data {
+        (limit / 4).min(2 * MAX_LINE)
+    } else {
+        0
+    };
+    let local_limit = limit.saturating_sub(check_budget);
+    let mut local = Vec::new();
+    let mut local_indexes = HashMap::new();
+    let mut local_held = *held;
+    parse_input_sections(
+        reader,
+        label,
+        req,
+        &mut local,
+        &mut local_indexes,
+        &mut local_held,
+        local_limit,
+    )?;
+    check_functions(
+        &mut local,
+        req,
+        label,
+        check_budget,
+        local_held,
+        local_limit,
+        false,
+    )?;
+    for section in local {
+        // LCOV discards a source with function records but no line coverpoints.
+        if section.lines.is_empty() && section.branches.is_empty() && section.mcdc.is_empty() {
+            continue;
+        }
+        finish_section(section, sections, indexes, held, limit, label, 0, req)?;
+    }
+    Ok(())
+}
+
+fn parse_input_sections(
     reader: Box<dyn Read>,
     label: &str,
     req: &Request,
@@ -1432,6 +1595,52 @@ mod tests {
     }
 
     #[test]
+    fn input_and_global_function_checks_match_spill_and_collector() {
+        for version in ["", "VER:v1\n"] {
+            let root = tempfile::tempdir().unwrap();
+            let input = root.path().join("aliases.info");
+            let output = root.path().join("out.info");
+            let tmpdir = root.path().join("runs");
+            std::fs::create_dir(&tmpdir).unwrap();
+            std::fs::write(&input, format!("TN:a\nSF:source.c\n{version}FNL:7,1,3\nFNA:7,0,zeta\nFNA:7,0,alpha\nDA:2,2\nend_of_record\n")).unwrap();
+            std::fs::write(&output, "keep-me").unwrap();
+            let mut req = Request::default();
+            req.resources.inputs = vec![input.clone()];
+            req.resources.output = output.clone();
+            req.resources.tmpdir = tmpdir.clone();
+            assert!(run(req).is_err());
+            assert_eq!(std::fs::read_to_string(&output).unwrap(), "keep-me");
+            assert_eq!(std::fs::read_dir(&tmpdir).unwrap().count(), 0);
+            let mut req = Request::default();
+            req.resources.inputs = vec![input.clone()];
+            req.resources.output = output.clone();
+            req.resources.tmpdir = tmpdir.clone();
+            req.ignore_errors.insert("inconsistent".into());
+            run(req).unwrap();
+            let trace = std::fs::read_to_string(&output).unwrap();
+            assert!(trace.contains("FNA:0,2,alpha\nFNA:0,2,zeta\nFNF:1\nFNH:1"));
+            assert_eq!(std::fs::read_dir(&tmpdir).unwrap().count(), 0);
+            // Each input is consistent alone. Their source-wide merged
+            // summary is inconsistent and must also be checked.
+            let later = root.path().join("later.info");
+            std::fs::write(
+                &input,
+                format!(
+                    "TN:a\nSF:source.c\n{version}FN:1,zero\nFNDA:0,zero\nDA:1,0\nend_of_record\n"
+                ),
+            )
+            .unwrap();
+            std::fs::write(&later, "TN:b\nSF:source.c\nDA:1,1\nend_of_record\n").unwrap();
+            let mut req = Request::default();
+            req.resources.inputs = vec![input, later];
+            req.resources.output = output;
+            req.resources.tmpdir = tmpdir.clone();
+            assert!(run(req).is_err());
+            assert_eq!(std::fs::read_dir(tmpdir).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
     fn bounded_function_runtime_runs_end_to_end_for_large_modern_map_and_alias_group() {
         let root = tempfile::tempdir().unwrap();
         let input = root.path().join("large-functions.info");
@@ -1485,7 +1694,8 @@ mod tests {
         req.resources.inputs = vec![input];
         req.resources.output = output.clone();
         req.resources.tmpdir = temp.clone();
-        req.ignore_errors.insert("format".into());
+        req.ignore_errors.insert("mismatch".into());
+        req.ignore_errors.insert("empty".into());
         run(req).unwrap();
         assert_eq!(std::fs::read_to_string(output).unwrap(), "");
         assert_eq!(std::fs::read_dir(temp).unwrap().count(), 0);

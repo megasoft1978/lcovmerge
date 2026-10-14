@@ -64,6 +64,7 @@ pub(super) struct FunctionRow {
 /// A declaration or hit whose reference has been resolved in input order.
 #[derive(Debug)]
 pub(super) struct LinkedRow {
+    pub input: u64,
     pub source: String,
     pub testcase: String,
     pub start: u64,
@@ -186,6 +187,7 @@ impl Rows {
                     String::new()
                 };
                 Ok(Some(LinkedRow {
+                    input: row.input,
                     source: row.source,
                     testcase: row.testcase,
                     start: row.start,
@@ -214,6 +216,7 @@ impl Rows {
                     return Err(record_error(&row, message));
                 }
                 Ok(Some(LinkedRow {
+                    input: row.input,
                     source: row.source,
                     testcase: row.testcase,
                     start,

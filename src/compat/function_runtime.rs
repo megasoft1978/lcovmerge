@@ -1,5 +1,7 @@
 //! Bounded DA and function compatibility executor.
-use super::{function_spill, line_spill, mcdc_spill, policy, sort, Request, StopOnCancel};
+use super::{
+    function_check, function_spill, line_spill, mcdc_spill, policy, sort, Request, StopOnCancel,
+};
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -123,10 +125,14 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
     let reserve = 3 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
+    let slots = if req.mcdc_coverage || (req.check_data_consistency && o.function_data) {
+        4
+    } else {
+        3
+    };
     let shared = memory
         .saturating_sub(reserve)
-        .max(3 * (crate::common::IO_BLOCK + 4096));
-    let slots = if req.mcdc_coverage { 4 } else { 3 };
+        .max(slots * 2 * (crate::common::IO_BLOCK + 4096));
     let each = (shared / slots).max(crate::common::IO_BLOCK + 4096);
     let fanin = super::descriptor_fanin(
         (memory / (3 * (MAX_LINE + crate::common::IO_BLOCK + 4096))).clamp(2, 32),
@@ -457,8 +463,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
     let line_path = lines.finish()?;
-    let mut functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
-    let mut function_profiles = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut input_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut linked = raw_functions.finish()?;
     loop {
         let row = match linked.next_linked() {
@@ -482,17 +487,137 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         {
             continue;
         }
-        function_profiles.push(key_prefix(&row.source, &row.testcase)?, Vec::new())?;
-        let mut key = key_prefix(&row.source, &row.testcase)?;
+        let mut key = function_check::prefix(&row.source, row.input)?;
+        key.extend_from_slice(&row.start.to_be_bytes());
+        push_str(&mut key, &row.testcase)?;
         push_str(&mut key, &row.name)?;
-        let mut val = Vec::with_capacity(25);
+        let mut val = Vec::with_capacity(34 + row.label.len());
         val.extend_from_slice(&row.start.to_be_bytes());
         val.extend_from_slice(&row.end.unwrap_or(0).to_be_bytes());
         val.push(u8::from(row.end.is_some()));
         val.extend_from_slice(&row.hits.to_be_bytes());
-        functions.push(key, val)?;
+        val.extend_from_slice(&row.line.to_be_bytes());
+        push_str(&mut val, &row.label)?;
+        input_functions.push(key, val)?;
     }
     drop(linked);
+    // Resolve duplicate aliases within each input before applying a recovery
+    // addition. Applying it to raw declaration/hit rows would count it twice.
+    let mut input_rows = input_functions.finish()?.cursor()?;
+    let mut unique = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut pending = input_rows.next()?;
+    while let Some(mut first) = pending.take() {
+        let mut end = decode_end(&first.value)?;
+        let mut count = read_u64(&first.value, 17)?;
+        pending = input_rows.next()?;
+        while pending.as_ref().is_some_and(|row| row.key == first.key) {
+            let next = pending.take().unwrap();
+            if let Some(candidate) = decode_end(&next.value)? {
+                if end.is_some_and(|old| old != candidate) {
+                    recover(
+                        req,
+                        Error::new(2, "inconsistent function declaration within input"),
+                    )?;
+                }
+                end = Some(end.map_or(candidate, |old| old.max(candidate)));
+            }
+            count = count
+                .saturating_add(read_u64(&next.value, 17)?)
+                .min(i64::MAX as u64);
+            pending = input_rows.next()?;
+        }
+        first.value[8..16].copy_from_slice(&end.unwrap_or(0).to_be_bytes());
+        first.value[16] = u8::from(end.is_some());
+        first.value[17..25].copy_from_slice(&count.to_be_bytes());
+        unique.push(first.key, first.value)?;
+    }
+    drop(input_rows);
+    let unique = unique.finish()?;
+    let mut aliases = unique.cursor()?;
+    let mut alias = aliases.next()?;
+    let corrections = if alias.is_some() {
+        let mut checker = function_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
+        let mut line_rows = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(line) = line_spill::read_next_public(&mut line_rows)? {
+            checker.push_line(&line.source, line.input, line.line, line.count)?;
+        }
+        drop(line_rows);
+        while let Some(row) = alias.take() {
+            let (src, input, start, _, name) = decode_input_function_key(&row.key)?;
+            let mut metadata = row
+                .value
+                .get(25..)
+                .ok_or_else(|| Error::new(3, "corrupt input function value"))?;
+            let line_no = read_u64(metadata, 0)?;
+            metadata = &metadata[8..];
+            let label = take_str(&mut metadata)?;
+            if !metadata.is_empty() {
+                return Err(Error::new(3, "corrupt input function value"));
+            }
+            checker.push_function(
+                &src,
+                input,
+                start,
+                decode_end(&row.value)?,
+                read_u64(&row.value, 17)?,
+                &name,
+                &label,
+                line_no,
+            )?;
+            alias = aliases.next()?;
+        }
+        drop(aliases);
+        checker.finish(req)?
+    } else {
+        drop(aliases);
+        sort::Sorter::new(&o.tmpdir, each, 1)?.finish()?
+    };
+    let mut corrections_cursor = corrections.cursor()?;
+    let mut correction = corrections_cursor.next()?;
+    let mut aliases = unique.cursor()?;
+    let mut functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut function_profiles = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    while let Some(mut row) = aliases.next()? {
+        let (src, input, start, tc, name) = decode_input_function_key(&row.key)?;
+        let mut correction_key = function_check::prefix(&src, input)?;
+        correction_key.extend_from_slice(&start.to_be_bytes());
+        while correction.as_ref().is_some_and(|r| r.key < correction_key) {
+            correction = corrections_cursor.next()?;
+        }
+        let adjustment = correction.as_ref().filter(|r| r.key == correction_key);
+        if adjustment.is_some_and(|r| r.value.first() == Some(&0)) {
+            continue;
+        }
+        let addition = adjustment
+            .map(|r| {
+                if r.value.len() != 18 || r.value[0] != 1 {
+                    return Err(Error::new(3, "corrupt function recovery row"));
+                }
+                read_u64(&r.value, 1)
+            })
+            .transpose()?
+            .unwrap_or(0);
+        if let Some(adjustment) = adjustment {
+            if adjustment.value[9] == 1 {
+                row.value[8..16].copy_from_slice(&adjustment.value[10..18]);
+                row.value[16] = 1;
+            }
+        }
+        let count = read_u64(&row.value, 17)?
+            .saturating_add(addition)
+            .min(i64::MAX as u64);
+        row.value.truncate(25);
+        row.value[17..25].copy_from_slice(&count.to_be_bytes());
+        let mut key = key_prefix(&src, &tc)?;
+        function_profiles.push(key.clone(), Vec::new())?;
+        push_str(&mut key, &name)?;
+        functions.push(key, row.value)?;
+    }
+    drop(aliases);
+    drop(unique);
+    drop(correction);
+    drop(corrections_cursor);
+    drop(corrections);
     let mut names = functions.finish()?.cursor()?;
     let mut normalized = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut pending = names.next()?;
@@ -700,6 +825,33 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     drop(normalized);
     let ordered = ordered.finish()?;
+    let mut global = function_check::Checker::new_global(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut global_functions = ordered.cursor()?;
+    let mut has_functions = false;
+    while let Some(row) = global_functions.next()? {
+        let (src, _, start, _, end, name) = decode_ordered_fn_key(&row.key)?;
+        global.push_function(
+            &src,
+            0,
+            start,
+            end,
+            read_u64(&row.value, 0)?,
+            &name,
+            &src,
+            start,
+        )?;
+        has_functions = true;
+    }
+    drop(global_functions);
+    if has_functions {
+        let mut global_lines = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(line) = line_spill::read_next_public(&mut global_lines)? {
+            global.push_line(&line.source, 0, line.line, line.count)?;
+        }
+    }
+    let global_adjustments = global.finish(req)?;
+    let mut global_cursor = global_adjustments.cursor()?;
+    let mut global_adjustment = global_cursor.next()?;
     let mut ordered_cursor = ordered.cursor()?;
     let mut ahead_cursor = ordered.cursor()?;
     let mut ahead_row = ahead_cursor.next()?;
@@ -712,6 +864,23 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut line_ends = LineEnds::new(&line_path)?;
     while let Some(first) = fn_rows.take() {
         let (src, tc, start, first_name, declared_end, name) = decode_ordered_fn_key(&first.key)?;
+        let mut global_key = function_check::prefix(&src, 0)?;
+        global_key.extend_from_slice(&start.to_be_bytes());
+        while global_adjustment
+            .as_ref()
+            .is_some_and(|row| row.key < global_key)
+        {
+            global_adjustment = global_cursor.next()?;
+        }
+        let extra_hits = global_adjustment
+            .as_ref()
+            .filter(|row| row.key == global_key)
+            .map(|row| read_u64(&row.value, 1))
+            .transpose()?
+            .unwrap_or(0);
+        let hits = read_u64(&first.value, 0)?
+            .saturating_add(extra_hits)
+            .min(i64::MAX as u64);
         let mut end = declared_end;
         let mut next_start = None;
         while let Some(ahead) = ahead_row.as_ref() {
@@ -769,7 +938,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 .into_bytes(),
             )?;
         }
-        let hits = read_u64(&first.value, 0)?;
         any_hit |= hits > 0;
         let mut k = key_prefix(&src, &tc)?;
         k.push(1);
@@ -792,6 +960,9 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     drop(line_ends);
     drop(lines);
+    drop(global_adjustment);
+    drop(global_cursor);
+    drop(global_adjustments);
     drop(ordered_cursor);
     drop(ahead_cursor);
     drop(ahead_row);
@@ -853,8 +1024,20 @@ fn write_final(req: &Request, mut cursor: sort::Cursor) -> Result<(), Error> {
     }
     Ok(())
 }
-fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, _req: &Request) -> Result<(), Error> {
+fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result<(), Error> {
     let mut r = c.next()?;
+    if r.is_none()
+        && !req.keep_going
+        && !req
+            .ignore_errors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case("empty"))
+    {
+        return Err(Error::new(
+            2,
+            "empty LCOV trace after selecting valid coverpoints",
+        ));
+    }
     let mut active: Option<(String, String)> = None;
     while let Some(row) = r.take() {
         check_cancelled()?;
@@ -929,6 +1112,21 @@ fn recover(req: &Request, e: Error) -> Result<bool, Error> {
     } else {
         Err(e)
     }
+}
+type InputFunctionKey = (String, u64, u64, String, String);
+fn decode_input_function_key(mut bytes: &[u8]) -> Result<InputFunctionKey, Error> {
+    let source = take_str(&mut bytes)?;
+    let input = read_u64(bytes, 0)?;
+    let start = read_u64(bytes, 8)?;
+    bytes = bytes
+        .get(16..)
+        .ok_or_else(|| Error::new(3, "corrupt input function key"))?;
+    let testcase = take_str(&mut bytes)?;
+    let name = take_str(&mut bytes)?;
+    if !bytes.is_empty() {
+        return Err(Error::new(3, "corrupt input function key"));
+    }
+    Ok((source, input, start, testcase, name))
 }
 fn key_prefix(source: &str, tc: &str) -> Result<Vec<u8>, Error> {
     let mut k = Vec::with_capacity(source.len() + tc.len() + 2);

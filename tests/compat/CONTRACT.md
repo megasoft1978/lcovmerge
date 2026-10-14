@@ -122,11 +122,11 @@ expected oracle exit classes, checked before candidate results are counted.
 | `modern-fna-line-mismatch-positive-consistency-disabled` | Skip positive-hit FNA/no-hit-line consistency check with `check_data_consistency=0` | success |
 | `modern-fna-aliases-line-match` | Alias group with zero and positive FNA hits and a hit line | success |
 | `lambda-modern-fna-line-mismatch` | Lambda-name exception skips the FNA/line mismatch | success |
-| `derive-endline-source-wide` | Derive end line from testcase-local lines despite another testcase hitting a later line | success |
-| `modern-fna-source-wide-consistency` | Strict FNL/FNA consistency for one testcase despite a later hit in another | error |
+| `derive-endline-source-wide` | Derive ends within each input before another input adds later lines | success |
+| `modern-fna-source-wide-consistency` | Reject an invalid FNL/FNA input before another input adds a hit | error |
 | `fn-zero-line-hit-same-input-testcases` | FN/FNDA consistency in one testcase despite a later line hit in another testcase of the same input | error |
-| `fn-hit-line-zero-same-input-testcases` | Positive function hit remains consistent despite another testcase's zero line count in the same input | success |
-| `fn-zero-line-hit-separate-inputs` | Later input line data cannot rescue zero-hit function consistency | error |
+| `fn-hit-line-zero-same-input-testcases` | A hit function agrees with another testcase’s hit line in the same input | success |
+| `fn-zero-line-hit-separate-inputs` | Merged source-wide line hits conflict with zero-hit functions from another input | error |
 | `fn-explicit-start-beyond-last-da` | Explicit function starts after the last line record | error |
 | `fn-explicit-no-da-empty` | Explicit function data without any line records under inconsistent and empty recovery | success |
 | `fn-lambda-mixed-alias-not-exempt` | Ordinary alias prevents the C lambda group from receiving the lambda line exception | error |
@@ -134,32 +134,34 @@ expected oracle exit classes, checked before candidate results are counted.
 | `fn-cpp-lambda-later-line-error` | Later hit inside a zero-hit C++ lambda range remains inconsistent | error |
 | `fn-mangled-nested-not-lambda` | C++-style `_ZZ` mangled function name is an ordinary function | error |
 
-The function cases above are required in both pinned backends. LCOV checks
-function consistency while reading each testcase's input records, before
-source-wide merge or inferred end-line aggregation. Thus an ordinary function
-is compared with only its testcase's line data; another testcase's hit cannot
-resolve or create a mismatch. With end-line derivation enabled, the
-two-testcase fixture emits `FNL:0,1,1` for testcase `a`; testcase `b`'s
-`DA:5,1` does not extend that range. The explicit source-wide fixture verifies
-the same input-stage rule for modern `FNL`/`FNA` records.
-The added legacy-function fixtures distinguish multiple testcases inside one
-input from multiple input files: records in distinct testcases stay local for
-consistency, and a later testcase or file cannot rescue an earlier zero-hit
-function. Explicit starts beyond the final `DA` are inconsistent; a trace with
-no `DA` records uses both `inconsistent` and `empty` recovery categories.
-For explicit end lines, the consistency scan includes both endpoints; a line
-inside two overlapping function ranges is checked against both functions.
+The function cases above are required in both pinned backends. LCOV derives
+eligible missing function ends and checks each input's source-wide summary
+before merging inputs. That summary includes all testcases within the input:
+a hit function in testcase `a` can agree with a hit line in testcase `b`, while
+a zero-hit function becomes inconsistent if either testcase has a contained
+hit line. An invalid input cannot be rescued by another input. LCOV also checks
+the merged source-wide summary, so independently valid zero-hit input followed
+by hit line data can produce a strict failure after aggregation.
 
-For both mismatch directions, strict consistency exits 1. With
-`--ignore-errors inconsistent`, LCOV exits 0 and retains the original function
-and line counts in the merged trace; with `check_data_consistency=0`, LCOV
-skips the check and also exits 0. These accepted traces remain inconsistent,
-so the harness tells genhtml to ignore `inconsistent` only for recovery or
-disabled-consistency success cases, then still requires successful HTML output
-and matching coverage statistics across backends and candidate. The lambda
-name `{lambda()#1}` is an explicit exception on its first line only: a hit on a
-later line remains inconsistent. A mixed C lambda/ordinary alias group is not
-exempt, and `_ZZ` mangled C++ names are ordinary functions. Alias groups are
+The two-input end-line fixture emits `FNL:0,1,1` for testcase `a`; testcase `b`'s
+`DA:5,1` in the other input does not extend the end inferred while reading the
+first input. Explicit starts beyond the last `DA` are inconsistent. The
+no-`DA` recovery fixture yields an empty output, whose exact bytes and successful
+status are checked; genhtml cannot consume that empty worklist and is skipped
+only for this named case. For explicit ends, both endpoints are included;
+overlapping function ranges are checked independently.
+
+Strict function/line mismatches exit 1. LCOV's default inconsistency recovery
+can modify function counts: a zero-hit function with a hit line adds that
+line's count to every alias. Line counts are retained. The reverse-direction
+fixture retains its positive alias count in the serialized trace. With
+`check_data_consistency=0`, counts remain unchanged. The harness supplies
+`inconsistent` to genhtml only for these recovery or disabled-check cases and
+still requires successful consumption and matching coverage statistics.
+A C/C++ `{lambda(...)}` or Java `.lambda$` function is exempt for a declaration
+line hit when all its aliases are lambdas; later-line hits still fail. Mixed
+lambda/ordinary groups and `_ZZ` mangled names receive ordinary checks.
+Alias groups are
 checked as a whole: zero and positive FNA aliases together agree with a hit
 line. The end-line conflict is an
 observed agreement: XS and pure Perl both exit 1 in strict mode and succeed
