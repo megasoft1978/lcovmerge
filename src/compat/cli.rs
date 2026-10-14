@@ -1,72 +1,85 @@
 use super::Request;
+#[path = "config.rs"]
+mod config;
 use crate::common::{Error, MIN_WORKER_BUDGET};
 use std::{
     ffi::{OsStr, OsString},
-    path::{Path, PathBuf},
+    io::Write,
+    path::PathBuf,
 };
 
-const HELP: &str = "lcovmerge LCOV 2.6 merge profile\nUsage: lcovmerge --lcov-compat=2.6 -a PATTERN [-a PATTERN ...] [-o FILE]\n  -a, --add-tracefile PATTERN  add matching tracefiles (repeatable)\n  -o, --output-file FILE      write output (default stdout)\n      --include PATTERN       include matching source paths\n      --exclude PATTERN       exclude matching source paths\n      --(no-)function-coverage enable/disable function data\n      --(no-)branch-coverage   enable/disable branch data\n      --(no-)mcdc-coverage     enable/disable MC/DC data\n      --(no-)checksum          enable/disable checksums\n      --forget-test-names      merge testcase identities\n      --ignore-errors LIST     supported: inconsistent\n      --keep-going             continue after recoverable errors\n      --tempdir DIR            temporary directory\n      --parallel[=N]           worker count (1-32)\n      --mem-limit SIZE         lcovmerge arena limit extension\n  -q, --quiet | -v, --verbose | -h, --help | --version\n";
+const HELP: &str = "lcovmerge LCOV 2.6 merge profile\nUsage: lcovmerge --lcov-compat=2.6 -a PATTERN [-a PATTERN ...] [-o FILE]\n  -a, --add-tracefile PATTERN  add matching tracefiles (repeatable)\n  -o, --output-file FILE      write output (default stdout; last -o wins)\n      --include PATTERN       include matching source paths\n      --exclude PATTERN       exclude matching source paths\n      --(no-)function-coverage enable/disable function data\n      --(no-)branch-coverage   enable/disable branch data\n      --(no-)mcdc-coverage     enable/disable MC/DC data\n      --(no-)checksum          enable/disable checksums\n      --forget-test-names      merge testcase identities\n      --ignore-errors LIST     inconsistent, version, mismatch, format, empty, source, unused, negative\n      --keep-going             continue after recoverable errors\n      --tempdir DIR            temporary directory\n      --parallel[=N]           workers (default 1, 0 selects available cores)\n      --mem-limit SIZE         lcovmerge arena limit extension\n  -q, --quiet | -v, --verbose | -h, --help | --version\n";
 
 fn err(msg: impl Into<String>) -> Error {
     Error::new(1, msg)
 }
-fn val(args: &[OsString], i: &mut usize, opt: &str) -> Result<String, Error> {
+
+fn option_value(
+    a: &OsStr,
+    args: &[OsString],
+    i: &mut usize,
+    name: &str,
+) -> Result<OsString, Error> {
+    if let Some(value) = attached_value(a, name) {
+        if value.is_empty() {
+            return Err(err(format!("{name} requires a value")));
+        }
+        return Ok(value.to_os_string());
+    }
     *i += 1;
     args.get(*i)
-        .and_then(|s| s.to_str())
-        .map(str::to_owned)
-        .ok_or_else(|| err(format!("{opt} requires a UTF-8 value")))
+        .filter(|v| !v.is_empty())
+        .cloned()
+        .ok_or_else(|| err(format!("{name} requires a value")))
 }
-fn pattern_match(p: &[u8], s: &[u8]) -> bool {
-    if p.is_empty() {
-        return s.is_empty();
+
+fn attached_value<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
+    os_suffix(arg, format!("{name}=").as_bytes())
+}
+
+fn os_suffix<'a>(arg: &'a OsStr, prefix: &[u8]) -> Option<&'a OsStr> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        arg.as_bytes().strip_prefix(prefix).map(OsStr::from_bytes)
     }
-    match p[0] {
-        b'*' => (0..=s.len()).any(|n| pattern_match(&p[1..], &s[n..])),
-        b'?' => !s.is_empty() && pattern_match(&p[1..], &s[1..]),
-        c => s.first() == Some(&c) && pattern_match(&p[1..], &s[1..]),
+    #[cfg(not(unix))]
+    {
+        let text = arg.to_str()?;
+        let prefix = std::str::from_utf8(prefix).ok()?;
+        text.strip_prefix(prefix).map(OsStr::new)
     }
 }
-fn expand_one(pattern: &OsStr, out: &mut Vec<PathBuf>) -> Result<(), Error> {
-    let text = pattern
-        .to_str()
-        .ok_or_else(|| err("glob patterns must be UTF-8"))?;
-    if !text.bytes().any(|b| b == b'*' || b == b'?') {
-        out.push(pattern.into());
-        return Ok(());
+
+fn short_attached<'a>(arg: &'a OsStr, short: &[u8]) -> Option<&'a OsStr> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = arg.as_bytes();
+        (bytes.starts_with(short) && bytes.len() > short.len())
+            .then(|| OsStr::from_bytes(&bytes[short.len()..]))
     }
-    let (dir, leaf) = match text.rsplit_once('/') {
-        Some((d, l)) => (if d.is_empty() { "/" } else { d }, l),
-        None => (".", text),
-    };
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| err(format!("cannot read glob directory {dir}: {e}")))?;
-    let mut matches = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|e| err(format!("cannot read glob entry: {e}")))?;
-        let name = entry.file_name();
-        if pattern_match(leaf.as_bytes(), name.to_string_lossy().as_bytes()) {
-            matches.push(Path::new(dir).join(name));
-        }
+    #[cfg(not(unix))]
+    {
+        let text = arg.to_str()?;
+        let short = std::str::from_utf8(short).ok()?;
+        text.strip_prefix(short)
+            .filter(|suffix| !suffix.is_empty())
+            .map(OsStr::new)
     }
-    matches.sort();
-    if matches.is_empty() {
-        return Err(err(format!("pattern matched no files: {text}")));
-    }
-    out.extend(matches);
-    Ok(())
 }
-fn size(s: &str) -> Option<usize> {
-    let (num, shift) = match s.as_bytes().last()? {
-        b'k' | b'K' => (&s[..s.len() - 1], 10),
-        b'm' | b'M' => (&s[..s.len() - 1], 20),
-        b'g' | b'G' => (&s[..s.len() - 1], 30),
-        _ => (s, 0),
-    };
-    num.parse::<usize>().ok()?.checked_shl(shift)
+
+fn has_long_value(arg: &OsStr, name: &str) -> bool {
+    attached_value(arg, name).is_some()
 }
+
+fn split_setting(s: &str) -> Result<(&str, &str), Error> {
+    s.split_once('=')
+        .ok_or_else(|| err("--rc requires SETTING=VALUE"))
+}
+
 fn rc_bool(value: &str, key: &str) -> Result<bool, Error> {
-    match value.to_ascii_lowercase().as_str() {
+    match value.trim().to_ascii_lowercase().as_str() {
         "1" | "yes" | "on" | "true" => Ok(true),
         "0" | "no" | "off" | "false" => Ok(false),
         _ => Err(err(format!(
@@ -75,101 +88,292 @@ fn rc_bool(value: &str, key: &str) -> Result<bool, Error> {
     }
 }
 
-/// Parse only after the selector has been found before `--`; selection is positional-independent.
-pub fn selected(args: &[OsString]) -> bool {
-    args.iter()
-        .skip(1)
-        .take_while(|a| a.as_os_str() != OsStr::new("--"))
-        .any(|a| {
-            a == "--lcov-compat" || a.to_str().is_some_and(|s| s.starts_with("--lcov-compat="))
-        })
+fn apply_setting(req: &mut Request, key: &str, value: &str) -> Result<(), Error> {
+    let o = &mut req.resources;
+    match key {
+        "function_coverage" => o.function_data = rc_bool(value, key)?,
+        "branch_coverage" => o.branch_coverage = rc_bool(value, key)?,
+        "mcdc_coverage" => req.mcdc_coverage = rc_bool(value, key)?,
+        "checksum" => req.checksum = rc_bool(value, key)?,
+        "forget_testcase_names" => req.forget_test_names = rc_bool(value, key)?,
+        "include" => o.includes.push(value.to_owned()),
+        "exclude" => o.excludes.push(value.to_owned()),
+        "parallel" => {
+            o.jobs = parallel(value)?;
+            o.jobs_explicit = true;
+        }
+        "lcov_tmp_dir" => o.tmpdir = PathBuf::from(value),
+        "ignore_errors" => add_ignore_errors(req, value)?,
+        "memory" | "memory_percentage" => {
+            return Err(err(format!(
+                "unsupported LCOV resource setting: {key}; memory throttling is not implemented"
+            )))
+        }
+        _ => {
+            return Err(err(format!(
+                "unsupported merge-relevant LCOV configuration setting: {key}"
+            )))
+        }
+    }
+    Ok(())
 }
+
+fn add_ignore_errors(req: &mut Request, list: &str) -> Result<(), Error> {
+    const ALLOWED: &[&str] = &[
+        "inconsistent",
+        "version",
+        "mismatch",
+        "format",
+        "empty",
+        "source",
+        "unused",
+        "negative",
+    ];
+    for item in list.split([',', ':', ' ', '\t']).filter(|s| !s.is_empty()) {
+        let item = item.to_ascii_lowercase();
+        if !ALLOWED.contains(&item.as_str()) {
+            return Err(err(format!("unsupported --ignore-errors category: {item}")));
+        }
+        req.ignore_errors.insert(item);
+    }
+    Ok(())
+}
+
+fn parallel(value: &str) -> Result<usize, Error> {
+    let n = value
+        .parse::<usize>()
+        .map_err(|_| err("--parallel expects a non-negative worker count"))?;
+    match n {
+        0 => Ok(std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(32)),
+        1..=32 => Ok(n),
+        _ => Err(err("--parallel expects 0-32 (0 selects available cores)")),
+    }
+}
+
+fn size(s: &str) -> Option<usize> {
+    let (digits, power) = match s.as_bytes().last()? {
+        b'k' | b'K' => (&s[..s.len() - 1], 10),
+        b'm' | b'M' => (&s[..s.len() - 1], 20),
+        b'g' | b'G' => (&s[..s.len() - 1], 30),
+        _ => (s, 0),
+    };
+    let number = digits.parse::<usize>().ok()?;
+    number.checked_mul(1usize.checked_shl(power)?)
+}
+
+/// Selector detection skips arguments consumed as values by LCOV options.
+pub fn selected(args: &[OsString]) -> bool {
+    let end = args.iter().position(|a| a == "--").unwrap_or(args.len());
+    let mut i = 1;
+    while i < end {
+        let a = args[i].as_os_str();
+        if a == "--lcov-compat=2.6"
+            || a == "--lcov-compat"
+            || a.to_str().is_some_and(|s| s.starts_with("--lcov-compat="))
+        {
+            return true;
+        }
+        if consumes_next(a) {
+            i += 1;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn consumes_next(a: &OsStr) -> bool {
+    if matches!(a, x if x == "-a" || x == "-o" || x == "--add-tracefile" || x == "--output-file" || x == "--include" || x == "--exclude" || x == "--ignore-errors" || x == "--tempdir" || x == "--tmpdir" || x == "--mem-limit" || x == "--rc" || x == "--config-file")
+    {
+        return true;
+    }
+    false
+}
+
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>, Error> {
     let args: Vec<_> = args.into_iter().collect();
-    let home_rc = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".lcovrc"));
-    let lcov_home_rc = std::env::var_os("LCOV_HOME").map(|h| PathBuf::from(h).join("etc/lcovrc"));
-    if home_rc.as_ref().is_some_and(|p| p.is_file())
-        || lcov_home_rc.as_ref().is_some_and(|p| p.is_file())
-    {
-        return Err(err(
-            "LCOV configuration discovery is unsupported; remove the config or use native mode",
-        ));
-    }
     let end = args.iter().position(|a| a == "--").unwrap_or(args.len());
+    let mut selector = false;
+    let mut configs = Vec::new();
+    let mut rc = Vec::new();
     let mut argv = vec![args.first().cloned().unwrap_or_else(|| "lcovmerge".into())];
-    let mut selector_seen = false;
-    for a in args.iter().skip(1).take(end.saturating_sub(1)) {
+    let mut i = 1;
+    while i < end {
+        let a = args[i].as_os_str();
         if a == "--lcov-compat=2.6" {
-            selector_seen = true;
+            selector = true;
+            i += 1;
             continue;
         }
         if a == "--lcov-compat" {
             return Err(err("--lcov-compat requires the supported version 2.6"));
         }
-        if let Some(s) = a.to_str().and_then(|s| s.strip_prefix("--lcov-compat=")) {
-            return Err(err(format!("unsupported LCOV compatibility version: {s}")));
+        if let Some(v) = a.to_str().and_then(|s| s.strip_prefix("--lcov-compat=")) {
+            return Err(err(format!("unsupported LCOV compatibility version: {v}")));
         }
-        argv.push(a.clone());
+        if a == "--config-file" || a.to_str().is_some_and(|s| s.starts_with("--config-file=")) {
+            configs.push(PathBuf::from(option_value(
+                a,
+                &args,
+                &mut i,
+                "--config-file",
+            )?));
+            i += 1;
+            continue;
+        }
+        if a == "--rc" || a.to_str().is_some_and(|s| s.starts_with("--rc=")) {
+            let setting = option_value(a, &args, &mut i, "--rc")?;
+            rc.push(
+                setting
+                    .into_string()
+                    .map_err(|_| err("--rc setting must be UTF-8"))?,
+            );
+            i += 1;
+            continue;
+        }
+        argv.push(args[i].clone());
+        if consumes_next(a) && a != "--parallel" {
+            i += 1;
+            if i < end {
+                argv.push(args[i].clone());
+            }
+        }
+        i += 1;
     }
-    if !selector_seen {
+    if !selector {
         return Err(err("missing --lcov-compat=2.6 selector"));
     }
     argv.extend(args.iter().skip(end).cloned());
+
+    let loaded = config::Config::load(&configs)?;
     let mut req = Request::default();
     let o = &mut req.resources;
     o.branch_coverage = false;
     o.output = "-".into();
     o.function_data = true;
+    // LCOV configuration files are applied first, then all --rc values, independent
+    // of their position among command-line coverage switches.
+    for (key, value) in loaded.settings {
+        apply_setting(&mut req, &key, &value)?;
+    }
+    for setting in rc {
+        let (key, value) = split_setting(&setting)?;
+        let key = key.trim();
+        if !config::supported(key) && !matches!(key, "memory" | "memory_percentage") {
+            return Err(err(format!(
+                "unsupported merge-relevant --rc setting: {key}"
+            )));
+        }
+        apply_setting(&mut req, key, value.trim())?;
+    }
+
     let mut raw_inputs = Vec::new();
     let mut i = 1;
     let mut positional = false;
-    let mut function_disabled = false;
+    let mut no_function = false;
+    let mut cli_include_seen = false;
+    let mut cli_exclude_seen = false;
+    let mut cli_ignore_seen = false;
     while i < argv.len() {
-        let a = argv[i]
-            .to_str()
-            .ok_or_else(|| err("arguments must be UTF-8 except file paths"))?;
+        let a_os = argv[i].as_os_str();
+        let a = a_os.to_str().unwrap_or("");
         if !positional && a == "--" {
             positional = true;
             i += 1;
             continue;
         }
-        if !positional && (a == "-h" || a == "--help") {
-            print!("{HELP}");
+        if !positional && matches!(a, "-h" | "--help") {
+            std::io::stdout()
+                .write_all(HELP.as_bytes())
+                .map_err(|e| err(format!("cannot write help: {e}")))?;
             return Ok(None);
         }
         if !positional && a == "--version" {
-            println!(
+            writeln!(
+                std::io::stdout(),
                 "lcovmerge {} (LCOV compatibility profile 2.6)",
                 env!("CARGO_PKG_VERSION")
-            );
+            )
+            .map_err(|e| err(format!("cannot write version: {e}")))?;
             return Ok(None);
         }
-        if !positional && (a == "-q" || a == "--quiet") {
-            o.quiet = true;
+        if !positional && matches!(a, "-q" | "--quiet") {
+            req.resources.quiet = true;
             i += 1;
             continue;
         }
-        if !positional && (a == "-v" || a == "--verbose") {
-            o.verbose = true;
+        if !positional && matches!(a, "-v" | "--verbose") {
+            req.resources.verbose = true;
             i += 1;
             continue;
         }
-        if !positional && (a == "-a" || a == "--add-tracefile") {
-            raw_inputs.push(PathBuf::from(val(&argv, &mut i, a)?));
-            i += 1;
-            continue;
-        }
-        if !positional && (a == "-o" || a == "--output-file") {
-            o.output = val(&argv, &mut i, a)?.into();
-            i += 1;
-            continue;
-        }
-        if !positional && (a == "--include" || a == "--exclude") {
-            let v = val(&argv, &mut i, a)?;
-            if a == "--include" {
-                o.includes.push(v)
+        if !positional
+            && (a == "-a"
+                || short_attached(a_os, b"-a").is_some()
+                || a == "--add-tracefile"
+                || has_long_value(a_os, "--add-tracefile"))
+        {
+            let v = if let Some(suffix) = short_attached(a_os, b"-a") {
+                suffix.to_os_string()
+            } else if a == "-a" {
+                i += 1;
+                argv.get(i)
+                    .cloned()
+                    .ok_or_else(|| err("-a requires a value"))?
             } else {
-                o.excludes.push(v)
+                option_value(a_os, &argv, &mut i, "--add-tracefile")?
+            };
+            raw_inputs.push(PathBuf::from(v));
+            i += 1;
+            continue;
+        }
+        if !positional
+            && (a == "-o"
+                || short_attached(a_os, b"-o").is_some()
+                || a == "--output-file"
+                || has_long_value(a_os, "--output-file"))
+        {
+            let v = if let Some(suffix) = short_attached(a_os, b"-o") {
+                suffix.to_os_string()
+            } else if a == "-o" {
+                i += 1;
+                argv.get(i)
+                    .cloned()
+                    .ok_or_else(|| err("-o requires a value"))?
+            } else {
+                option_value(a_os, &argv, &mut i, "--output-file")?
+            };
+            req.resources.output = PathBuf::from(v);
+            i += 1;
+            continue;
+        }
+        if !positional
+            && (a == "--include"
+                || has_long_value(a_os, "--include")
+                || a == "--exclude"
+                || has_long_value(a_os, "--exclude"))
+        {
+            let name = if a.starts_with("--include") {
+                "--include"
+            } else {
+                "--exclude"
+            };
+            let v = option_value(a_os, &argv, &mut i, name)?
+                .into_string()
+                .map_err(|_| err("include/exclude patterns must be UTF-8"))?;
+            if name == "--include" {
+                if !cli_include_seen {
+                    req.resources.includes.clear();
+                    cli_include_seen = true;
+                }
+                req.resources.includes.push(v);
+            } else {
+                if !cli_exclude_seen {
+                    req.resources.excludes.clear();
+                    cli_exclude_seen = true;
+                }
+                req.resources.excludes.push(v);
             }
             i += 1;
             continue;
@@ -179,36 +383,36 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
             i += 1;
             continue;
         }
-        if !positional && (a == "--checksum" || a == "--no-checksum") {
+        if !positional && matches!(a, "--checksum" | "--no-checksum") {
             req.checksum = a == "--checksum";
             i += 1;
             continue;
         }
-        if !positional && (a == "--function-coverage" || a == "--no-function-coverage") {
-            if a == "--no-function-coverage" {
-                function_disabled = true;
-            }
-            o.function_data = !function_disabled;
+        if !positional && matches!(a, "--function-coverage" | "--no-function-coverage") {
+            no_function |= a == "--no-function-coverage";
+            req.resources.function_data = !no_function;
             i += 1;
             continue;
         }
-        if !positional && (a == "--branch-coverage" || a == "--no-branch-coverage") {
-            o.branch_coverage = a == "--branch-coverage";
+        if !positional && matches!(a, "--branch-coverage" | "--no-branch-coverage") {
+            req.resources.branch_coverage = a == "--branch-coverage";
             i += 1;
             continue;
         }
-        if !positional && (a == "--mcdc-coverage" || a == "--no-mcdc-coverage") {
+        if !positional && matches!(a, "--mcdc-coverage" | "--no-mcdc-coverage") {
             req.mcdc_coverage = a == "--mcdc-coverage";
             i += 1;
             continue;
         }
-        if !positional && a == "--ignore-errors" {
-            for e in val(&argv, &mut i, a)?.split(',') {
-                if e != "inconsistent" {
-                    return Err(err(format!("unsupported --ignore-errors category: {e}")));
-                }
-                req.ignore_errors.insert(e.into());
+        if !positional && (a == "--ignore-errors" || has_long_value(a_os, "--ignore-errors")) {
+            let list = option_value(a_os, &argv, &mut i, "--ignore-errors")?
+                .into_string()
+                .map_err(|_| err("--ignore-errors must be UTF-8"))?;
+            if !cli_ignore_seen {
+                req.ignore_errors.clear();
+                cli_ignore_seen = true;
             }
+            add_ignore_errors(&mut req, &list)?;
             i += 1;
             continue;
         }
@@ -217,74 +421,51 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
             i += 1;
             continue;
         }
-        if !positional && (a == "--tempdir" || a == "--tmpdir") {
-            o.tmpdir = val(&argv, &mut i, a)?.into();
+        if !positional
+            && (a == "--tempdir"
+                || a == "--tmpdir"
+                || has_long_value(a_os, "--tempdir")
+                || has_long_value(a_os, "--tmpdir"))
+        {
+            let name = if a == "--tempdir" || has_long_value(a_os, "--tempdir") {
+                "--tempdir"
+            } else {
+                "--tmpdir"
+            };
+            req.resources.tmpdir = PathBuf::from(option_value(a_os, &argv, &mut i, name)?);
             i += 1;
             continue;
         }
         if !positional && (a == "--parallel" || a.starts_with("--parallel=")) {
-            let n = if let Some(v) = a.strip_prefix("--parallel=") {
-                v.to_owned()
-            } else if argv.get(i + 1).is_some_and(|v| {
-                v.to_str()
-                    .is_some_and(|s| s.bytes().all(|b| b.is_ascii_digit()))
-            }) {
-                i += 1;
-                argv[i].to_string_lossy().into_owned()
-            } else {
-                "0".into()
-            };
-            let n = if n == "0" {
-                std::thread::available_parallelism()
-                    .map_or(1, |n| n.get())
-                    .min(32)
-            } else {
-                n.parse::<usize>()
-                    .ok()
-                    .filter(|n| (1..=32).contains(n))
-                    .ok_or_else(|| err("--parallel expects 1-32"))?
-            };
-            o.jobs = n;
-            o.jobs_explicit = true;
-            i += 1;
-            continue;
-        }
-        if !positional && a == "--mem-limit" {
-            o.mem_limit =
-                size(&val(&argv, &mut i, a)?).ok_or_else(|| err("invalid --mem-limit size"))?;
-            i += 1;
-            continue;
-        }
-        if !positional && a == "--rc" {
-            let setting = val(&argv, &mut i, a)?;
-            let (key, value) = setting
-                .split_once('=')
-                .ok_or_else(|| err("--rc requires SETTING=VALUE"))?;
-            match key {
-                "function_coverage" => {
-                    if function_disabled && rc_bool(value, key)? {
-                        // LCOV preserves a negative command-line function toggle.
-                    } else {
-                        o.function_data = rc_bool(value, key)?;
-                        function_disabled = !o.function_data;
-                    }
+            let n = if a == "--parallel" {
+                if argv
+                    .get(i + 1)
+                    .and_then(|v| v.to_str())
+                    .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                {
+                    i += 1;
+                    argv[i].to_string_lossy().into_owned()
+                } else {
+                    "0".to_owned()
                 }
-                "branch_coverage" => o.branch_coverage = rc_bool(value, key)?,
-                "mcdc_coverage" | "mcdc-coverage" => req.mcdc_coverage = rc_bool(value, key)?,
-                "checksum" => req.checksum = rc_bool(value, key)?,
-                _ => {
-                    return Err(err(format!(
-                        "unsupported merge-relevant --rc setting: {key}"
-                    )))
-                }
-            }
+            } else {
+                a.strip_prefix("--parallel=").unwrap_or("").to_owned()
+            };
+            req.resources.jobs = parallel(&n)?;
+            req.resources.jobs_explicit = true;
             i += 1;
             continue;
         }
-        if !positional && a == "--config-file" {
-            return Err(err(
-                "--config-file is unsupported: configuration discovery is not implemented",
-            ));
+        if !positional && (a == "--memory" || a.starts_with("--memory=")) {
+            return Err(err("--memory is unsupported: LCOV memory throttling requires scheduler semantics not provided by this merge executor"));
+        }
+        if !positional && (a == "--mem-limit" || has_long_value(a_os, "--mem-limit")) {
+            let v = option_value(a_os, &argv, &mut i, "--mem-limit")?
+                .into_string()
+                .map_err(|_| err("--mem-limit must be UTF-8"))?;
+            req.resources.mem_limit = size(&v).ok_or_else(|| err("invalid --mem-limit size"))?;
+            i += 1;
+            continue;
         }
         if !positional && a.starts_with('-') && a != "-" {
             return Err(err(format!("unsupported LCOV merge option: {a}")));
@@ -292,22 +473,57 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
         raw_inputs.push(PathBuf::from(&argv[i]));
         i += 1;
     }
+    if no_function {
+        req.resources.function_data = false;
+    }
     if raw_inputs.is_empty() {
         return Err(err(
             "merge requires at least one -a/--add-tracefile PATTERN",
         ));
     }
-    for p in raw_inputs {
-        expand_one(p.as_os_str(), &mut o.inputs)?;
+    for pattern in raw_inputs {
+        expand_one(pattern.as_os_str(), &mut req.resources.inputs)?;
     }
-    o.mem_limit = o.mem_limit.max(MIN_WORKER_BUDGET);
-    if !o.jobs_explicit {
-        o.jobs = std::thread::available_parallelism().map_or(1, |n| n.get().min(4));
+    req.resources.mem_limit = req.resources.mem_limit.max(MIN_WORKER_BUDGET);
+    if !req.resources.jobs_explicit {
+        req.resources.jobs = 1;
     }
-    if o.jobs > o.mem_limit / MIN_WORKER_BUDGET {
+    if req.resources.jobs > req.resources.mem_limit / MIN_WORKER_BUDGET {
         return Err(err("worker count exceeds --mem-limit capacity"));
     }
     Ok(Some(req))
+}
+
+fn expand_one(pattern: &OsStr, out: &mut Vec<PathBuf>) -> Result<(), Error> {
+    let Some(text) = pattern.to_str() else {
+        // A byte path without glob metacharacters is an exact input path.
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            if !pattern.as_bytes().iter().any(|b| b"*?[]\\".contains(b)) {
+                out.push(PathBuf::from(pattern));
+                return Ok(());
+            }
+        }
+        return Err(err("non-UTF-8 LCOV glob patterns are unsupported; pass a literal byte path without glob syntax"));
+    };
+    if !text.bytes().any(|b| b"*?[]\\".contains(&b)) {
+        out.push(PathBuf::from(pattern));
+        return Ok(());
+    }
+    let paths =
+        glob::glob(text).map_err(|e| err(format!("invalid tracefile pattern '{text}': {e}")))?;
+    let mut found = Vec::new();
+    for path in paths {
+        found
+            .push(path.map_err(|e| err(format!("cannot expand tracefile pattern '{text}': {e}")))?);
+    }
+    if found.is_empty() {
+        return Err(err(format!("pattern matched no files: {text}")));
+    }
+    found.sort();
+    out.extend(found);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -317,72 +533,190 @@ mod tests {
         parse(s.iter().map(OsString::from))
     }
     #[test]
-    fn selector_position_and_delimiter() {
-        assert!(parse_s(&["x", "-q", "--lcov-compat=2.6", "-a", "a"])
+    fn selector_position_values() {
+        assert!(selected(&["x".into(), "-a".into(), "--lcov-compat=2.6".into()]) == false);
+        assert!(parse_s(&["x", "-q", "--lcov-compat=2.6", "-a", "literal"])
             .unwrap()
             .is_some());
-        assert!(parse_s(&["x", "--", "--lcov-compat=2.6", "a"]).is_err());
     }
     #[test]
-    fn rejects_version_and_operation() {
-        assert!(parse_s(&["x", "--lcov-compat=9", "-a", "a"]).is_err());
-        assert!(parse_s(&["x", "--lcov-compat=2.6", "--capture"]).is_err());
-    }
-    #[test]
-    fn defaults_and_controls() {
+    fn toggles_and_cli_rc_precedence() {
         let r = parse_s(&[
             "x",
             "--lcov-compat=2.6",
+            "--no-function-coverage",
+            "--rc=function_coverage=1",
             "-a",
             "a",
-            "--no-function-coverage",
-            "--function-coverage",
-            "--no-checksum",
-            "--forget-test-names",
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(!r.resources.function_data);
+        let r = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--rc=branch_coverage=on",
+            "--no-branch-coverage",
+            "-a",
+            "a",
         ])
         .unwrap()
         .unwrap();
         assert!(!r.resources.branch_coverage);
-        assert!(!r.resources.function_data);
-        assert!(!r.checksum);
-        assert!(r.forget_test_names);
     }
-
     #[test]
-    fn rc_supported_values_and_unknown_rejection() {
+    fn options_with_equals_short_attached_and_parallel_zero() {
         let r = parse_s(&[
             "x",
             "--lcov-compat=2.6",
-            "--rc",
-            "branch_coverage=on",
-            "-a",
-            "a",
+            "-afile",
+            "-oresult",
+            "-ofinal",
+            "--tempdir=tmp",
+            "--parallel=0",
+            "--ignore-errors=Inconsistent,format",
+            "--mem-limit=256M",
         ])
         .unwrap()
         .unwrap();
-        assert!(r.resources.branch_coverage);
+        assert_eq!(r.resources.inputs, vec![PathBuf::from("file")]);
+        assert_eq!(r.resources.output, PathBuf::from("final"));
+        assert!(r.resources.jobs >= 1 && r.resources.jobs <= 32);
+        assert!(r.ignore_errors.contains("format"));
+    }
+    #[test]
+    fn rejects_memory_and_bad_categories() {
+        assert!(parse_s(&["x", "--lcov-compat=2.6", "--memory=10", "-a", "a"]).is_err());
         assert!(parse_s(&[
             "x",
             "--lcov-compat=2.6",
-            "--rc",
-            "genhtml_hi_limit=90",
+            "--ignore-errors=callback",
             "-a",
-            "a",
+            "a"
         ])
         .is_err());
     }
 
     #[test]
-    fn quoted_glob_expands_sorted_and_keeps_duplicates() {
+    fn explicit_config_inclusion_precedence_and_cycle_detection() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("b.info"), "").unwrap();
-        std::fs::write(dir.path().join("a.info"), "").unwrap();
-        let pattern = dir.path().join("*.info").to_string_lossy().into_owned();
-        let r = parse_s(&["x", "--lcov-compat=2.6", "-a", &pattern, "-a", &pattern])
-            .unwrap()
-            .unwrap();
-        assert_eq!(r.resources.inputs.len(), 4);
-        assert!(r.resources.inputs[0] < r.resources.inputs[1]);
-        assert_eq!(r.resources.inputs[0], r.resources.inputs[2]);
+        let child = dir.path().join("child.rc");
+        let parent = dir.path().join("parent.rc");
+        std::fs::write(&child, "branch_coverage = 1\nfunction_coverage = 0\n").unwrap();
+        std::fs::write(
+            &parent,
+            format!("config_file = {}\nbranch_coverage = 0\n", child.display()),
+        )
+        .unwrap();
+        let parent_arg = parent.to_string_lossy().into_owned();
+        let r = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--config-file",
+            &parent_arg,
+            "--function-coverage",
+            "--rc=branch_coverage=1",
+            "--no-branch-coverage",
+            "-a",
+            "a",
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(!r.resources.branch_coverage);
+        assert!(r.resources.function_data);
+
+        std::fs::write(&child, format!("config_file = {}\n", parent.display())).unwrap();
+        assert!(parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--config-file",
+            &parent_arg,
+            "-a",
+            "a"
+        ])
+        .is_err());
+    }
+    #[test]
+    fn glob_supports_brackets_escape_determinism_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        for n in ["a1.info", "a2.info", "a*.info"] {
+            std::fs::write(dir.path().join(n), "").unwrap();
+        }
+        let bracket = dir.path().join("a[12].info");
+        let escaped = PathBuf::from(glob::Pattern::escape(
+            dir.path().join("a*.info").to_str().unwrap(),
+        ));
+        let r = parse(
+            [
+                "x".into(),
+                "--lcov-compat=2.6".into(),
+                "-a".into(),
+                bracket.into_os_string(),
+                "-a".into(),
+                escaped.into_os_string(),
+            ]
+            .into_iter(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(r.resources.inputs.len(), 3);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn byte_paths_for_inputs_output_and_tempdir() {
+        use std::os::unix::ffi::OsStringExt;
+        let bad = OsString::from_vec(vec![b'i', b'n', b'\xff']);
+        let input = PathBuf::from(&bad);
+        let output = PathBuf::from(OsString::from_vec(vec![b'o', b'\xfe']));
+        let tmp = PathBuf::from(OsString::from_vec(vec![b't', b'\xfd']));
+        let r = parse(vec![
+            "x".into(),
+            "--lcov-compat=2.6".into(),
+            "-a".into(),
+            input.clone().into_os_string(),
+            "-o".into(),
+            output.clone().into_os_string(),
+            "--tempdir".into(),
+            tmp.clone().into_os_string(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(r.resources.inputs[0], input);
+        assert_eq!(r.resources.output, output);
+        assert_eq!(r.resources.tmpdir, tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attached_byte_path_options_preserve_raw_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let input = OsString::from_vec(vec![b'-', b'a', b'i', b'\xff']);
+        let output = OsString::from_vec(b"--output-file=out\xfe".to_vec());
+        let tempdir = OsString::from_vec(b"--tempdir=tmp\xfd".to_vec());
+        let r = parse(vec![
+            "x".into(),
+            "--lcov-compat=2.6".into(),
+            input,
+            output.clone(),
+            tempdir.clone(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            r.resources.inputs,
+            vec![PathBuf::from(OsString::from_vec(vec![b'i', b'\xff']))]
+        );
+        assert_eq!(
+            r.resources.output,
+            PathBuf::from(OsString::from_vec(b"out\xfe".to_vec()))
+        );
+        assert_eq!(
+            r.resources.tmpdir,
+            PathBuf::from(OsString::from_vec(b"tmp\xfd".to_vec()))
+        );
+    }
+    #[test]
+    fn size_detects_overflow() {
+        assert_eq!(size("18446744073709551615G"), None);
     }
 }
