@@ -11,7 +11,9 @@ lcovmerge is implemented in native Rust. `Cargo.toml` defines the library and CL
 
 ## Rust modules
 
-`src/lib.rs` exposes the reusable modules and API; `src/main.rs` is the executable entry point. The modules are organized around shared options and errors (`common`), record representation and ordering (`model`), path rewriting/filtering (`path`), streaming input (`parser`), summary and output formatting (`emit`), merge orchestration and temporary runs (`engine`), source-path partition planning (`partition`), and command-line parsing (`cli`). Keep the parser and merge state bounded and preserve the public behavior described in [the CLI reference](../man/lcovmerge.1) and [usage guide](USAGE.md).
+`src/lib.rs` exposes the reusable modules and API; `src/main.rs` is the executable entry point. The native modules are organized around shared options and errors (`common`), record representation and ordering (`model`), path rewriting/filtering (`path`), streaming input (`parser`), summary and output formatting (`emit`), merge orchestration and temporary runs (`engine`), source-path partition planning (`partition`), and command-line parsing (`cli`). Keep the parser and merge state bounded and preserve the public behavior described in [the CLI reference](../man/lcovmerge.1) and [usage guide](USAGE.md).
+
+The opt-in `--lcov-compat=2.6` request is dispatched separately through the compatibility modules (`src/compat`). It resolves profile configuration and options without changing native defaults or the native option contract. Its supported command surface and unsupported capture, reset, extract/remove, genhtml, and Perl callback features are listed in the [LCOV profile contract](LCOV-PROFILE.md). Development validation remains in progress. The profile's resource behavior has not passed the external spill gate; native memory and parallel guarantees must not be treated as profile evidence.
 
 ## Memory and cancellation
 
@@ -21,7 +23,7 @@ The default `--mem-limit` bounds record storage, not total process memory. Parse
 
 The record ordering and key comparison rules live in the model layer. Keep output bytes, diagnostics, exit statuses, path handling, and overflow behavior deterministic across input ordering and worker count. The CLI regression suite compares golden output, malformed input handling, differential cases, determinism, and forced partitions. The Rust unit/property tests exercise the parser and merge primitives directly.
 
-The Rust port targets behavioral compatibility with C lcovmerge 1.1.0. It does not change the documented differences from `lcov -a`; see [compatibility notes](COMPATIBILITY.md). Existing benchmark data and reports are measurements of the former C 1.1.0 implementation, not Rust.
+Native mode targets behavioral compatibility with C lcovmerge 1.1.0 and retains the documented differences from `lcov -a`; see [compatibility notes](COMPATIBILITY.md). The opt-in profile is a separate implementation with its own validation status. Existing benchmark data and reports labeled for C lcovmerge 1.1.0 remain historical C measurements, not Rust native-mode or profile performance evidence.
 
 ## Release builds
 

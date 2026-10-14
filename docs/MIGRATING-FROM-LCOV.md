@@ -1,6 +1,6 @@
 # Migrating from `lcov -a`
 
-lcovmerge merges already-exported LCOV `.info` files; it does not collect coverage or replace `genhtml`. It is not a drop-in replacement for `lcov -a`. Compare your own records and reports before switching.
+lcovmerge merges already-exported LCOV `.info` files; it does not collect coverage or replace `genhtml`. Native mode has its own merge policies; the experimental `--lcov-compat=2.6` profile implements a version-pinned subset of LCOV 2.6's merge command. Neither mode replaces LCOV collection, reset, extraction, reporting, or callback workflows. See the [profile contract and validation status](LCOV-PROFILE.md), and compare your records and reports before switching.
 
 ## Common option mapping
 
@@ -46,8 +46,11 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-compare.XXXXXX")
 trap 'python3 -c "import shutil,sys; shutil.rmtree(sys.argv[1])" "$work"' EXIT
 python3 tools/gen-lcov.py --out "$work/shards" --shards 2 --files 4 --lines 80 --seed 1 --benchmark-compatible --lcov-valid
 lcov -a "$work/shards/shard-0000.info" -a "$work/shards/shard-0001.info" -o "$work/lcov.info"
-./bin/lcovmerge "$work"/shards/shard-*.info -o "$work/lcovmerge.info" --strict-checksum
+./bin/lcovmerge "$work"/shards/shard-*.info -o "$work/lcovmerge-native.info" --strict-checksum
+./bin/lcovmerge --lcov-compat=2.6 -a "$work"/shards/shard-*.info -o "$work/lcovmerge-profile.info"
 ```
+
+The first command exercises native mode; the second exercises the experimental profile on the same input files. To exercise quoted-glob expansion, use `-a "$work/shards/shard-*.info"` in the profile command. Compare each output with the LCOV output and with the downstream reports your pipeline uses.
 
 This command prepares separate outputs; it does not prove semantic equivalence. Compare normalized SF path sets and keyed `DA`, `FN`, `FNDA`, and `BRDA` rows and counts. A raw cmp or diff is not sufficient because row order and summary rows can differ. Also check checksums, `TN` rows, branches, function aliases, MC/DC records, rewritten paths, and extension records used by your consumers. Run both outputs through the same downstream report commands and filters.
 

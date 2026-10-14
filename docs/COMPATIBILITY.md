@@ -1,6 +1,6 @@
 # Compatibility with LCOV 2.6
 
-lcovmerge merges already-exported LCOV `.info` files. It is not a drop-in replacement for `lcov -a`, and stable output from lcovmerge does not mean byte-for-byte or semantic identity with LCOV. This page describes selected merge-policy differences against upstream LCOV 2.6. LCOV options and configuration can change how it handles inconsistent input; the examples below call out strict behavior and diagnostic recovery where relevant.
+lcovmerge merges already-exported LCOV `.info` files. This page documents native mode's selected merge-policy differences against upstream LCOV 2.6. Native mode has different merge policies from `lcov -a`; the separate experimental `--lcov-compat=2.6` profile is version-pinned and limited to its documented merge surface. Its validation is in progress. See the [profile contract and validation status](LCOV-PROFILE.md). Neither mode collects coverage or replaces the `lcov` toolchain. LCOV options and configuration can change how it handles inconsistent input; the examples below call out strict behavior and diagnostic recovery where relevant.
 
 ## What has been verified
 
@@ -18,7 +18,7 @@ The diagnostic LCOV flags suppressed errors so output could be inspected; they d
 
 ## Policy differences
 
-| Case | What LCOV 2.6 does | What lcovmerge does | Which to prefer when |
+| Case | What LCOV 2.6 does | What lcovmerge native mode does | Which to prefer when |
 | --- | --- | --- | --- |
 | Different testcase names for one source | Keeps each `TN`/`SF` section as a separate testcase partition in the tracefile. The format defines `TN` as the testcase identity for its section. | Adds a testcase label only when all merged sections for that source carry the same non-empty name; if names conflict or some inputs are unnamed, it combines the coverage and omits `TN` rather than mislabel the aggregate. | Prefer separate testcase partitions when per-test coverage must remain available. Prefer lcovmerge's combined counts when the goal is one aggregate source report; see the LCOV tracefile format and [LCOV issue #522](https://github.com/linux-test-project/lcov/issues/522) for readback problems reported for repeated sources under different test names. |
 | Branch-only line without `DA` | Strict `lcov -a` reports inconsistent data and stops by default. With `--ignore-errors inconsistent`, it can add a `DA` count based on nonzero branch coverpoints. | Keeps the branch rows and does not invent a line-coverage row. | Prefer LCOV's recovery only when you want its repaired line counts. Prefer lcovmerge when line coverage should reflect only supplied `DA` records. Otherwise fix the capture at its source. |
