@@ -37,7 +37,7 @@ tables with `python3 tools/render_benchmarks.py`.
 - [ ] Run `actionlint` and confirm the action references remain SHA-pinned and match `docs/validation/action-pins.txt`.
 - [ ] Verify Linux binaries are static musl builds and macOS/Windows artifacts match their target
 architecture.
-- [ ] Confirm the release binary size meets the project's stated limit and that archives contain only intended
+- [ ] Confirm the release binary size meets the 2 MiB ceiling enforced by `scripts/check-binary-size.sh` and that archives contain only intended
 files.
 - [ ] Check the release assets' names and regenerate `SHA256SUMS` from the final archives.
 - [ ] Generate `RELEASE_NOTES.md` with `scripts/package-release.sh VERSION`; inspect the three-line summary, highlights, install examples, checksum and provenance commands, and changelog section.

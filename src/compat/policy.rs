@@ -1,9 +1,7 @@
 use super::{record, Section};
-use crate::common::{Error, MAX_LINE};
+use crate::common::Error;
 use crate::compat::Request;
 use base64::Engine;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 pub(super) fn parse_fn(
     s: &str,
@@ -16,10 +14,17 @@ pub(super) fn parse_fn(
     let third = f.next();
     match (second, third) {
         (Some(name), None) => Ok((num(Some(first), file, line)?, None, name.to_owned())),
-        (Some(end), Some(name)) => Ok((
+        (Some(end), Some(name)) if !end.is_empty() && end.bytes().all(|b| b.is_ascii_digit()) => {
+            Ok((
+                num(Some(first), file, line)?,
+                Some(num(Some(end), file, line)?),
+                name.to_owned(),
+            ))
+        }
+        (Some(first_name), Some(rest)) => Ok((
             num(Some(first), file, line)?,
-            Some(num(Some(end), file, line)?),
-            name.to_owned(),
+            None,
+            format!("{first_name},{rest}"),
         )),
         _ => Err(Error::at(2, file, line, "malformed FN record")),
     }
@@ -160,86 +165,44 @@ pub(super) fn validate_or_generate_checksum(
     req: &Request,
     file: &str,
     line: u64,
+    source_index: &mut super::source::SourceIndex,
 ) -> Result<(), Error> {
     let line_no = num(payload.split(',').next(), file, line)?;
     let existing = s.lines.get(&line_no).and_then(|x| x.1.clone());
-    let src = Path::new(&s.source);
-    let source = match File::open(src) {
-        Ok(source) => source,
-        Err(e) => {
-            let error = Error::at(
-                2,
-                file,
-                line,
-                format!("cannot read source {}: {e}", src.display()),
-            );
-            if can_recover(req, &error) {
-                return Ok(());
-            }
-            return Err(error);
-        }
+    let raw = match source_index.checksum(Path::new(&s.source), line_no) {
+        Ok(raw) => raw,
+        Err(e) if can_recover(req, &e) => return Ok(()),
+        Err(e) => return Err(e),
     };
-    let mut reader = BufReader::new(source);
-    let mut buf = Vec::new();
-    let mut found = true;
-    for n in 1..=line_no {
-        buf.clear();
-        let read = (&mut reader)
-            .take((MAX_LINE + 2) as u64)
-            .read_until(b'\n', &mut buf)
-            .map_err(|e| Error::at(3, file, line, format!("source read failed: {e}")))?;
-        if read == 0 {
-            found = false;
-            break;
-        }
-        if buf.len() > MAX_LINE + 1 {
-            return Err(Error::at(
-                2,
-                file,
-                line,
-                "source line exceeds 1 MiB while computing checksum",
-            ));
-        }
-        if n == line_no {
-            break;
-        }
-    }
-    if buf.last() == Some(&b'\n') {
-        buf.pop();
-    }
-    if buf.last() == Some(&b'\r') {
-        buf.pop();
-    }
-    if buf.len() > MAX_LINE {
-        return Err(Error::at(
+    let sum = raw.map(|bytes| base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes));
+    let extension = Path::new(&s.source)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let verifies = matches!(
+        extension,
+        "c" | "h" | "i" | "C" | "H" | "I" | "icc" | "cpp" | "cc" | "cxx" | "hh" | "hpp" | "hxx"
+    );
+    if verifies
+        && (req.checksum || req.resources.strict_checksum)
+        && (existing.is_none() || existing != sum)
+    {
+        let e = Error::at(
             2,
             file,
             line,
-            "source line exceeds 1 MiB while computing checksum",
-        ));
-    }
-    let sum = found
-        .then(|| base64::engine::general_purpose::STANDARD_NO_PAD.encode(md5::compute(&buf).0));
-    let mismatch = existing
-        .as_deref()
-        .is_some_and(|c| Some(c) != sum.as_deref());
-    let missing = existing.is_none();
-    if req.checksum || req.resources.strict_checksum {
-        if let Some(v) = s.lines.get_mut(&line_no) {
-            if v.1.is_none() {
-                v.1 = sum.clone();
-            }
-        }
-    }
-    if (req.resources.strict_checksum || req.checksum) && (mismatch || missing) {
-        let message = if mismatch {
-            format!("source checksum mismatch for {}:{}", s.source, line_no)
-        } else {
-            format!("no checksum for {}:{}", s.source, line_no)
-        };
-        let e = Error::at(2, file, line, message);
+            format!(
+                "source checksum mismatch or missing checksum for {}:{line_no}",
+                s.source
+            ),
+        );
         if !can_recover(req, &e) {
             return Err(e);
+        }
+    }
+    if existing.is_none() {
+        if let Some(value) = s.lines.get_mut(&line_no) {
+            value.1 = sum;
         }
     }
     Ok(())
@@ -262,7 +225,8 @@ pub(super) fn can_recover(req: &Request, error: &Error) -> bool {
         "count"
     } else if m.contains("checksum") || m.contains("source version") {
         "version"
-    } else if m.contains("read source") || m.contains("source read") {
+    } else if m.contains("read source") || m.contains("source read") || m.contains("source changed")
+    {
         "source"
     } else if m.contains("inconsistent") || m.contains("conflicting") {
         "inconsistent"

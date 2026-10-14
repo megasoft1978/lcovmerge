@@ -3,7 +3,7 @@ use crate::common::Error;
 use std::io::{Read, Write};
 
 const MAGIC: &[u8; 8] = b"LCVCRUN\0";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 pub const MAX_FIELD: usize = 1 << 20;
 pub const MAX_FIELDS: usize = 64;
 
@@ -46,6 +46,7 @@ pub fn read_record(mut input: impl Read, field_count: usize) -> Result<Vec<Vec<u
         return Err(Error::new(2, "unsupported compatibility run version"));
     }
     let mut result = Vec::with_capacity(field_count);
+    let mut frame_bytes = 0usize;
     for _ in 0..field_count {
         let mut len = [0; 4];
         input
@@ -58,6 +59,12 @@ pub fn read_record(mut input: impl Read, field_count: usize) -> Result<Vec<Vec<u
         let n = n as usize;
         if n > MAX_FIELD {
             return Err(Error::new(2, "compatibility run field exceeds 1 MiB"));
+        }
+        frame_bytes = frame_bytes
+            .checked_add(n)
+            .ok_or_else(|| Error::new(2, "compatibility run frame overflow"))?;
+        if frame_bytes > 4 * MAX_FIELD {
+            return Err(Error::new(2, "compatibility run frame exceeds 4 MiB"));
         }
         let mut field = vec![0; n];
         input

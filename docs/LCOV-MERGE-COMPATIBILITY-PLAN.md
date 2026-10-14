@@ -73,6 +73,12 @@ Enable sorted-input and threaded compatibility paths only after equivalence is p
 
 Update `scripts/build-optimized.py` to fingerprint nested Rust modules recursively. Its current top-level `src/*.rs` inventory would miss changes inside a new compatibility directory. Profile training must exercise native and compatibility paths with separate training seeds, freeze profile hashes, and validate training outputs. Maintain the 1 MiB release-binary budget or resolve any necessary budget change explicitly before release.
 
+Implementation decision: raise the release ceiling to 2 MiB across all targets
+for the combined native/profile CLI, gzip codec, and source verification. The
+first combined unprofiled build exceeded 1 MiB. Speed-focused release settings
+remain in place, and native performance still has its independent gate. This
+binary ceiling is separate from the 1 MiB input-line cap and record-memory budget.
+
 ## Semantic conformance matrix
 
 Each row requires successful cases, boundaries, conflicting inputs, and strict/recovery cases where upstream supports recovery.

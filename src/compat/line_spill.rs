@@ -16,7 +16,7 @@ pub(super) struct Entry {
     pub testcase: String,
     pub value: String,
     pub line: u64,
-    pub count: f64,
+    pub count: u64,
     pub input: u64,
     pub section: u64,
     pub ordinal: u64,
@@ -52,7 +52,7 @@ pub(super) struct Spill {
     budget: usize,
     batch: Vec<Entry>,
     held: usize,
-    runs: Vec<PathBuf>,
+    leaf_runs: usize,
     pub run_count: usize,
     pub passes: usize,
     pub traffic: u64,
@@ -69,7 +69,7 @@ impl Spill {
             budget,
             batch: Vec::new(),
             held: 0,
-            runs: Vec::new(),
+            leaf_runs: 0,
             run_count: 0,
             passes: 0,
             traffic: 0,
@@ -110,7 +110,7 @@ impl Spill {
             self.traffic += write_entry(&mut out, &row)?;
         }
         out.flush().map_err(ioerr)?;
-        self.runs.push(path);
+        self.leaf_runs += 1;
         self.run_count += 1;
         self.batch = Vec::new();
         self.held = 0;
@@ -118,31 +118,32 @@ impl Spill {
     }
     pub fn finish(&mut self) -> Result<PathBuf, Error> {
         self.flush()?;
-        let mut runs = std::mem::take(&mut self.runs);
-        let mut pass = 1;
-        while runs.len() > 1 {
-            let mut next = Vec::new();
-            for (chunk_no, chunk) in runs.chunks(self.fanin).enumerate() {
+        let mut count = self.leaf_runs;
+        let mut pass = 0;
+        while count > 1 {
+            let mut next_count = 0;
+            for first in (0..count).step_by(self.fanin) {
                 check_cancelled()?;
-                let path = self.path(pass, chunk_no);
-                merge_runs(chunk, &path, &mut self.traffic)?;
-                next.push(path);
+                let paths: Vec<_> = (first..count.min(first.saturating_add(self.fanin)))
+                    .map(|n| self.path(pass, n))
+                    .collect();
+                let path = self.path(pass + 1, next_count);
+                merge_runs(&paths, &path, &mut self.traffic)?;
+                for old in paths {
+                    fs::remove_file(old).map_err(ioerr)?;
+                }
+                next_count += 1;
+                self.run_count += 1;
             }
-            self.run_count += next.len();
-            for p in &runs {
-                let _ = fs::remove_file(p);
-            }
-            runs = next;
+            count = next_count;
             pass += 1;
             self.passes += 1;
         }
-        if let Some(p) = runs.pop() {
-            Ok(p)
-        } else {
-            let p = self.path(pass, 0);
-            File::create(&p).map_err(ioerr)?;
-            Ok(p)
+        let path = self.path(pass, 0);
+        if count == 0 {
+            File::create(&path).map_err(ioerr)?;
         }
+        Ok(path)
     }
     pub fn dir(&self) -> &Path {
         self.dir.path()
@@ -223,6 +224,7 @@ fn merge_runs(paths: &[PathBuf], dst: &Path, traffic: &mut u64) -> Result<(), Er
     while let Some(Head { row, run }) = heads.pop() {
         check_cancelled()?;
         *traffic += write_entry(&mut out, &row)?;
+        drop(row);
         if let Some(row) = read_next_public(&mut readers[run])? {
             heads.push(Head { row, run });
         }
@@ -231,14 +233,7 @@ fn merge_runs(paths: &[PathBuf], dst: &Path, traffic: &mut u64) -> Result<(), Er
 }
 fn write_entry(out: &mut impl Write, e: &Entry) -> Result<u64, Error> {
     let kind = [e.kind];
-    let numbers = [
-        e.line,
-        e.count.to_bits(),
-        e.input,
-        e.section,
-        e.ordinal,
-        e.line_no,
-    ];
+    let numbers = [e.line, e.count, e.input, e.section, e.ordinal, e.line_no];
     let encoded_numbers: Vec<_> = numbers.map(u64::to_le_bytes).into_iter().collect();
     let mut fields: Vec<&[u8]> = Vec::with_capacity(11);
     fields.push(&kind);
@@ -272,8 +267,8 @@ fn decode_fields(mut f: Vec<Vec<u8>>) -> Result<Entry, Error> {
         }
         *dst = u64::from_le_bytes(bytes.try_into().map_err(|_| corrupt())?);
     }
-    let count = f64::from_bits(nums[1]);
-    if !count.is_finite() || count < 0.0 {
+    let count = nums[1];
+    if count > i64::MAX as u64 {
         return Err(corrupt());
     }
     Ok(Entry {
@@ -308,7 +303,7 @@ mod tests {
             testcase: testcase.into(),
             value: String::new(),
             line,
-            count: ordinal as f64,
+            count: ordinal,
             input: 0,
             section: 0,
             ordinal,

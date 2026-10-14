@@ -21,6 +21,8 @@ mod merge;
 mod policy;
 #[path = "record.rs"]
 mod record;
+#[path = "source.rs"]
+mod source;
 use policy::{
     can_recover, num, parse_branch, parse_fn, parse_mcdc, parse_named_count,
     validate_or_generate_checksum,
@@ -305,11 +307,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                 if s.is_empty() || s.starts_with('#') {
                     true
                 } else if s.starts_with("TN:") {
-                    if open {
-                        false
-                    } else {
-                        true
-                    }
+                    !open
                 } else if s.starts_with("SF:") {
                     open = true;
                     true
@@ -320,24 +318,20 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                         open = false;
                         true
                     }
-                } else if s.starts_with("DA:") || s.starts_with("VER:") {
-                    open
-                } else if [
-                    "LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MD:", "MCF:", "MCH:",
-                ]
-                .iter()
-                .any(|x| s.starts_with(x))
+                } else if s.starts_with("DA:")
+                    || s.starts_with("VER:")
+                    || [
+                        "LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MD:", "MCF:", "MCH:",
+                    ]
+                    .iter()
+                    .any(|x| s.starts_with(x))
+                    || (!o.function_data
+                        && ["FN:", "FNDA:", "FNL:", "FNA:"]
+                            .iter()
+                            .any(|x| s.starts_with(x)))
+                    || (!o.branch_coverage && s.starts_with("BRDA:"))
+                    || (!req.mcdc_coverage && s.starts_with("MCDC:"))
                 {
-                    open
-                } else if !o.function_data
-                    && ["FN:", "FNDA:", "FNL:", "FNA:"]
-                        .iter()
-                        .any(|x| s.starts_with(x))
-                {
-                    open
-                } else if !o.branch_coverage && s.starts_with("BRDA:") {
-                    open
-                } else if !req.mcdc_coverage && s.starts_with("MCDC:") {
                     open
                 } else {
                     false
@@ -481,7 +475,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                         testcase: String::new(),
                         value: v.to_owned(),
                         line: 0,
-                        count: 0.0,
+                        count: 0,
                         input: i as u64,
                         section,
                         ordinal,
@@ -524,41 +518,22 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                     None
                 };
                 let line_data = if let Some(ln) = negative_recovered {
-                    Some((ln, (0.0, None)))
+                    Some((ln, (0, None)))
                 } else {
                     let mut sec = Section::default();
                     match sec.add_line(payload, &label, line_no) {
-                        Ok(()) => sec
-                            .lines
-                            .into_iter()
-                            .next()
-                            .map(|(ln, (count, sum))| (ln, (count as f64, sum))),
+                        Ok(()) => sec.lines.into_iter().next(),
                         Err(e) => {
-                            if e.message.contains("invalid numeric LCOV field") {
-                                if let Some(value) = parse_fractional_da(payload, &label, line_no)?
-                                {
-                                    Some(value)
-                                } else {
-                                    if !can_recover(req, &e) {
-                                        return Ok(Some(Err(e)));
-                                    }
-                                    continue;
-                                }
-                            } else {
-                                if !can_recover(req, &e) {
-                                    return Ok(Some(Err(e)));
-                                }
-                                continue;
+                            if !can_recover(req, &e) {
+                                return Ok(Some(Err(e)));
                             }
+                            continue;
                         }
                     }
                 };
                 if let Some(src) = source.as_ref() {
                     if selected {
-                        let (ln, (count, sum)) = line_data.unwrap();
-                        if sum.is_some() {
-                            return Ok(None);
-                        }
+                        let (ln, (count, _sum)) = line_data.unwrap();
                         ordinal += 1;
                         spill.push(line_spill::Entry {
                             kind: 1,
@@ -637,38 +612,6 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
     Ok(Some(Ok(())))
 }
 
-fn parse_fractional_da(
-    payload: &str,
-    label: &str,
-    line_no: u64,
-) -> Result<Option<(u64, (f64, Option<String>))>, Error> {
-    let mut fields = payload.split(',');
-    let line = fields.next().unwrap_or("");
-    let count = fields.next().unwrap_or("");
-    if fields.next().is_some() {
-        return Ok(None);
-    }
-    let Some((whole, fraction)) = count.split_once('.') else {
-        return Ok(None);
-    };
-    if fraction.is_empty() || !fraction.bytes().all(|b| b.is_ascii_digit()) {
-        return Ok(None);
-    }
-    let ln = num(Some(line), label, line_no)?;
-    if ln == 0 {
-        return Err(Error::at(2, label, line_no, "DA line must be positive"));
-    }
-    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
-        return Ok(None);
-    }
-    let hits = count
-        .parse::<f64>()
-        .ok()
-        .filter(|n| n.is_finite() && *n >= 0.0)
-        .ok_or_else(|| Error::at(2, label, line_no, "invalid numeric LCOV field"))?;
-    Ok(Some((ln, (hits, None))))
-}
-
 fn descriptor_fanin(memory_fanin: usize) -> Result<usize, Error> {
     #[cfg(unix)]
     {
@@ -690,7 +633,8 @@ fn descriptor_fanin(memory_fanin: usize) -> Result<usize, Error> {
     Ok(memory_fanin)
 }
 
-fn emit_spill(path: &Path, out: &mut impl Write, req: &Request) -> Result<(), Error> {
+#[inline(never)]
+fn emit_spill(path: &Path, out: &mut dyn Write, req: &Request) -> Result<(), Error> {
     let f = File::open(path)
         .map_err(|e| Error::new(3, format!("cannot read compatibility run: {e}")))?;
     let mut r = BufReader::new(f);
@@ -721,7 +665,7 @@ fn emit_spill(path: &Path, out: &mut impl Write, req: &Request) -> Result<(), Er
             let mut lf = 0u64;
             let mut lh = 0u64;
             let mut line = 0u64;
-            let mut count = 0.0f64;
+            let mut count = 0u64;
             while row
                 .as_ref()
                 .is_some_and(|x| x.source == src && x.testcase == tc)
@@ -729,9 +673,8 @@ fn emit_spill(path: &Path, out: &mut impl Write, req: &Request) -> Result<(), Er
                 check_cancelled()?;
                 let x = row.take().unwrap();
                 if lf > 0 && x.line != line {
-                    writeln!(out, "DA:{line},{}", (count as u64).min(i64::MAX as u64))
-                        .map_err(ioout)?;
-                    if count > 0.0 {
+                    writeln!(out, "DA:{line},{}", count.min(i64::MAX as u64)).map_err(ioout)?;
+                    if count > 0 {
                         lh = lh.checked_add(1).ok_or_else(|| {
                             Error::at(2, &x.label, x.line_no, "DA hit-line count overflow")
                         })?;
@@ -739,19 +682,18 @@ fn emit_spill(path: &Path, out: &mut impl Write, req: &Request) -> Result<(), Er
                 }
                 if lf == 0 || x.line != line {
                     line = x.line;
-                    count = x.count.min(i64::MAX as f64);
+                    count = x.count.min(i64::MAX as u64);
                     lf = lf.checked_add(1).ok_or_else(|| {
                         Error::at(2, &x.label, x.line_no, "DA line count overflow")
                     })?;
                 } else {
-                    count = (count + x.count).min(i64::MAX as f64);
+                    count = count.saturating_add(x.count).min(i64::MAX as u64);
                 }
                 row = line_spill::read_next_public(&mut r)?;
             }
             if lf > 0 {
-                writeln!(out, "DA:{line},{}", (count as u64).min(i64::MAX as u64))
-                    .map_err(ioout)?;
-                if count > 0.0 {
+                writeln!(out, "DA:{line},{}", count.min(i64::MAX as u64)).map_err(ioout)?;
+                if count > 0 {
                     lh = lh
                         .checked_add(1)
                         .ok_or_else(|| Error::new(2, "DA hit-line count overflow"))?;
@@ -776,6 +718,13 @@ fn parse_input(
     held: &mut usize,
     limit: usize,
 ) -> Result<(), Error> {
+    let source_budget = if req.checksum || req.resources.strict_checksum {
+        (limit / 4).min(2 * MAX_LINE)
+    } else {
+        0
+    };
+    let mut source_index = source::SourceIndex::new(&req.resources.tmpdir, source_budget)?;
+    let limit = limit.saturating_sub(source_budget);
     let mut input = BufReader::with_capacity(crate::common::IO_BLOCK, StopOnCancel(reader));
     let mut line = Vec::with_capacity(4096);
     let mut line_no = 0u64;
@@ -929,7 +878,7 @@ fn parse_input(
                 }
             }
             if req.resources.strict_checksum || req.checksum {
-                validate_or_generate_checksum(section, x, req, label, line_no)?;
+                validate_or_generate_checksum(section, x, req, label, line_no, &mut source_index)?;
             }
             recover_line!(ensure_budget(section, *held, limit, label, line_no));
             continue;
@@ -1420,7 +1369,7 @@ mod tests {
                         testcase: testcase.clone(),
                         value: String::new(),
                         line: i,
-                        count: f64::from(i % 2 == 0),
+                        count: u64::from(i % 2 == 0),
                         input: 0,
                         section: 0,
                         ordinal: i,
