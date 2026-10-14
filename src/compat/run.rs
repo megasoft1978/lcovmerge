@@ -7,12 +7,14 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Read};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
+#[path = "line_spill.rs"]
+mod line_spill;
 #[path = "merge.rs"]
 mod merge;
 #[path = "policy.rs"]
@@ -87,6 +89,10 @@ pub fn run(request: Request) -> Result<(), Error> {
     }
     if opt.inputs.iter().filter(|p| p.as_os_str() == "-").count() > 1 {
         return Err(Error::new(1, "stdin may appear only once in LCOV inputs"));
+    }
+
+    if let Some(result) = try_line_spill(&request)? {
+        return result;
     }
 
     let mut sections: Vec<Section> = Vec::new();
@@ -246,6 +252,519 @@ pub fn run(request: Request) -> Result<(), Error> {
         })?;
         Ok(())
     }
+}
+
+// This first executor increment deliberately handles only regular-file DA profiles. The
+// preflight pass is non-consuming and sends every richer family to the reference path.
+fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
+    use std::io::BufRead;
+    let o = &req.resources;
+    if req.checksum || o.strict_checksum || o.inputs.iter().any(|p| p.as_os_str() == "-") {
+        return Ok(None);
+    }
+    // Keep at most one preflight reader open at a time; large input lists are not retained.
+    for p in &o.inputs {
+        if !p.metadata().is_ok_and(|m| m.is_file()) {
+            return Ok(None);
+        }
+        let f = match File::open(p) {
+            Ok(f) => f,
+            Err(_) => return Ok(None),
+        };
+        let r: Box<dyn Read> = if is_gzip_path(p) {
+            Box::new(MultiGzDecoder::new(f))
+        } else {
+            Box::new(f)
+        };
+        let label = p.display().to_string();
+        // Eligibility scan checks only record families/section framing. Detailed DA and path
+        // validation occurs in the streaming execution pass; malformed profiles fall back.
+        let mut r = BufReader::with_capacity(crate::common::IO_BLOCK, StopOnCancel(r));
+        let mut buf = Vec::with_capacity(4096);
+        let mut line = 0u64;
+        let mut open = false;
+        loop {
+            check_cancelled()?;
+            let n = (&mut r)
+                .take((MAX_LINE + 2) as u64)
+                .read_until(b'\n', &mut buf)
+                .map_err(|e| Error::at(3, &label, line + 1, format!("input read failed: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            line += 1;
+            if buf.last() == Some(&b'\n') {
+                buf.pop();
+            }
+            if buf.last() == Some(&b'\r') {
+                buf.pop();
+            }
+            let eligible = if buf.len() > MAX_LINE || buf.contains(&0) {
+                false
+            } else if let Ok(s) = std::str::from_utf8(&buf) {
+                if s.is_empty() || s.starts_with('#') {
+                    true
+                } else if s.starts_with("TN:") {
+                    if open {
+                        false
+                    } else {
+                        true
+                    }
+                } else if s.starts_with("SF:") {
+                    open = true;
+                    true
+                } else if s == "end_of_record" {
+                    if !open {
+                        false
+                    } else {
+                        open = false;
+                        true
+                    }
+                } else if s.starts_with("DA:") || s.starts_with("VER:") {
+                    open
+                } else if [
+                    "LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MD:", "MCF:", "MCH:",
+                ]
+                .iter()
+                .any(|x| s.starts_with(x))
+                {
+                    open
+                } else if !o.function_data
+                    && ["FN:", "FNDA:", "FNL:", "FNA:"]
+                        .iter()
+                        .any(|x| s.starts_with(x))
+                {
+                    open
+                } else if !o.branch_coverage && s.starts_with("BRDA:") {
+                    open
+                } else if !req.mcdc_coverage && s.starts_with("MCDC:") {
+                    open
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            buf.clear();
+            if !eligible {
+                return Ok(None);
+            }
+        }
+        // Let legacy parser diagnose an unfinished or malformed section boundary.
+        if open {
+            return Ok(None);
+        }
+    }
+    // Keep the current raw line plus retained SF and TN strings outside the arena budget.
+    let reserve = 3 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
+    let budget = o.mem_limit.saturating_sub(reserve).max(1);
+    let memory_fanin = (o
+        .mem_limit
+        .saturating_sub(3 * crate::common::IO_BLOCK + 64 * 1024)
+        / (3 * MAX_LINE + crate::common::IO_BLOCK + 4096))
+        .clamp(2, 32);
+    let fanin = descriptor_fanin(memory_fanin)?;
+    let mut spill = line_spill::Spill::new(&o.tmpdir, budget, fanin)?;
+    for (i, path) in o.inputs.iter().enumerate() {
+        check_cancelled()?;
+        let label = path.display().to_string();
+        let f = File::open(path).map_err(|e| Error::new(3, format!("cannot open {label}: {e}")))?;
+        let reader: Box<dyn Read> = if is_gzip_path(path) {
+            Box::new(MultiGzDecoder::new(f))
+        } else {
+            Box::new(f)
+        };
+        let mut input = BufReader::with_capacity(crate::common::IO_BLOCK, StopOnCancel(reader));
+        let mut buf = Vec::with_capacity(4096);
+        let mut tc = String::new();
+        let mut section_tc = String::new();
+        let mut source: Option<String> = None;
+        let mut selected = false;
+        let mut section = 0u64;
+        let mut ordinal = 0u64;
+        let mut line_no = 0u64;
+        loop {
+            check_cancelled()?;
+            buf.clear();
+            let n = (&mut input)
+                .take((MAX_LINE + 2) as u64)
+                .read_until(b'\n', &mut buf)
+                .map_err(|e| {
+                    Error::at(3, &label, line_no + 1, format!("input read failed: {e}"))
+                })?;
+            if n == 0 {
+                break;
+            }
+            line_no += 1;
+            if buf.last() == Some(&b'\n') {
+                buf.pop();
+            }
+            if buf.last() == Some(&b'\r') {
+                buf.pop();
+            }
+            if buf.len() > MAX_LINE {
+                let e = Error::at(2, &label, line_no, "line exceeds 1 MiB");
+                if !can_recover(req, &e) {
+                    return Ok(Some(Err(e)));
+                }
+                continue;
+            }
+            let s = match std::str::from_utf8(&buf) {
+                Ok(s) => s,
+                Err(_) => {
+                    let e = Error::at(2, &label, line_no, "invalid UTF-8 tracefile record");
+                    if !can_recover(req, &e) {
+                        return Ok(Some(Err(e)));
+                    }
+                    continue;
+                }
+            };
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            if let Some(v) = s.strip_prefix("TN:") {
+                if source.is_some() {
+                    let e = Error::at(2, &label, line_no, "TN inside an open section");
+                    if !can_recover(req, &e) {
+                        return Ok(Some(Err(e)));
+                    }
+                    continue;
+                }
+                tc = v.to_owned();
+                continue;
+            }
+            if let Some(sf) = s.strip_prefix("SF:") {
+                if source.is_some() {
+                    source = None;
+                }
+                if sf.is_empty() {
+                    let e = Error::at(2, &label, line_no, "empty SF path");
+                    if !can_recover(req, &e) {
+                        return Ok(Some(Err(e)));
+                    }
+                    continue;
+                }
+                let rewritten = match crate::path::rewrite_path(o, sf) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        let e = Error::at(e.code, &label, line_no, e.message);
+                        if !can_recover(req, &e) {
+                            return Ok(Some(Err(e)));
+                        }
+                        continue;
+                    }
+                };
+                selected = crate::path::path_selected(o, &rewritten);
+                source = Some(rewritten);
+                section += 1;
+                ordinal = 0;
+                section_tc = if req.forget_test_names {
+                    String::new()
+                } else {
+                    tc.clone()
+                };
+                tc.clear();
+                continue;
+            }
+            if s == "end_of_record" {
+                source = None;
+                tc.clear();
+                section_tc.clear();
+                continue;
+            }
+            if let Some(v) = s.strip_prefix("VER:") {
+                if let Some(src) = source.as_ref() {
+                    ordinal += 1;
+                    spill.push(line_spill::Entry {
+                        kind: 0,
+                        source: src.clone(),
+                        testcase: String::new(),
+                        value: v.to_owned(),
+                        line: 0,
+                        count: 0.0,
+                        input: i as u64,
+                        section,
+                        ordinal,
+                        label: label.clone(),
+                        line_no,
+                    })?;
+                }
+                continue;
+            }
+            if let Some(payload) = s.strip_prefix("DA:") {
+                let negative_recovered = if req.ignore_errors.contains("negative") {
+                    let mut fields = payload.split(',');
+                    let line_field = fields.next().unwrap_or("");
+                    let count_field = fields.next().unwrap_or("");
+                    if count_field.starts_with('-')
+                        && count_field.len() > 1
+                        && count_field[1..].bytes().all(|b| b.is_ascii_digit())
+                        && fields.next().is_none()
+                    {
+                        match num(Some(line_field), &label, line_no) {
+                            Ok(ln) if ln > 0 => Some(ln),
+                            Ok(_) => {
+                                let e = Error::at(2, &label, line_no, "DA line must be positive");
+                                if !can_recover(req, &e) {
+                                    return Ok(Some(Err(e)));
+                                }
+                                continue;
+                            }
+                            Err(e) => {
+                                if !can_recover(req, &e) {
+                                    return Ok(Some(Err(e)));
+                                }
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let line_data = if let Some(ln) = negative_recovered {
+                    Some((ln, (0.0, None)))
+                } else {
+                    let mut sec = Section::default();
+                    match sec.add_line(payload, &label, line_no) {
+                        Ok(()) => sec
+                            .lines
+                            .into_iter()
+                            .next()
+                            .map(|(ln, (count, sum))| (ln, (count as f64, sum))),
+                        Err(e) => {
+                            if e.message.contains("invalid numeric LCOV field") {
+                                if let Some(value) = parse_fractional_da(payload, &label, line_no)?
+                                {
+                                    Some(value)
+                                } else {
+                                    if !can_recover(req, &e) {
+                                        return Ok(Some(Err(e)));
+                                    }
+                                    continue;
+                                }
+                            } else {
+                                if !can_recover(req, &e) {
+                                    return Ok(Some(Err(e)));
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                };
+                if let Some(src) = source.as_ref() {
+                    if selected {
+                        let (ln, (count, sum)) = line_data.unwrap();
+                        if sum.is_some() {
+                            return Ok(None);
+                        }
+                        ordinal += 1;
+                        spill.push(line_spill::Entry {
+                            kind: 1,
+                            source: src.clone(),
+                            testcase: section_tc.clone(),
+                            value: String::new(),
+                            line: ln,
+                            count,
+                            input: i as u64,
+                            section,
+                            ordinal,
+                            label: label.clone(),
+                            line_no,
+                        })?;
+                    }
+                }
+            }
+        }
+    }
+    let final_run = spill.finish()?;
+    let mut out = if o.output.as_os_str() == "-" || o.output.as_os_str().is_empty() {
+        None
+    } else {
+        Some(
+            tempfile::NamedTempFile::new_in(
+                o.output
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(Path::new(".")),
+            )
+            .map_err(|e| Error::new(3, format!("cannot stage output: {e}")))?,
+        )
+    };
+    if let Some(tmp) = out.as_mut() {
+        if is_gzip_path(&o.output) {
+            let mut encoder = GzEncoder::new(tmp.as_file_mut(), Compression::default());
+            {
+                let mut writer = BufWriter::new(&mut encoder);
+                emit_spill(&final_run, &mut writer, req)?;
+                writer.flush().map_err(ioout)?;
+            }
+            encoder
+                .finish()
+                .map_err(|e| Error::new(3, format!("gzip output failed: {e}")))?;
+        } else {
+            let mut writer = BufWriter::new(tmp.as_file_mut());
+            emit_spill(&final_run, &mut writer, req)?;
+            writer.flush().map_err(ioout)?;
+        }
+    } else {
+        let mut writer = BufWriter::new(
+            stdout_writer().map_err(|e| Error::new(3, format!("cannot write stdout: {e}")))?,
+        );
+        emit_spill(&final_run, &mut writer, req)?;
+        writer.flush().map_err(ioout)?;
+    }
+    if let Some(tmp) = out {
+        tmp.as_file()
+            .sync_all()
+            .map_err(|e| Error::new(3, format!("cannot sync staged output: {e}")))?;
+        check_cancelled()?;
+        tmp.persist(&o.output).map_err(|e| {
+            Error::new(
+                3,
+                format!("cannot replace {}: {}", o.output.display(), e.error),
+            )
+        })?;
+    }
+    if o.verbose {
+        eprintln!(
+            "compat spill: runs={} passes={} spill-bytes={} fan-in={} workers=1",
+            spill.run_count, spill.passes, spill.traffic, spill.fanin
+        );
+    }
+    let _ = spill.dir();
+    Ok(Some(Ok(())))
+}
+
+fn parse_fractional_da(
+    payload: &str,
+    label: &str,
+    line_no: u64,
+) -> Result<Option<(u64, (f64, Option<String>))>, Error> {
+    let mut fields = payload.split(',');
+    let line = fields.next().unwrap_or("");
+    let count = fields.next().unwrap_or("");
+    if fields.next().is_some() {
+        return Ok(None);
+    }
+    let Some((whole, fraction)) = count.split_once('.') else {
+        return Ok(None);
+    };
+    if fraction.is_empty() || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return Ok(None);
+    }
+    let ln = num(Some(line), label, line_no)?;
+    if ln == 0 {
+        return Err(Error::at(2, label, line_no, "DA line must be positive"));
+    }
+    if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
+        return Ok(None);
+    }
+    let hits = count
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite() && *n >= 0.0)
+        .ok_or_else(|| Error::at(2, label, line_no, "invalid numeric LCOV field"))?;
+    Ok(Some((ln, (hits, None))))
+}
+
+fn descriptor_fanin(memory_fanin: usize) -> Result<usize, Error> {
+    #[cfg(unix)]
+    {
+        let mut limits = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: getrlimit initializes the provided rlimit on success and does not retain it.
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limits.as_mut_ptr()) } == 0 {
+            // SAFETY: the successful getrlimit call initialized the value.
+            let soft = unsafe { limits.assume_init() }.rlim_cur as usize;
+            let available = soft.saturating_sub(4).min(32);
+            if available < 2 {
+                return Err(Error::new(
+                    3,
+                    "file descriptor limit is too low for bounded compatibility merge",
+                ));
+            }
+            return Ok(memory_fanin.min(available));
+        }
+    }
+    Ok(memory_fanin)
+}
+
+fn emit_spill(path: &Path, out: &mut impl Write, req: &Request) -> Result<(), Error> {
+    let f = File::open(path)
+        .map_err(|e| Error::new(3, format!("cannot read compatibility run: {e}")))?;
+    let mut r = BufReader::new(f);
+    let mut pending = line_spill::read_next_public(&mut r)?;
+    while let Some(first) = pending.take() {
+        check_cancelled()?;
+        let src = first.source.clone();
+        let mut version = None;
+        let mut row = Some(first);
+        while row.as_ref().is_some_and(|x| x.source == src && x.kind == 0) {
+            let x = row.take().unwrap();
+            if version.is_none() {
+                version = Some(x.value.clone());
+            } else if version.as_ref() != Some(&x.value) {
+                let e = Error::at(2, &x.label, x.line_no, "conflicting source versions");
+                if !can_recover(req, &e) {
+                    return Err(e);
+                }
+            }
+            row = line_spill::read_next_public(&mut r)?;
+        }
+        while row.as_ref().is_some_and(|x| x.source == src) {
+            let tc = row.as_ref().unwrap().testcase.clone();
+            writeln!(out, "TN:{tc}\nSF:{src}").map_err(ioout)?;
+            if let Some(v) = &version {
+                writeln!(out, "VER:{v}").map_err(ioout)?;
+            }
+            let mut lf = 0u64;
+            let mut lh = 0u64;
+            let mut line = 0u64;
+            let mut count = 0.0f64;
+            while row
+                .as_ref()
+                .is_some_and(|x| x.source == src && x.testcase == tc)
+            {
+                check_cancelled()?;
+                let x = row.take().unwrap();
+                if lf > 0 && x.line != line {
+                    writeln!(out, "DA:{line},{}", (count as u64).min(i64::MAX as u64))
+                        .map_err(ioout)?;
+                    if count > 0.0 {
+                        lh = lh.checked_add(1).ok_or_else(|| {
+                            Error::at(2, &x.label, x.line_no, "DA hit-line count overflow")
+                        })?;
+                    }
+                }
+                if lf == 0 || x.line != line {
+                    line = x.line;
+                    count = x.count.min(i64::MAX as f64);
+                    lf = lf.checked_add(1).ok_or_else(|| {
+                        Error::at(2, &x.label, x.line_no, "DA line count overflow")
+                    })?;
+                } else {
+                    count = (count + x.count).min(i64::MAX as f64);
+                }
+                row = line_spill::read_next_public(&mut r)?;
+            }
+            if lf > 0 {
+                writeln!(out, "DA:{line},{}", (count as u64).min(i64::MAX as u64))
+                    .map_err(ioout)?;
+                if count > 0.0 {
+                    lh = lh
+                        .checked_add(1)
+                        .ok_or_else(|| Error::new(2, "DA hit-line count overflow"))?;
+                }
+            }
+            writeln!(out, "LF:{lf}\nLH:{lh}\nend_of_record").map_err(ioout)?;
+        }
+        pending = row;
+    }
+    Ok(())
+}
+fn ioout(e: std::io::Error) -> Error {
+    Error::new(3, format!("output write failed: {e}"))
 }
 
 fn parse_input(
@@ -883,6 +1402,86 @@ mod tests {
         assert!(bytes.contains("DA:3,6\nLF:1\nLH:1\nend_of_record"));
         std::fs::remove_file(input).unwrap();
         std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn oversized_single_source_or_testcase_section_spills_and_keeps_summaries() {
+        for (source, testcase) in [
+            ("s".repeat(1400), "t".to_owned()),
+            ("s".to_owned(), "t".repeat(1400)),
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let mut spill = line_spill::Spill::new(parent.path(), 4096, 2).unwrap();
+            for i in (1..=12).rev() {
+                spill
+                    .push(line_spill::Entry {
+                        kind: 1,
+                        source: source.clone(),
+                        testcase: testcase.clone(),
+                        value: String::new(),
+                        line: i,
+                        count: f64::from(i % 2 == 0),
+                        input: 0,
+                        section: 0,
+                        ordinal: i,
+                        label: "synthetic".into(),
+                        line_no: i,
+                    })
+                    .unwrap();
+            }
+            let run = spill.finish().unwrap();
+            assert!(spill.traffic > 3 * 4096);
+            let mut output = Vec::new();
+            emit_spill(&run, &mut output, &Request::default()).unwrap();
+            let output = String::from_utf8(output).unwrap();
+            assert!(output.contains("LF:12\nLH:6\nend_of_record"));
+            assert_eq!(output.matches("\nDA:").count(), 12);
+        }
+    }
+
+    #[test]
+    fn spill_failure_cleans_tempfiles_and_preserves_existing_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let temp = root.path().join("spill");
+        let _ = std::fs::create_dir(&temp);
+        let input = root.path().join("conflicting-ver.info");
+        std::fs::write(
+            &input,
+            "TN:a\nSF:x.c\nVER:1\nDA:1,1\nend_of_record\nTN:b\nSF:x.c\nVER:2\nDA:2,1\nend_of_record\n",
+        )
+        .unwrap();
+        let output = root.path().join("existing.info");
+        std::fs::write(&output, "keep this destination\n").unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.resources.tmpdir = temp.clone();
+        assert!(run(req).is_err());
+        assert_eq!(
+            std::fs::read_to_string(output).unwrap(),
+            "keep this destination\n"
+        );
+        assert_eq!(std::fs::read_dir(temp).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn spill_matches_lcov_fractional_and_ignored_negative_da_counts() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("counts.info");
+        let output = root.path().join("counts.out");
+        std::fs::write(
+            &input,
+            "TN:fraction\nSF:x.c\nDA:1,1.9\nend_of_record\nTN:negative\nSF:x.c\nDA:1,-1\nend_of_record\n",
+        )
+        .unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.ignore_errors.insert("negative".into());
+        run(req).unwrap();
+        let output = std::fs::read_to_string(output).unwrap();
+        assert!(output.contains("TN:fraction\nSF:x.c\nDA:1,1\nLF:1\nLH:1"));
+        assert!(output.contains("TN:negative\nSF:x.c\nDA:1,0\nLF:1\nLH:0"));
     }
 
     #[test]
