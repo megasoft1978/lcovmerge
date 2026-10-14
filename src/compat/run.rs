@@ -13,6 +13,8 @@ use std::path::Path;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
+#[path = "function_runtime.rs"]
+mod function_runtime;
 #[path = "function_spill.rs"]
 mod function_spill;
 #[path = "line_spill.rs"]
@@ -97,6 +99,9 @@ pub fn run(request: Request) -> Result<(), Error> {
         return Err(Error::new(1, "stdin may appear only once in LCOV inputs"));
     }
 
+    if let Some(result) = function_runtime::try_run(&request)? {
+        return result;
+    }
     if let Some(result) = try_line_spill(&request)? {
         return result;
     }
@@ -1355,6 +1360,89 @@ mod tests {
         assert!(bytes.contains("DA:3,6\nLF:1\nLH:1\nend_of_record"));
         std::fs::remove_file(input).unwrap();
         std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn bounded_function_runtime_runs_end_to_end_for_large_modern_map_and_alias_group() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("large-functions.info");
+        let output = root.path().join("large-functions.out");
+        let mut data = String::from("TN:case\nSF:sample.c\nDA:5,2\nDA:9,0\n");
+        for id in (0..12000u64).rev() {
+            data.push_str(&format!("FNL:{id},5,8\n"));
+        }
+        for id in 0..12000u64 {
+            data.push_str(&format!(
+                "FNA:{id},{},alias_{id:05}\n",
+                u64::from(id % 2 == 0)
+            ));
+        }
+        assert!(data.len() > 3 * (crate::common::IO_BLOCK + 4096));
+        data.push_str("end_of_record\n");
+        std::fs::write(&input, data).unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        // Exercise internal small-budget execution while keeping each spill frame valid.
+        req.resources.mem_limit = 256 * 1024;
+        run(req).unwrap();
+        let result = std::fs::read_to_string(output).unwrap();
+        assert!(result.starts_with("TN:case\nSF:sample.c\nFNL:0,5,8\nFNA:0,1,alias_00000\n"));
+        assert_eq!(result.matches("FNL:").count(), 1);
+        assert_eq!(result.matches("FNA:").count(), 12000);
+        assert!(result.contains("FNF:1\nFNH:1\nDA:5,2\nDA:9,0\nLF:2\nLH:1\nend_of_record\n"));
+    }
+
+    #[test]
+    fn bounded_function_runtime_strict_and_recovery_join_cases() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("bad-function.info");
+        let output = root.path().join("bad-function.out");
+        let temp = root.path().join("spill");
+        std::fs::create_dir(&temp).unwrap();
+        std::fs::write(&input, "TN:x\nSF:x.c\nFNA:7,1,orphan\nend_of_record\n").unwrap();
+        std::fs::write(&output, "preserve destination\n").unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input.clone()];
+        req.resources.output = output.clone();
+        req.resources.tmpdir = temp.clone();
+        assert!(run(req).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&output).unwrap(),
+            "preserve destination\n"
+        );
+        assert_eq!(std::fs::read_dir(&temp).unwrap().count(), 0);
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.resources.tmpdir = temp.clone();
+        req.ignore_errors.insert("format".into());
+        run(req).unwrap();
+        assert_eq!(std::fs::read_to_string(output).unwrap(), "");
+        assert_eq!(std::fs::read_dir(temp).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn bounded_function_runtime_checks_and_recovers_shared_start_end_lines() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("same-start.info");
+        let output = root.path().join("same-start.out");
+        std::fs::write(
+            &input,
+            "TN:x\nSF:x.c\nDA:2,1\nDA:5,1\nFNL:0,2,5\nFNA:0,1,short_end\nFNL:1,2,7\nFNA:1,1,long_end\nend_of_record\n",
+        )
+        .unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input.clone()];
+        req.resources.output = output.clone();
+        assert!(run(req).is_err());
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.ignore_errors.insert("inconsistent".into());
+        run(req).unwrap();
+        let result = std::fs::read_to_string(output).unwrap();
+        assert!(result.contains("FNL:0,2,7\nFNA:0,1,long_end\nFNA:0,1,short_end\nFNF:1\nFNH:1"));
     }
 
     #[test]
