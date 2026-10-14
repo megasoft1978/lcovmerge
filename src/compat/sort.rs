@@ -562,7 +562,9 @@ mod tests {
             }
             let sorted = sorter.finish().unwrap();
             assert!(sorted.stats().runs > 3);
-            assert_eq!(sorted.stats().workers, jobs);
+            // Actual overlap depends on scheduling and producer speed. The
+            // metric reports observed concurrency, not the requested limit.
+            assert!((1..=jobs).contains(&sorted.stats().workers));
             let mut cursor = sorted.cursor().unwrap();
             let mut rows = Vec::new();
             while let Some(row) = cursor.next().unwrap() {

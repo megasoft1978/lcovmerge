@@ -742,12 +742,12 @@ mod tests {
     #[test]
     fn glob_supports_brackets_escape_determinism_duplicates() {
         let dir = tempfile::tempdir().unwrap();
-        for n in ["a1.info", "a2.info", "a*.info"] {
+        for n in ["a1.info", "a2.info", "a[3].info"] {
             std::fs::write(dir.path().join(n), "").unwrap();
         }
         let bracket = dir.path().join("a[12].info");
         let escaped = PathBuf::from(glob::Pattern::escape(
-            dir.path().join("a*.info").to_str().unwrap(),
+            dir.path().join("a[3].info").to_str().unwrap(),
         ));
         let r = parse([
             "x".into(),
@@ -759,7 +759,10 @@ mod tests {
         ])
         .unwrap()
         .unwrap();
-        assert_eq!(r.resources.inputs.len(), 3);
+        assert_eq!(
+            r.resources.inputs,
+            ["a1.info", "a2.info", "a[3].info"].map(|name| dir.path().join(name))
+        );
     }
     #[cfg(unix)]
     #[test]

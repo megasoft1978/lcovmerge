@@ -86,7 +86,7 @@ def main() -> int:
                 result = subprocess.run(command, capture_output=True, timeout=2, check=False)
             except subprocess.TimeoutExpired as exc:
                 retain(data, command, f"timeout: {exc}")
-            allowed = (0, 2, 3) if args.profile == "compat" else (0, 2)
+            allowed = (0, 1) if args.profile == "compat" else (0, 2)
             if result.returncode not in allowed:
                 retain(data, command, f"exit={result.returncode}; stderr={result.stderr.decode(errors='replace')}")
             cases += 1
