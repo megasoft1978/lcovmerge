@@ -113,12 +113,46 @@ expected oracle exit classes, checked before candidate results are counted.
 | `modern-missing-end-cross-input` | Merge function definitions with and without end lines across inputs | success |
 | `orphan-function-hit-strict` | Reject FNDA without a matching FN definition | error |
 | `orphan-function-hit-recovery` | Recover orphan FNDA with mismatch and empty handling | success |
+| `modern-fna-line-mismatch-zero` | Strict consistency rejects FNA zero hits when its line is hit | error |
+| `modern-fna-line-mismatch-positive` | Strict consistency rejects positive FNA hits when no contained line is hit | error |
+| `modern-fna-overlap-end-range` | A hit in overlapping explicit FNL ranges conflicts with zero-hit function counts in both ranges | error |
+| `modern-fna-line-mismatch-zero-recovery` | Recover zero-hit FNA/positive-line mismatch with `--ignore-errors inconsistent` | success |
+| `modern-fna-line-mismatch-positive-recovery` | Recover positive-hit FNA/no-hit-line mismatch with `--ignore-errors inconsistent` | success |
+| `modern-fna-line-mismatch-zero-consistency-disabled` | Skip zero-hit FNA/positive-line consistency check with `check_data_consistency=0` | success |
+| `modern-fna-line-mismatch-positive-consistency-disabled` | Skip positive-hit FNA/no-hit-line consistency check with `check_data_consistency=0` | success |
+| `modern-fna-aliases-line-match` | Alias group with zero and positive FNA hits and a hit line | success |
+| `lambda-modern-fna-line-mismatch` | Lambda-name exception skips the FNA/line mismatch | success |
+| `derive-endline-source-wide` | Derive end line from testcase-local lines despite another testcase hitting a later line | success |
+| `modern-fna-source-wide-consistency` | Strict FNL/FNA consistency for one testcase despite a later hit in another | error |
 
-The seven function cases above are required in both pinned backends. The
-end-line conflict is an observed agreement: XS and pure Perl both exit 1 in
-strict mode and succeed with `--ignore-errors inconsistent`. Orphan hits need
-both `mismatch` and `empty` recovery categories; `mismatch` alone reports the
-orphan but then fails because no function coverpoints remain.
+The function cases above are required in both pinned backends. LCOV checks
+function consistency while reading each testcase's input records, before
+source-wide merge or inferred end-line aggregation. Thus an ordinary function
+is compared with only its testcase's line data; another testcase's hit cannot
+resolve or create a mismatch. With end-line derivation enabled, the
+two-testcase fixture emits `FNL:0,1,1` for testcase `a`; testcase `b`'s
+`DA:5,1` does not extend that range. The explicit source-wide fixture verifies
+the same input-stage rule for modern `FNL`/`FNA` records.
+For explicit end lines, the consistency scan includes both endpoints; a line
+inside two overlapping function ranges is checked against both functions.
+
+For both mismatch directions, strict consistency exits 1. With
+`--ignore-errors inconsistent`, LCOV exits 0 and retains the original function
+and line counts in the merged trace; with `check_data_consistency=0`, LCOV
+skips the check and also exits 0. These accepted traces remain inconsistent,
+so the harness tells genhtml to ignore `inconsistent` only for recovery or
+disabled-consistency success cases, then still requires successful HTML output
+and matching coverage statistics across backends and candidate. The lambda
+name `{lambda()#1}` is an explicit exception: it succeeds with zero FNA hits
+despite a hit line. Alias groups are checked as a whole: zero and positive
+FNA aliases together agree with a hit line. The end-line conflict is an
+observed agreement: XS and pure Perl both exit 1 in strict mode and succeed
+with `--ignore-errors inconsistent`. The initial six added cases were run
+against pinned source with verified XS and `LCOV_PURE_PERL=1`; both successful
+outputs passed pinned genhtml. Their manifest is
+`.cache/fna-sourcewide-characterization/manifest.json` in the oracle worktree.
+Orphan hits need both `mismatch` and `empty` recovery categories; `mismatch`
+alone reports the orphan but then fails because no function coverpoints remain.
 
 ## Bounded runtime gates
 

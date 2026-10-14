@@ -146,6 +146,15 @@ def fixtures(directory):
         "fractional-fna-collector.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,1.5,fractional\nBRDA:1,7,0,1\nDA:1,2\nend_of_record\n",
         "negative-fna.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,-1,negative\nDA:1,0\nend_of_record\n",
         "same-start-different-end.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nDA:5,1\nFNL:0,2,5\nFNA:0,1,short_end\nFNL:1,2,7\nFNA:1,1,long_end\nend_of_record\n",
+        "modern-fna-line-mismatch-zero.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:7,1,3\nFNA:7,0,fn\nend_of_record\n",
+        "modern-fna-line-mismatch-positive.info": f"TN:alpha\nSF:{srcname}\nDA:2,0\nFNL:7,1,3\nFNA:7,1,fn\nend_of_record\n",
+        "modern-fna-overlap-end-range.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:0,1,3\nFNA:0,0,first\nFNL:1,2,3\nFNA:1,0,second\nend_of_record\n",
+        "modern-fna-aliases-line-match.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:7,1,3\nFNA:7,0,fn\nFNA:7,1,alias\nend_of_record\n",
+        "lambda-modern-fna-line-mismatch.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:7,1,3\nFNA:7,0,{{lambda()#1}}\nend_of_record\n",
+        "derive-source-wide-a.info": f"TN:a\nSF:{srcname}\nFN:1,foo\nFNDA:1,foo\nDA:1,1\nend_of_record\n",
+        "derive-source-wide-b.info": f"TN:b\nSF:{srcname}\nDA:5,1\nend_of_record\n",
+        "derive-source-wide-explicit-a.info": f"TN:a\nSF:{srcname}\nFNL:0,1,5\nFNA:0,1,foo\nDA:1,0\nend_of_record\n",
+        "derive-source-wide-explicit-b.info": f"TN:b\nSF:{srcname}\nDA:5,1\nend_of_record\n",
         "missing-ends-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:4,1\nFNA:4,1,without_end\nend_of_record\n",
         "missing-ends-b.info": f"TN:beta\nSF:{srcname}\nDA:2,1\nFNL:8,2,3\nFNA:8,1,with_end\nend_of_record\n",
         "orphan-function-hit.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNDA:3,orphan_name\nend_of_record\n",
@@ -242,6 +251,17 @@ CASES = [
     ("modern-reused-id-input-order", ["--function-coverage", "-a", "modern-reused-id-a.info", "-a", "modern-reused-id-b.info"], 0),
     ("modern-alias-same-start-different-end", ["--function-coverage", "-a", "same-start-different-end.info"], 1),
     ("modern-alias-same-start-different-end-recovery", ["--function-coverage", "--ignore-errors", "inconsistent", "-a", "same-start-different-end.info"], 0),
+    ("modern-fna-line-mismatch-zero", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "modern-fna-line-mismatch-zero.info"], 1),
+    ("modern-fna-line-mismatch-positive", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "modern-fna-line-mismatch-positive.info"], 1),
+    ("modern-fna-overlap-end-range", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "modern-fna-overlap-end-range.info"], 1),
+    ("modern-fna-line-mismatch-zero-recovery", ["--function-coverage", "--rc", "check_data_consistency=1", "--ignore-errors", "inconsistent", "-a", "modern-fna-line-mismatch-zero.info"], 0),
+    ("modern-fna-line-mismatch-positive-recovery", ["--function-coverage", "--rc", "check_data_consistency=1", "--ignore-errors", "inconsistent", "-a", "modern-fna-line-mismatch-positive.info"], 0),
+    ("modern-fna-line-mismatch-zero-consistency-disabled", ["--function-coverage", "--rc", "check_data_consistency=0", "-a", "modern-fna-line-mismatch-zero.info"], 0),
+    ("modern-fna-line-mismatch-positive-consistency-disabled", ["--function-coverage", "--rc", "check_data_consistency=0", "-a", "modern-fna-line-mismatch-positive.info"], 0),
+    ("modern-fna-aliases-line-match", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "modern-fna-aliases-line-match.info"], 0),
+    ("lambda-modern-fna-line-mismatch", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "lambda-modern-fna-line-mismatch.info"], 0),
+    ("derive-endline-source-wide", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "derive-source-wide-a.info", "-a", "derive-source-wide-b.info"], 0),
+    ("modern-fna-source-wide-consistency", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "derive-source-wide-explicit-a.info", "-a", "derive-source-wide-explicit-b.info"], 1),
     ("modern-missing-end-cross-input", ["--function-coverage", "-a", "missing-ends-a.info", "-a", "missing-ends-b.info"], 0),
     ("orphan-function-hit-strict", ["--function-coverage", "-a", "orphan-function-hit.info"], 1),
     ("orphan-function-hit-recovery", ["--function-coverage", "--ignore-errors", "mismatch,empty", "-a", "orphan-function-hit.info"], 0),
@@ -335,6 +355,9 @@ def main():
     for case in selected_cases:
         name, opts, expected = case[:3]
         mode = case[3] if len(case) == 4 else "file"
+        html_ignored_errors = ["source"]
+        if expected == 0 and ("inconsistent" in opts or "check_data_consistency=0" in opts):
+            html_ignored_errors.append("inconsistent")
         case_dir = workdir / name
         case_dir.mkdir(parents=True, exist_ok=True)
         make_inputs(case_dir)
@@ -416,7 +439,7 @@ def main():
             if expected == 0:
                 html_dir = case_dir / f"html-{backend}"
                 remove(html_dir)
-                html_argv = [str(genhtml), "--ignore-errors", "source", "--output-directory", str(html_dir),
+                html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
                             str(oracle_out) if mode != "stdout" else str((case_dir / "stdout-source.info"))]
                 if mode == "stdout":
                     (case_dir / "stdout-source.info").write_bytes(semantic_oracle)
@@ -468,7 +491,7 @@ def main():
                 if expected == 0:
                     html_dir = case_dir / f"html-candidate-{backend}"
                     remove(html_dir)
-                    html_argv = [str(genhtml), "--ignore-errors", "source", "--output-directory", str(html_dir),
+                    html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
                                  str(cand_out) if mode != "stdout" else str((case_dir / "candidate-stdout-source.info"))]
                     if mode == "stdout":
                         (case_dir / "candidate-stdout-source.info").write_bytes(sem_cand)
