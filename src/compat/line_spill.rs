@@ -11,7 +11,7 @@ const ROW_OVERHEAD: usize = 512;
 
 #[derive(Clone, Debug)]
 pub(super) struct Entry {
-    pub kind: u8, // metadata (VER) sorts before DA rows
+    pub kind: u8, // 0 metadata; 1 original/master DA; 2 testcase-only generated DA
     pub source: String,
     pub testcase: String,
     pub value: String,
@@ -33,7 +33,7 @@ impl Ord for Entry {
     fn cmp(&self, o: &Self) -> Ordering {
         self.source
             .cmp(&o.source)
-            .then(self.kind.cmp(&o.kind))
+            .then(self.kind.min(1).cmp(&o.kind.min(1)))
             .then(self.testcase.cmp(&o.testcase))
             .then(self.line.cmp(&o.line))
             .then(self.input.cmp(&o.input))
@@ -253,7 +253,7 @@ fn decode_fields(mut f: Vec<Vec<u8>>) -> Result<Entry, Error> {
         return Err(corrupt());
     }
     let kind = f.remove(0)[0];
-    if kind > 1 {
+    if kind > 2 {
         return Err(corrupt());
     }
     let source = String::from_utf8(f.remove(0)).map_err(|_| corrupt())?;

@@ -51,15 +51,15 @@ multiple testcases can retain it only in the source summary. Disabling
 consistency checks leaves missing DA records absent. Perl accepts a positive
 line with no positive branch hit; a positive branch with a zero line still fails.
 
-MC/DC fake DA follows the same single- versus multi-testcase split. For a
-single testcase, positive MC/DC outcomes on a missing line synthesize DA on
-that line. When two testcases have live DA, the serialized MC/DC records each
-receive the source-wide synthesized line count. MC/DC in a testcase with no
-DA contributes to the source master but is removed from output; if its
-positive MC/DC outcome supplies the missing line, the kept testcase receives
-an MC/DC `DA:line,0` even when its own outcome is zero. This private fake DA
-does not turn a true no-DA testcase into a DA-bearing testcase. All-positive
-`U` outcomes on a missing line synthesize count zero. MC/DC fake DA also
+MC/DC on a line missing from the input source's original DA records synthesizes
+a source-wide count of positive reachable outcomes, rather than their hit sum.
+Retained testcases with MC/DC on that line each receive the source-wide count.
+MC/DC in a testcase with no original DA contributes to the source master but
+is removed from output. If only that removed testcase has MC/DC on the missing
+line, the fake DA stays private and does not appear in another testcase.
+All-`U` outcomes on a missing line synthesize count zero. A synthesized opposite
+outcome has no `U` flag even when the recorded outcome has one; MCF/MCH still
+include recorded unreachable outcomes, independently of fake DA. MC/DC fake DA
 participates in branch consistency: it can satisfy a missing branch line,
 while a positive fake DA can conflict with a branch line whose outcomes are
 all zero. Function range consistency checks each input before MC/DC generates
@@ -77,6 +77,7 @@ its status is retained, without claiming that it proves a branch mismatch.
 | Case | Behavior exercised | Oracle |
 | --- | --- | --- |
 | `tn-split` | Keep distinct test names | success |
+| `tn-normalization` / `tn-normalization-forgotten` | Normalize bytewise punctuation/Unicode and comma suffixes before testcase grouping; forget normalized names when requested | success |
 | `duplicate-input` | Duplicate input aggregation | success |
 | `true-empty-source` | Empty source file with a data record | success |
 | `uncovered-line` | Uncovered line data | success |
@@ -143,8 +144,10 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `mcdc-layout-summary` | MC/DC layout, unreachable records, and summary counts | success |
 | `mcdc-missing-line-single` | Positive MC/DC on a missing line synthesizes DA for one testcase | success |
 | `mcdc-missing-line-split` | Source-wide fake DA is serialized on MC/DC lines in each live testcase | success |
-| `mcdc-ghost-no-da-private-da` | True no-DA testcase is dropped while its MC/DC fake DA remains private to the source master | success |
-| `mcdc-u-no-line-recovery` | Positive all-`U` MC/DC on a missing line synthesizes zero-count DA | success |
+| `mcdc-ghost-existing-line` | No-DA testcase is dropped while its MC/DC records remain absent; the retained testcase already has the MC/DC line | success |
+| `mcdc-ghost-private-da` | Positive MC/DC in a dropped no-DA testcase synthesizes fake DA privately; retained testcase has `DA:1,1` and receives no fake DA | success |
+| `mcdc-u-no-line-recovery` | All-`U` true MC/DC on a missing line synthesizes zero-count DA | success |
+| `mcdc-ufalse-no-line-recovery` | An unreachable false outcome synthesizes reachable true with zero count and zero-count DA | success |
 | `mcdc-fake-da-branch-conflict` | Positive MC/DC fake DA conflicts with a zero-hit branch line | error |
 | `fn-range-generated-mcdc-line` | Input function-range checks precede MC/DC fake DA, while merged checks follow generation | error |
 | `mcdc-duplicate-permuted` | Duplicate MC/DC expressions merged from inputs in permuted order | success |
@@ -294,8 +297,13 @@ and verifies its selected checksum, accumulated count, and source version.
 Two cases reuse the DA fixture through sole and mixed stdin and verify every
 output record again. A tenth case puts over a million branches into a testcase
 without DA; recovery retains only the original testcase's DA output and keeps
-the generated point private to the source summary. Use `--case checksum-group`
-or `--case branches-no-da` to run only those workloads.
+the generated point private to the source summary. Additional workloads cover
+a removed testcase's large function-alias group, a removed testcase's large
+MC/DC group, and a retained MC/DC group with generated line coverage. The latter
+checks positive reachable outcome counts separately from MC/DC summaries and
+hit totals. The MC/DC workloads run without error suppression. Use `--case`
+with `functions-no-da`, `mcdc-ghost-no-da`, or `mcdc-missing-line-count` to select
+these workloads.
 The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy

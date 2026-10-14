@@ -77,6 +77,15 @@ impl Checker {
         header.push(0);
         put_string(&mut header, tc)?;
         self.rows.push(header, Vec::new())?;
+        self.push_summary_line(source, input, line, hits)
+    }
+    pub(super) fn push_summary_line(
+        &mut self,
+        source: &str,
+        input: u64,
+        line: u64,
+        hits: u64,
+    ) -> Result<(), Error> {
         let mut key = function_check::prefix(source, input)?;
         key.push(1);
         key.extend_from_slice(&line.to_be_bytes());

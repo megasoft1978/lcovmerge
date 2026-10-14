@@ -40,6 +40,21 @@ def expected_records(spec: dict):
             group = f"{'U' if i % 5 == 0 else ''}{spec['mcdc_conditions']}"
             yield f"MCDC:1,{group},t,{spec['hits']},{i},condition_{i:08d}\n"
             yield f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n"
+    elif shape == "mcdc-ghost-no-da":
+        yield "MCDC:1,1,t,1,0,kept\n"
+        yield "MCDC:1,1,f,0,0,kept\n"
+        yield "DA:1,1\n"
+        return
+    elif shape == "mcdc-missing-line":
+        count = spec["mcdc_conditions"]
+        for i in range(count):
+            group = f"{'U' if i % 5 == 0 else ''}{count}"
+            hits = 17 if i % 3 == 0 else 0
+            yield f"MCDC:2,{group},t,{hits},{i},condition_{i:08d}\n"
+            yield f"MCDC:2,{group},f,0,{i},condition_{i:08d}\n"
+        yield "DA:1,1\n"
+        yield f"DA:2,{spec['derived_hits']}\n"
+        return
     elif shape not in ("lines", "branches-no-da", "functions-no-da"):
         raise AssertionError(shape)
     yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
@@ -52,6 +67,7 @@ def verify_output(path: Path, spec: dict) -> None:
     got_summary: dict[str, int] = {}
     seen_end = False
     version_seen = False
+    testcase_seen = False
     with path.open("rt", encoding="utf-8", errors="strict") as stream:
         for raw in stream:
             line = raw.rstrip("\n")
@@ -68,7 +84,9 @@ def verify_output(path: Path, spec: dict) -> None:
                     raise AssertionError(f"unexpected SF {value!r}")
                 source_seen = True
             elif key == "TN":
-                continue
+                if testcase_seen or value != spec.get("testcase", "t"):
+                    raise AssertionError(f"unexpected testcase {value!r}")
+                testcase_seen = True
             elif key == "VER":
                 if version_seen or value != spec.get("version"):
                     raise AssertionError(f"unexpected source version {value!r}")
@@ -86,8 +104,8 @@ def verify_output(path: Path, spec: dict) -> None:
                     raise AssertionError(f"record mismatch: got {raw[:120]!r}, expected {want!r}")
             else:
                 raise AssertionError(f"unexpected output family {key!r}")
-    if not source_seen or not seen_end:
-        raise AssertionError("output missing SF or end_of_record")
+    if not source_seen or not seen_end or not testcase_seen:
+        raise AssertionError("output missing TN, SF or end_of_record")
     if bool(spec.get("version")) != version_seen:
         raise AssertionError("source version missing")
     extra = next(records, None)
@@ -99,7 +117,13 @@ def verify_output(path: Path, spec: dict) -> None:
         reachable = spec["branch_points"] - (spec["branch_points"] + 4) // 5
         wanted.update(BRF=reachable, BRH=reachable if spec["hits"] else 0)
     if spec.get("mcdc_conditions"):
-        wanted.update(MCF=2 * spec["mcdc_conditions"], MCH=spec["mcdc_conditions"])
+        if spec["shape"] == "mcdc-missing-line":
+            # LCOV's MC summaries include U outcomes. Synthesized DA counts
+            # only positive reachable outcomes, independently of MCH.
+            wanted.update(MCF=2 * spec["mcdc_conditions"],
+                          MCH=(spec["mcdc_conditions"] + 2) // 3)
+        else:
+            wanted.update(MCF=2 * spec["mcdc_conditions"], MCH=spec["mcdc_conditions"])
     # Some LCOV outputs omit function summaries when no function records exist.
     wanted = {k: v for k, v in wanted.items() if v or k in got_summary}
     if got_summary != wanted:
@@ -114,6 +138,7 @@ def validator_self_test() -> None:
     good = ("TN:t\nSF:/tmp/verify.c\nFNL:0,1,1\nFNA:0,2,fn_00000000\n"
             "FNF:1\nFNH:1\nDA:1,2\nLF:1\nLH:1\nend_of_record\n")
     mutants = (good.replace("FNA:0,2,", "FNA:0,3,"),
+               good.replace("TN:t", "TN:ghost"),
                good.replace("FNL:0,", "FNL:9,"),
                good.replace("FNH:1", "FNH:0"),
                good.replace("DA:1,2", "DA:1,3"),
@@ -215,7 +240,26 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                 out.write(f"MCDC:1,{group},t,{hits},{i},condition_{i:08d}\n")
                 out.write(f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n")
             lines = 1
-        if shape not in ("lines", "checksums", "branches-no-da", "functions-no-da"):
+        elif shape == "mcdc-ghost-no-da":
+            conditions = size
+            out.write("DA:1,1\nMCDC:1,1,t,1,0,kept\nMCDC:1,1,f,0,0,kept\nend_of_record\n")
+            out.write(f"TN:ghost\nSF:{source}\n")
+            for i in range(conditions):
+                out.write(f"MCDC:2,{conditions},t,17,{i},ghost_{i:08d}\n")
+                out.write(f"MCDC:2,{conditions},f,0,{i},ghost_{i:08d}\n")
+            lines, hits = 1, 1
+        elif shape == "mcdc-missing-line":
+            conditions = size
+            derived_hits = sum(i % 3 == 0 and i % 5 != 0 for i in range(conditions))
+            out.write("DA:1,1\n")
+            for i in range(conditions):
+                group = f"{'U' if i % 5 == 0 else ''}{conditions}"
+                outcome_hits = 17 if i % 3 == 0 else 0
+                out.write(f"MCDC:2,{group},t,{outcome_hits},{i},condition_{i:08d}\n")
+                out.write(f"MCDC:2,{group},f,0,{i},condition_{i:08d}\n")
+            lines, hits = 2, 1
+        if shape not in ("lines", "checksums", "branches-no-da", "functions-no-da",
+                         "mcdc-ghost-no-da", "mcdc-missing-line"):
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
         out.write("end_of_record\n")
@@ -223,12 +267,17 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     if byte_size < MIN_INPUT_BYTES:
         raise AssertionError(f"{path.name} is {byte_size} bytes, below {MIN_INPUT_BYTES}")
     # Each function has line 1 covered; DA shape uses its full line sequence.
-    return {"source": str(source), "shape": shape, "hits": hits, "lines": lines,
+    spec = {"source": str(source), "testcase": "bounded", "shape": shape, "hits": hits, "lines": lines,
             "functions": functions, "aliases": aliases,
             "mcdc_conditions": conditions, "branch_points": branches,
             "function_count": functions or int(bool(aliases)), "bytes": byte_size,
             **({"checksum": "XUFAKrxLKna5cZ2REBfFkg", "version": "bounded-rust-v1"}
                if shape == "checksums" else {})}
+    if shape == "mcdc-ghost-no-da":
+        spec.update(ghost_conditions=size, mcdc_conditions=1, function_count=0)
+    if shape == "mcdc-missing-line":
+        spec.update(derived_hits=derived_hits, mcdc_conditions=conditions, function_count=0)
+    return spec
 
 
 class TempMeter:
@@ -275,7 +324,8 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
                "-" if spec.get("stdin") else str(root / f"{name}.info"), "-o", str(output)]
-    if spec["shape"] in ("lines", "mcdc", "branches", "checksums", "branches-no-da"):
+    if spec["shape"] in ("lines", "mcdc", "mcdc-ghost-no-da", "mcdc-missing-line",
+                          "branches", "checksums", "branches-no-da"):
         command.append("--no-function-coverage")
     if spec["shape"] in ("branches", "branches-no-da"):
         command.append("--branch-coverage")
@@ -283,7 +333,7 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
         command += ["--ignore-errors", "inconsistent"]
     if spec.get("extra_input"):
         command += ["-a", str(root / spec["extra_input"])]
-    if spec["shape"] == "mcdc":
+    if spec["shape"] in ("mcdc", "mcdc-ghost-no-da", "mcdc-missing-line"):
         command.append("--mcdc-coverage")
     if spec["shape"] == "checksums":
         command.append("--checksum")
@@ -363,6 +413,7 @@ def main() -> int:
     binary = args.binary.resolve()
     config = root / "lcovrc"; config.write_text("# bounded compatibility fixture\n")
     tempdir = root / "tmp"; tempdir.mkdir(exist_ok=True)
+    mcdc_target = max(args.target_bytes, MIN_INPUT_BYTES + 2 * 1024 * 1024)
     # DA rows, many distinct function IDs, and one enormous alias group each
     # independently occupy roughly 28 MiB. This is a byte budget, never rows.
     cases = (("lines", "lines", args.target_bytes // 10),
@@ -370,6 +421,8 @@ def main() -> int:
              ("legacy-functions", "legacy", args.target_bytes // 50),
              ("alias-group", "aliases", args.target_bytes // 21),
              ("mcdc-group", "mcdc", args.target_bytes // 70),
+             ("mcdc-ghost-no-da", "mcdc-ghost-no-da", mcdc_target // 80),
+             ("mcdc-missing-line-count", "mcdc-missing-line", mcdc_target // 88),
              ("branch-block", "branches", args.target_bytes // 28),
              ("checksum-group", "checksums", args.target_bytes // 28),
              ("branches-no-da", "branches-no-da", args.target_bytes // 28),

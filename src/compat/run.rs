@@ -599,7 +599,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                     }
                     continue;
                 }
-                tc = v.to_owned();
+                tc = policy::testcase_name(v);
                 continue;
             }
             if let Some(sf) = s.strip_prefix("SF:") {
@@ -1187,7 +1187,7 @@ fn parse_input_sections(
                     return Err(e);
                 }
             }
-            testcase = tn.to_owned();
+            testcase = policy::testcase_name(tn);
             continue;
         }
         if let Some(sf) = s.strip_prefix("SF:") {
@@ -1640,6 +1640,25 @@ mod tests {
     use std::io::Write;
     use std::path::PathBuf;
     #[test]
+    fn collector_merges_normalized_testcase_names() {
+        let req = Request::default();
+        let input = b"TN:a-b\nSF:x.c\nDA:1,1\nend_of_record\nTN:a_b,ignored\nSF:x.c\nDA:1,2\nend_of_record\n";
+        let mut sections = Vec::new();
+        parse_input(
+            Box::new(&input[..]),
+            "fixture",
+            &req,
+            &mut sections,
+            &mut HashMap::new(),
+            &mut 0,
+            1 << 20,
+        )
+        .unwrap();
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].testcase, "a_b");
+        assert_eq!(sections[0].lines[&1].0, 3);
+    }
+    #[test]
     fn bounded_mcdc_executor_synthesizes_missing_senses_and_merges_counts() {
         let root = tempfile::tempdir().unwrap();
         let input = root.path().join("mcdc.info");
@@ -1652,7 +1671,7 @@ mod tests {
         req.resources.function_data = false;
         req.mcdc_coverage = true;
         assert!(function_runtime::try_run(&req).unwrap().unwrap().is_ok());
-        assert_eq!(std::fs::read_to_string(&output).unwrap(), "TN:case\nSF:x.c\nMCDC:1,2,t,3,0,A\nMCDC:1,2,f,0,0,A\nMCDC:1,U2,t,0,1,B\nMCDC:1,U2,f,4,1,B\nMCF:4\nMCH:2\nDA:1,1\nLF:1\nLH:1\nend_of_record\n");
+        assert_eq!(std::fs::read_to_string(&output).unwrap(), "TN:case\nSF:x.c\nMCDC:1,2,t,3,0,A\nMCDC:1,2,f,0,0,A\nMCDC:1,2,t,0,1,B\nMCDC:1,U2,f,4,1,B\nMCF:4\nMCH:2\nDA:1,1\nLF:1\nLH:1\nend_of_record\n");
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
     #[test]

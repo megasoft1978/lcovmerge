@@ -3,6 +3,45 @@ use crate::common::Error;
 use crate::compat::Request;
 use base64::Engine;
 use std::path::Path;
+
+/// LCOV reads TN as bytes: normalize the name before the first comma, retaining
+/// only the special `,diff` suffix. UTF-8 non-ASCII bytes each become `_`.
+pub(super) fn testcase_name(payload: &str) -> String {
+    let payload = payload.trim_end_matches(|c| matches!(c, ' ' | '\t'..='\r'));
+    let (name, suffix) = payload.split_once(',').unwrap_or((payload, ""));
+    let mut normalized: String = name
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b == b'_' {
+                char::from(b)
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if suffix.starts_with("diff") {
+        normalized.push_str(",diff");
+    }
+    normalized
+}
+
+#[cfg(test)]
+mod testcase_tests {
+    #[test]
+    fn matches_byte_normalization_and_diff_suffix() {
+        for (input, expected) in [
+            ("a-b.c!", "a_b_c_"),
+            (" a b\t", "_a_b"),
+            ("a ,ignored ", "a_"),
+            ("café", "caf__"),
+            ("alpha,ignored", "alpha"),
+            ("a-b,different,rest", "a_b,diff"),
+            (",diff", ",diff"),
+        ] {
+            assert_eq!(super::testcase_name(input), expected);
+        }
+    }
+}
 pub(super) fn parse_fn(
     s: &str,
     file: &str,

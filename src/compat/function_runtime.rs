@@ -1,7 +1,7 @@
 //! Bounded DA and function compatibility executor.
 use super::{
     branch_check, branch_spill, checksum_spill, eligibility, function_check, function_spill,
-    line_spill, mcdc_spill, policy, sort, version_spill, Request, StopOnCancel,
+    line_spill, mcdc_input, mcdc_lines, policy, sort, version_spill, Request, StopOnCancel,
 };
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
@@ -45,8 +45,6 @@ fn scan(req: &Request) -> Result<bool, Error> {
         let mut reader = BufReader::new(StopOnCancel(reader));
         let mut bytes = Vec::with_capacity(4096);
         let mut open = false;
-        let mut saw_da = false;
-        let mut saw_mcdc = false;
         let mut line = 0u64;
         loop {
             check_cancelled()?;
@@ -84,15 +82,8 @@ fn scan(req: &Request) -> Result<bool, Error> {
                     return Ok(false);
                 }
                 open = true;
-                saw_da = false;
-                saw_mcdc = false;
             } else if s == "end_of_record" {
                 if !open {
-                    return Ok(false);
-                }
-                // Sections without DA currently require the collector's
-                // source/testcase metadata propagation path.
-                if saw_mcdc && !saw_da {
                     return Ok(false);
                 }
                 open = false;
@@ -106,8 +97,6 @@ fn scan(req: &Request) -> Result<bool, Error> {
                 if !open {
                     return Ok(false);
                 }
-                saw_da |= s.starts_with("DA:");
-                saw_mcdc |= req.mcdc_coverage && s.starts_with("MCDC:");
             } else {
                 return Ok(false);
             }
@@ -155,7 +144,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         None
     };
     let mut mcdc = if req.mcdc_coverage {
-        Some(mcdc_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
+        Some(mcdc_input::Records::new(&o.tmpdir, each, o.jobs.max(1))?)
     } else {
         None
     };
@@ -219,7 +208,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 continue;
             }
             if let Some(v) = s.strip_prefix("TN:") {
-                tc = v.to_owned();
+                tc = policy::testcase_name(v);
                 continue;
             }
             if let Some(sf) = s.strip_prefix("SF:") {
@@ -289,7 +278,15 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
             if let Some(payload) = s.strip_prefix("MCDC:") {
                 if let Some(reducer) = &mut mcdc {
-                    reducer.push(src, &section_tc, payload, &label, line_no, req)?;
+                    reducer.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        payload,
+                        &label,
+                        line_no,
+                        req,
+                    )?;
                 }
                 continue;
             }
@@ -493,7 +490,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     let mut eligibility = eligibility.finish(req)?;
     let version_rows = versions.finish_eligible(req, Some(&mut eligibility))?;
-    let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
     let (mut lines, mut line_path) = if let Some(processor) = checksums {
@@ -502,6 +498,28 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     } else {
         let path = lines.finish()?;
         (lines, path)
+    };
+    let mut mcdc_generated = None;
+    let mut has_master_mcdc_coverpoints = false;
+    let mcdc_rows = if let Some(records) = mcdc {
+        let reduced = records.finish(req, &mut eligibility)?;
+        let mut cursor = reduced.master.cursor()?;
+        while let Some(row) = cursor.next()? {
+            has_master_mcdc_coverpoints |= decode_output_key(&row.key)?.2 == 6;
+        }
+        drop(cursor);
+        if req.check_data_consistency {
+            mcdc_generated = Some(mcdc_lines::generate(
+                req,
+                each,
+                &reduced.master,
+                &reduced.members,
+                &line_path,
+            )?);
+        }
+        Some(reduced.public)
+    } else {
+        None
     };
     let mut input_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut linked = raw_functions.finish()?;
@@ -680,15 +698,59 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let function_profiles_sorted = function_profiles.finish()?;
     let function_sources_sorted = function_sources.finish()?;
     let ghost_functions = ghost_functions.finish()?;
+    if let Some(generated) = mcdc_generated.as_ref() {
+        let mut cursor = generated.testcases.cursor()?;
+        let mut row = cursor.next()?;
+        if row.is_some() {
+            let mut replaced = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+            let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+            while let Some(original) = line_spill::read_next_public(&mut reader)? {
+                replaced.push(original)?;
+            }
+            drop(reader);
+            while let Some(current) = row.take() {
+                let (source, input, line, count, testcase) = mcdc_lines::decode(&current)?;
+                replaced.push(line_spill::Entry {
+                    kind: 2,
+                    source,
+                    testcase: testcase
+                        .ok_or_else(|| Error::new(3, "missing MC/DC testcase projection"))?,
+                    value: String::new(),
+                    line,
+                    count,
+                    input,
+                    section: 0,
+                    ordinal: 0,
+                    label: String::new(),
+                    line_no: 0,
+                })?;
+                row = cursor.next()?;
+            }
+            line_path = replaced.finish()?;
+            lines = replaced;
+        }
+    }
     let mut generated_lines = None;
     let mut has_master_branch_coverpoints = false;
     let branch_rows = if let Some(branches) = branches {
         let mut checker = branch_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
         let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
         while let Some(row) = line_spill::read_next_public(&mut reader)? {
-            checker.push_line(&row.source, &row.testcase, row.input, row.line, row.count)?;
+            if row.kind == 1 {
+                checker.push_line(&row.source, &row.testcase, row.input, row.line, row.count)?;
+            }
         }
         drop(reader);
+        if let Some(generated) = mcdc_generated.as_ref() {
+            let mut cursor = generated.master.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, input, line, count, _) = mcdc_lines::decode(&row)?;
+                if eligibility.source(&source, input)?.multiple {
+                    checker.mark_multiple(&source, input)?;
+                }
+                checker.push_summary_line(&source, input, line, count)?;
+            }
+        }
         let rows = branches.finish_eligible(
             req,
             Some(&mut eligibility),
@@ -786,7 +848,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     drop(names);
     let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut has_branch_coverpoints = has_master_branch_coverpoints;
-    let mut has_mcdc_coverpoints = false;
+    let mut has_mcdc_coverpoints = has_master_mcdc_coverpoints;
     if let Some(rows) = branch_rows {
         let mut cursor = rows.cursor()?;
         while let Some(row) = cursor.next()? {
@@ -1024,7 +1086,9 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     if has_functions {
         let mut global_lines = BufReader::new(File::open(&line_path).map_err(ioerr)?);
         while let Some(line) = line_spill::read_next_public(&mut global_lines)? {
-            global.push_line(&line.source, 0, line.line, line.count)?;
+            if line.kind == 1 {
+                global.push_line(&line.source, 0, line.line, line.count)?;
+            }
         }
     }
     if has_functions {
@@ -1038,6 +1102,16 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
     }
+    if has_functions {
+        if let Some(generated) = mcdc_generated.as_ref() {
+            let mut cursor = generated.master.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, _, line, count, _) = mcdc_lines::decode(&row)?;
+                global.push_line(&source, 0, line, count)?;
+            }
+        }
+    }
+    drop(mcdc_generated);
     drop(generated_lines);
     let global_adjustments = global.finish(req)?;
     let mut global_cursor = global_adjustments.cursor()?;

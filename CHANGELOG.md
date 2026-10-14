@@ -13,6 +13,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Execute source-version propagation with bounded sorting. Match automatic function-family empty errors and discard no-DA input sources and testcase output while retaining source master metadata.
 - Execute eligible checksum inputs with bounded source-line joins and a disk-backed source index, preserving source-wide checksum selection across testcases.
 - Bound branch-only sections without DA using an exact disk-backed eligibility index; retain private source-summary recovery while omitting removed testcase output.
+- Stream removed-testcase function aliases and MC/DC metadata through private source-summary runs. Generate missing MC/DC line counts with bounded joins and preserve LCOV's separate reachability flags for synthesized outcomes.
 - Check LCOV-profile function/line consistency before and after input aggregation with bounded source-wide joins, infer ends before merging, and match the pinned default recovery count adjustments and lambda exception.
 - Stage LCOV-profile stdin with bounded buffers so eligible merges, including mixed file/stdin inputs, use spill executors at the original producer position; remove staged input on success, errors, and catchable interruption. Stdin is staged before aggregation begins.
 
@@ -23,6 +24,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Normalize LCOV-profile testcase names before grouping, including bytewise punctuation replacement and the special `,diff` suffix, in both spill and recovery paths.
 - Classify LCOV recovery errors explicitly so filenames and function names cannot change their ignore-error category; retain public API error codes.
 - Retain removed-testcase function data in source-level collector checks and zero function summaries, including automatic function activation.
 - Retain recovered negative branch counts as zero in LCOV collector paths, preserving their expressions, exception kinds, and branch positions.

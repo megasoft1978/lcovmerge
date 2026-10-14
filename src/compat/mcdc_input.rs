@@ -40,6 +40,7 @@ impl Records {
             jobs,
         })
     }
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push(
         &mut self,
         source: &str,
@@ -132,6 +133,9 @@ impl Records {
             );
             at += 8;
             let tc = take_string(&r.key, &mut at)?;
+            if r.key.len() != at + 8 || r.value.len() < 43 {
+                return Err(Error::new(3, "corrupt MC/DC staging frame"));
+            }
             let mut va = 0;
             let group = u64::from_be_bytes(
                 r.value[va..va + 8]
@@ -145,10 +149,16 @@ impl Records {
             va += 8;
             let count = u64::from_be_bytes(r.value[va..va + 8].try_into().unwrap());
             va += 8;
+            if sense > 1 || group == 0 || count > i64::MAX as u64 || r.value[va] > 1 {
+                return Err(Error::new(3, "corrupt MC/DC staging value"));
+            }
             let unreachable = r.value[va] != 0;
             va += 1;
             let expr = take_string(&r.value, &mut va)?.to_owned();
             let label = take_string(&r.value, &mut va)?;
+            if r.value.len() != va + 8 {
+                return Err(Error::new(3, "corrupt MC/DC staging location"));
+            }
             let line_no = u64::from_be_bytes(r.value[va..va + 8].try_into().unwrap());
             let point_line = u64::from_be_bytes(r.key[at..at + 8].try_into().unwrap());
             let point = mcdc_spill::Point {
@@ -242,5 +252,39 @@ mod tests {
             Err(e) => e,
         };
         assert!(error.message.contains("inconsistent"));
+    }
+
+    #[test]
+    fn truncated_staging_frames_return_internal_error_and_clean_up() {
+        for frame in 0..4 {
+            let d = tempfile::tempdir().unwrap();
+            let mut idx = index(d.path());
+            let mut req = Request::default();
+            req.ignore_errors.insert("format".into());
+            let mut records = Records::new(d.path(), 1 << 20, 1).unwrap();
+            let mut key = function_check::prefix("a.c", 0).unwrap();
+            key.extend_from_slice(b"live\0");
+            key.extend_from_slice(&4u64.to_be_bytes());
+            let mut value = Vec::new();
+            for n in [2u64, 0, 0, 1] {
+                value.extend_from_slice(&n.to_be_bytes());
+            }
+            value.extend_from_slice(b"\0A\0fixture\0");
+            value.extend_from_slice(&1u64.to_be_bytes());
+            match frame {
+                0 => key.truncate(4),
+                1 => key.pop().map(|_| ()).unwrap(),
+                2 => value.truncate(34),
+                _ => value.truncate(value.len() - 1),
+            }
+            records.raw.push(key, value).unwrap();
+            let error = match records.finish(&req, &mut idx) {
+                Ok(_) => panic!("accepted truncated staging frame {frame}"),
+                Err(error) => error,
+            };
+            assert_eq!(error.code, 3);
+            drop(idx);
+            assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 0);
+        }
     }
 }

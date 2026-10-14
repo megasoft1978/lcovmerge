@@ -52,7 +52,6 @@ pub(super) struct Point {
     pub unreachable: bool,
     pub expression: String,
 }
-#[allow(dead_code)]
 pub(super) fn parse_point(
     payload: &str,
     label: &str,
@@ -75,7 +74,11 @@ pub(super) fn parse_point(
             .ok_or_else(|| err(label, line_no, "invalid MC/DC sense"))?;
         let raw = f.next().unwrap_or("");
         let count = match parse_count(raw, label, line_no) {
-            Err(e) if e.message.contains("negative") && can_recover(request, &e) => 0,
+            Err(e)
+                if e.message.ends_with("negative coverage count") && can_recover(request, &e) =>
+            {
+                0
+            }
             x => x?,
         };
         let index = num(f.next(), label, line_no)?;
@@ -144,6 +147,7 @@ impl Reducer {
             tmpdir: tmpdir.to_path_buf(),
         })
     }
+    #[cfg(test)]
     pub(super) fn push(
         &mut self,
         source: &str,
@@ -153,82 +157,11 @@ impl Reducer {
         line_no: u64,
         request: &Request,
     ) -> Result<(), Error> {
-        check_cancelled()?;
-        let recover = |e: Error| -> Result<(), Error> {
-            if can_recover(request, &e) {
-                Ok(())
-            } else {
-                Err(e)
-            }
+        let Some(point) = parse_point(payload, label, line_no, request)? else {
+            return Ok(());
         };
-        let parsed = (|| {
-            if payload.len() > MAX_LINE
-                || source.len() > MAX_LINE
-                || testcase.len() > MAX_LINE
-                || label.len() > MAX_LINE
-            {
-                return Err(err(label, line_no, "MC/DC field exceeds 1 MiB"));
-            }
-            let mut f = payload.splitn(6, ',');
-            let line = num(f.next(), label, line_no)?;
-            let g = f
-                .next()
-                .ok_or_else(|| err(label, line_no, "malformed MCDC record"))?;
-            let sense = f
-                .next()
-                .filter(|c| *c == "t" || *c == "f")
-                .and_then(|c| c.chars().next())
-                .ok_or_else(|| err(label, line_no, "invalid MC/DC sense"))?;
-            let raw = f.next().unwrap_or("");
-            let count = match parse_count(raw, label, line_no) {
-                Err(e) if e.message.contains("negative") && can_recover(request, &e) => 0,
-                x => x?,
-            };
-            let index = num(f.next(), label, line_no)?;
-            let expr = f
-                .next()
-                .filter(|x| !x.is_empty())
-                .ok_or_else(|| err(label, line_no, "malformed MC/DC expression"))?;
-            if line == 0 {
-                return Err(err(label, line_no, "MC/DC line must be positive"));
-            }
-            let unreachable = g.starts_with('U');
-            let group = num(Some(g.strip_prefix('U').unwrap_or(g)), label, line_no)?;
-            if group == 0 {
-                return Err(err(label, line_no, "MC/DC group size must be positive"));
-            }
-            if expr.len() > MAX_LINE || expr.as_bytes().contains(&0) {
-                return Err(err(label, line_no, "invalid MC/DC expression"));
-            }
-            Ok((line, group, index, sense, count, unreachable, expr))
-        })();
-        let (line, group, index, sense, count, unreachable, expr) = match parsed {
-            Ok(v) => v,
-            Err(e) => return recover(e),
-        };
-        let mut key = Vec::new();
-        field(&mut key, source, label, line_no)?;
-        field(&mut key, testcase, label, line_no)?;
-        key.push(5);
-        numeric(&mut key, line);
-        numeric(&mut key, group);
-        numeric(&mut key, index);
-        numeric(&mut key, if sense == 't' { 0 } else { 1 });
-        let mut value = Vec::with_capacity(expr.len() + 9);
-        value.extend_from_slice(&count.to_be_bytes());
-        value.push(u8::from(unreachable));
-        value.extend_from_slice(expr.as_bytes());
-        let mut ek = Vec::new();
-        field(&mut ek, source, label, line_no)?;
-        numeric(&mut ek, line);
-        numeric(&mut ek, group);
-        numeric(&mut ek, index);
-        numeric(&mut ek, if sense == 't' { 0 } else { 1 });
-        self.rows.push(key, value)?;
-        self.expressions.push(ek, expr.as_bytes().to_vec())
+        self.push_point(source, testcase, &point, label, line_no)
     }
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
     pub(super) fn push_point(
         &mut self,
         source: &str,
@@ -237,27 +170,26 @@ impl Reducer {
         label: &str,
         line_no: u64,
     ) -> Result<(), Error> {
-        let payload = format!(
-            "{},{},{},{},{},{}",
-            point.line,
-            if point.unreachable {
-                format!("U{}", point.group)
-            } else {
-                point.group.to_string()
-            },
-            if point.sense == 0 { "t" } else { "f" },
-            point.count,
-            point.index,
-            point.expression
-        );
-        self.push(
-            source,
-            testcase,
-            &payload,
-            label,
-            line_no,
-            &Request::default(),
-        )
+        check_cancelled()?;
+        let mut key = Vec::new();
+        field(&mut key, source, label, line_no)?;
+        field(&mut key, testcase, label, line_no)?;
+        key.push(5);
+        for value in [point.line, point.group, point.index, point.sense] {
+            numeric(&mut key, value);
+        }
+        let mut value = Vec::with_capacity(point.expression.len() + 9);
+        value.extend_from_slice(&point.count.to_be_bytes());
+        value.push(u8::from(point.unreachable));
+        value.extend_from_slice(point.expression.as_bytes());
+        let mut ek = Vec::new();
+        field(&mut ek, source, label, line_no)?;
+        for value in [point.line, point.group, point.index, point.sense] {
+            numeric(&mut ek, value);
+        }
+        self.rows.push(key, value)?;
+        self.expressions
+            .push(ek, point.expression.as_bytes().to_vec())
     }
     pub(super) fn finish(self, request: &Request) -> Result<Sorted, Error> {
         let budget = self.budget;
@@ -400,6 +332,9 @@ impl Reducer {
                 let start = key.len() - 8;
                 key[start..].copy_from_slice(&(1 - sense).to_be_bytes());
                 value[..8].fill(0);
+                // LCOV marks reachability per outcome. A missing opposite
+                // outcome starts reachable even when the recorded one is U.
+                value[8] = 0;
                 Some((key, value))
             } else {
                 None
@@ -537,6 +472,21 @@ mod tests {
         assert_eq!(rows[2].1, b"2,2");
         assert_eq!(rank(&rows[0].0), 5);
         assert_eq!(rank(&rows[2].0), 6);
+    }
+
+    #[test]
+    fn synthesized_opposite_outcome_does_not_inherit_unreachable_flag() {
+        for (record, expected) in [
+            ("4,U2,t,1,0,A", ["MCDC:4,U2,t,1,0,A", "MCDC:4,2,f,0,0,A"]),
+            ("4,U2,f,1,0,A", ["MCDC:4,2,t,0,0,A", "MCDC:4,U2,f,1,0,A"]),
+        ] {
+            let (_d, mut r) = reducer();
+            push(&mut r, "t", record);
+            let rows = collect(r.finish(&Request::default()).unwrap());
+            assert_eq!(rows[0].1, expected[0].as_bytes());
+            assert_eq!(rows[1].1, expected[1].as_bytes());
+            assert_eq!(rows[2].1, b"2,1");
+        }
     }
 
     #[test]

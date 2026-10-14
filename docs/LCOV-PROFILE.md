@@ -53,6 +53,11 @@ unsupported operation or setting is needed.
 
 ## Count policy
 
+Testcase names use LCOV's bytewise normalization: trailing ASCII whitespace is
+removed, non-word bytes become `_`, and comma suffixes are discarded except for
+the special `,diff` marker. Normalized names group together before counts merge;
+`--forget-test-names` then uses the unnamed testcase.
+
 Counts saturate at LCOV's signed 64-bit maximum, and fractional counts truncate.
 Rust preserves exact decimal integers. In the retained `DA:1,9007199254740993`
 fixture, LCOV 2.6 XS emits `9007199254740992`, while pure Perl and Rust retain
@@ -91,8 +96,7 @@ measurements do not establish this profile's speed. See the
 Development validation is still in progress. No stable drop-in or performance
 claim is made before the implementation's release gates pass.
 
-DA/function inputs, branch sections containing DA, and MC/DC sections containing
-DA use external sort runs. Branch blocks use streamed, exact signature ranking
+DA/function, branch, and MC/DC inputs use external sort runs. Branch blocks use streamed, exact signature ranking
 and bounded joins; sparse block IDs do not allocate sparse arrays. Stdin, including
 mixed file/stdin input, is staged to disk with fixed-size buffers and then uses the
 same eligible executors as a regular file. Source versions use bounded producer-order
@@ -100,7 +104,11 @@ reduction and propagate across retained testcases. Eligible checksum inputs use 
 source-line sort and disk-backed source index; even one checksum group larger
 than memory is streamed. Branch-only sections without DA use a disk-backed
 input/source/testcase eligibility index, preserving source-summary checks while
-omitting removed testcases. Removed testcases with functions or MC/DC still use the
-collector; large working sets can exceed its record budget. Completing those
-bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be
+omitting removed testcases. Removed-testcase functions and MC/DC use the same
+eligibility index and separate spill streams for private source-summary data.
+MC/DC line synthesis counts positive reachable outcomes and projects the
+source-wide count into retained testcases without duplicating the private count.
+Structurally malformed sections still use the budget-limited recovery collector;
+large malformed working sets can exceed its record budget. The remaining semantic
+audit and release validation are still in progress. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.
