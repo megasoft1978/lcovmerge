@@ -490,7 +490,9 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
     for pattern in raw_inputs {
         expand_one(pattern.as_os_str(), &mut req.resources.inputs)?;
     }
-    req.resources.mem_limit = req.resources.mem_limit.max(MIN_WORKER_BUDGET);
+    if req.resources.mem_limit < MIN_WORKER_BUDGET {
+        return Err(err("--mem-limit must be at least 8M"));
+    }
     if !req.resources.jobs_explicit {
         req.resources.jobs = 1;
     }

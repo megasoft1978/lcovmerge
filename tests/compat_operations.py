@@ -43,7 +43,9 @@ def main():
         bad.write_text("TN:late\nSF:x.c\nDA:1,1\nend_of_record\nTN:x\nDA:oops\n", encoding="utf-8")
         config = root / "lcovrc"
         config.write_bytes(b"")
-        prefix = [binary, "--lcov-compat=2.6", "--quiet", "--config-file", str(config)]
+        tmpdir = root / "runs"
+        tmpdir.mkdir()
+        prefix = [binary, "--lcov-compat=2.6", "--quiet", "--config-file", str(config), "--tempdir", str(tmpdir)]
         # Default stdout and explicit stdout; gzip output has a valid CRC and concatenated input is accepted.
         r = run(prefix + ["-a", str(a)])
         check(r.returncode == 0 and b"SF:" in r.stdout, f"default stdout failed: {r.returncode} {r.stderr!r}")
@@ -106,7 +108,8 @@ def main():
                 time.sleep(0.15)
                 proc.send_signal(signal.SIGINT)
                 _, err = proc.communicate(timeout=4)
-                check(proc.returncode != 0, f"blocked-stdin cancellation unexpectedly succeeded: {err!r}")
+                check(proc.returncode == 1 and b"interrupted" in err, f"blocked-stdin signal was not caught cleanly: {proc.returncode} {err!r}")
+                check(not list(tmpdir.iterdir()), "interruption left temporary runs")
             finally:
                 if proc.poll() is None:
                     proc.kill(); proc.communicate(timeout=2)
@@ -116,7 +119,7 @@ def main():
                 resource.setrlimit(resource.RLIMIT_NOFILE, (min(16, hard), hard))
             many = ["-a", str(a)] * 24
             r = subprocess.run(prefix + many, capture_output=True, timeout=8, preexec_fn=nofile_limit)
-            check(r.returncode in (0, 3), f"low RLIMIT_NOFILE was not handled: {r.returncode} {r.stderr!r}")
+            check(r.returncode in (0, 1), f"low RLIMIT_NOFILE was not handled: {r.returncode} {r.stderr!r}")
         else:
             print(f"compat operations: POSIX signal/resource cases skipped on {sys.platform}")
         # A bounded but nontrivial valid input makes the memory limit observable.

@@ -1,7 +1,7 @@
 use self::merge::{merge_into, write_sections};
 use self::record::Section;
 use super::Request;
-use crate::common::{check_cancelled, stdin_reader, stdout_writer, Error, MAX_LINE};
+use crate::common::{cancelled, check_cancelled, stdin_reader, stdout_writer, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -23,6 +23,19 @@ use policy::{
     can_recover, num, parse_branch, parse_fn, parse_mcdc, parse_named_count,
     validate_or_generate_checksum,
 };
+
+// read_until retries Interrupted indefinitely. Cancellation must escape that loop.
+struct StopOnCancel<R>(R);
+impl<R: Read> Read for StopOnCancel<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.0.read(buffer) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted && cancelled() => {
+                Err(std::io::Error::other("interrupted"))
+            }
+            result => result,
+        }
+    }
+}
 
 pub fn run(request: Request) -> Result<(), Error> {
     let opt = &request.resources;
@@ -241,7 +254,7 @@ fn parse_input(
     held: &mut usize,
     limit: usize,
 ) -> Result<(), Error> {
-    let mut input = BufReader::with_capacity(crate::common::IO_BLOCK, reader);
+    let mut input = BufReader::with_capacity(crate::common::IO_BLOCK, StopOnCancel(reader));
     let mut line = Vec::with_capacity(4096);
     let mut line_no = 0u64;
     let mut testcase = String::new();
