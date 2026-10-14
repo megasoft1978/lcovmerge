@@ -21,7 +21,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
 - Add Rust parser/model property tests and in-process corpus mutation fuzzing alongside the full CLI, oracle, LCOV, determinism, partition, and cleanup suites. AddressSanitizer and ThreadSanitizer targets exercise the Rust implementation.
-- Build portable PGO binaries by default with `make`, using cached synthetic training feedback. Add a reproducible PGO build check and a byte-equivalence/performance gate in `bench/compare-builds.py`. Held-out local fixtures match C 1.1's single-job sorted speed and improve threaded and unsorted elapsed time; document the unsorted memory trade-off.
+- Add isolated native-parity and LCOV-profile benchmark jobs with pinned inputs, verified baselines, and retained measurements and build provenance.
+- Build portable PGO binaries by default with `make`, using cached synthetic training feedback. Add a reproducible PGO build check and a byte-equivalence/performance gate in `bench/compare-builds.py`. Earlier Rust-port measurements show faster threaded and unsorted merges; final-candidate single-worker parity remains under validation. Document the unsorted memory trade-off.
 - Update README, website, architecture, and release documentation. Keep published C measurements separate from the [Rust port comparison](docs/BENCHMARKS.md#rust-port-comparison), which records both speed and memory trade-offs.
 
 ### Fixed

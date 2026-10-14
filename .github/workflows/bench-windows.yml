@@ -1,13 +1,34 @@
-name: Windows Rust benchmark
+name: Rust benchmarks
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Benchmark runner
+        type: choice
+        options:
+          - windows
+          - native-macos
+          - profile-linux
+          - all-performance
+        default: windows
+        required: true
+      bundle_release:
+        description: Release tag containing the native benchmark bundle
+        type: string
+        default: benchmark-baselines-20261014
+        required: true
+      bundle_sha256:
+        description: Optional SHA-256 for the native benchmark bundle
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 jobs:
   benchmark:
+    if: ${{ inputs.mode == '' || inputs.mode == 'windows' }}
     name: Benchmark Rust release on windows-latest
     runs-on: windows-latest
     timeout-minutes: 240
@@ -44,5 +65,98 @@ jobs:
           path: |
             .cache/windows-benchmark/artifact/benchmark.json
             .cache/windows-benchmark/artifact/benchmark.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  native-macos:
+    if: ${{ inputs.mode == 'native-macos' || inputs.mode == 'all-performance' }}
+    name: Native macOS Rust benchmark
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out current source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out C 1.1.0 baseline source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 33ced0b26adeffe47ed2d2041c8558a667566a51
+          path: .cache/baseline-c1
+          persist-credentials: false
+
+      - name: Download native benchmark bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE_RELEASE: ${{ inputs.bundle_release }}
+        run: |
+          mkdir -p .cache/remote-native-download
+          gh release download "$BUNDLE_RELEASE" \
+            --pattern native-benchmark-bundle.tar.gz \
+            --dir .cache/remote-native-download
+
+      - name: Build optimized candidate
+        run: make
+
+      - name: Run native macOS benchmarks
+        env:
+          BUNDLE_SHA256: ${{ inputs.bundle_sha256 }}
+        run: |
+          python3 bench/remote-native.py \
+            --bundle .cache/remote-native-download/native-benchmark-bundle.tar.gz \
+            --bundle-sha256 "$BUNDLE_SHA256" \
+            --c1-source .cache/baseline-c1 \
+            --workdir .cache/remote-native \
+            --runs 99
+
+      - name: Upload native macOS benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cache/remote-native
+            .cache/remote-native-download/native-benchmark-bundle.tar.gz
+            .cache/optimized/build.json
+            .cache/optimized/profile.profdata
+          if-no-files-found: error
+          retention-days: 90
+
+  profile-linux:
+    if: ${{ inputs.mode == 'profile-linux' || inputs.mode == 'all-performance' }}
+    name: LCOV profile characterization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned-reference build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes g++-14 libperl-dev libcapture-tiny-perl libdatetime-perl libdevel-stacktrace-perl libjson-xs-perl libtimedate-perl
+      - name: Build candidate and pinned LCOV reference
+        env:
+          LCOV_CXX: "g++-14 -include vector -include locale"
+        run: |
+          make
+          scripts/setup-lcov-oracle.sh
+      - name: Measure representative profile workloads
+        run: |
+          python3 bench/remote-profile.py --binary bin/lcovmerge \
+            --lcov .cache/lcov-oracle/source/bin/lcov \
+            --source-root .cache/lcov-oracle/source \
+            --workdir .cache/remote-profile --runs 19
+      - name: Retain profile measurements and inputs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: profile-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cache/remote-profile
+            .cache/optimized/build.json
+            .cache/optimized/profile.profdata
           if-no-files-found: error
           retention-days: 90

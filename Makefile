@@ -31,6 +31,8 @@ test: $(BIN) $(PTEST_BIN)
 	$(PYTHON) -m unittest discover -s tests/compat -p 'test_*.py'
 	$(PYTHON) tests/test_compare_builds.py
 	$(PYTHON) tests/test_profile_comparison.py
+	$(PYTHON) tests/test_remote_native.py
+	$(PYTHON) tests/test_profile_fixtures.py
 	$(PYTHON) tests/compat_operations.py --binary $(BIN)
 	sh tests/doc-consistency.sh $(BIN)
 

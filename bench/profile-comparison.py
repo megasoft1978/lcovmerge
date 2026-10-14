@@ -35,6 +35,7 @@ def parser():
     p.add_argument("--jobs", type=int, required=True)
     p.add_argument("--branch-coverage", action="store_true")
     p.add_argument("--mcdc-coverage", action="store_true")
+    p.add_argument("--no-function-coverage", action="store_true")
     return p
 
 
@@ -67,6 +68,8 @@ def main(argv=None):
     config = work / "empty.lcovrc"
     config.write_text("", encoding="utf-8")
     family_flags = (["--branch-coverage"] if args.branch_coverage else []) + (["--mcdc-coverage"] if args.mcdc_coverage else [])
+    if args.no_function_coverage:
+        family_flags.append("--no-function-coverage")
     seed = 20261014
     rng = random.Random(seed)
     variants = [("lcov-xs", None), ("lcov-perl", "1"), ("candidate", None)]
@@ -131,6 +134,7 @@ def main(argv=None):
     report = {"identity": identity, "inputs": [{"path": str(p), "sha256": digest(p), "size_bytes": p.stat().st_size} for p in inputs],
               "parameters": {"runs": args.runs, "jobs": args.jobs, "seed": seed,
                              "branches": args.branch_coverage, "mcdc": args.mcdc_coverage,
+                             "functions": not args.no_function_coverage,
                              "timing_gate_sample_count": args.runs >= 19},
               "binaries": {"candidate": {"path": str(binary), "sha256": digest(binary)}, "lcov": lcov},
               "host": {"platform": platform.platform(), "python": sys.version},

@@ -16,7 +16,7 @@ On 2026-10-14, the actual default `make` binary was compared on an Apple M5 Max 
 
 Values are medians of 19 measured runs per variant after one warm-up, interleaved in seeded order with warm filesystem caches, `--mem-limit 64M`, and named output files. Every output was byte-identical across implementations and job counts; temporary directories were empty after each run. Maximum measured resident memory for sorted input was 2.47/2.94 MiB (C PGO/Rust, one job) and 2.47/4.86 MiB (four jobs). For unsorted input it was 18.81/38.75 MiB (one job) and 18.53/38.73 MiB (four jobs). Child CPU and peak memory came from `wait4`; wall time used Python's monotonic clock.
 
-Rust matched C's single-job sorted performance within normal timing variation, reduced four-job sorted elapsed time by 31%, and reduced unsorted elapsed time by 9%. It also beat the rebuilt `-O3` baseline's medians on both fixtures. Unsorted Rust uses more resident memory. Initial unprofiled `cargo build --release` measurements were slower; use `make` for the optimized build. This comparison does not establish a universal speed or memory improvement. [Raw measurements, hashes, fixture parameters, and validation scope](../data/rust-port-validation.json) identify the measured build and its limits.
+The single-job sorted medians are close; those medians alone do not establish performance parity under the uncertainty gate below. Rust reduced the four-job sorted median by 31% and the unsorted median by 9%. It also beat the rebuilt `-O3` baseline's medians on both fixtures. Unsorted Rust uses more resident memory. Initial unprofiled `cargo build --release` measurements were slower; use `make` for the optimized build. This comparison does not establish a universal speed or memory improvement. [Raw measurements, hashes, fixture parameters, and validation scope](../data/rust-port-validation.json) identify the measured build and its limits.
 
 To repeat the performance gate with two binaries and your own inputs, run:
 
@@ -27,6 +27,26 @@ python3 bench/compare-builds.py --baseline /path/to/c-lcovmerge \
 ```
 
 The gate interleaves paired runs, checks every output hash and temporary-run cleanup, and saves raw samples, hashes, resource measurements, and seeded bootstrap uncertainty under `.cache/`. Its acceptance boundary is a candidate/baseline timing ratio of 1. An interval wholly below 1 is an observed pass; one wholly above 1 is a regression; one spanning 1 is inconclusive. Regression and inconclusive results return nonzero. Run on an idle machine and investigate close results; 3% is a diagnostic noise band, not a regression allowance. These intervals describe the measured binaries and workloads, and do not account for arbitrary code layouts or prove universal parity. The earlier `--max-ratio` tolerance switch is removed.
+
+### Clean macOS runner
+
+The manual `bench-windows.yml` workflow also supports `mode=native-macos`.
+It builds the candidate on `macos-15` and uses a SHA-256-pinned bundle containing
+the original frozen Rust executable from commit `12bf1ec` and the byte-identical
+held-out inputs above. C1 commit `33ced0b` is rebuilt on the runner with native
+PGO and a recorded seed-42 training set. This is a reconstructed C1 baseline;
+the historical executable was tuned for the original host and is not assumed
+portable to another CPU.
+
+The job checks an idle-runner preflight after compilation, then runs 99 seeded
+paired measurements for each baseline, sorted/unsorted workload and worker count
+(1 and 4). This higher sample count is selected before measurement to improve
+precision after earlier inconclusive comparisons. The acceptance rule is unchanged.
+Reports retain binaries, input hashes/bundle, training inputs/profile, compiler and
+host identities, raw samples, resource metrics and uncertainty intervals for 90 days.
+The temporary unpublished transport release is removed after those artifacts are
+retained. Results on a different host are reported separately from earlier local
+measurements, including inconclusive or losing results.
 
 ## LCOV profile comparison
 
@@ -49,6 +69,15 @@ preserving testcase, function, branch, MC/DC, checksum, version, and summary
 semantics. LCOV emits profiling JSON on each invocation so backend selection
 can be verified; its exact command is retained. Both tools use an explicit
 empty configuration and the requested worker count.
+
+Use `--no-function-coverage` for line-only datasets so LCOV does not require
+absent function coverpoints. The option is passed to both tools and recorded.
+The manual workflow's `profile-linux` mode generates line-only, mixed-record,
+testcase-heavy and large-single-source datasets, then characterizes each with
+19 paired runs at one and four workers against XS and pure Perl. The
+`all-performance` mode runs this Linux job alongside the native macOS job on
+separate runners. Fixture smoke checks with a single sample verify semantics
+only and are excluded from performance evidence.
 
 Reports retain commands, input/binary hashes, output hashes, process RSS,
 temporary disk peaks, and bootstrap intervals for median log timing ratios.
