@@ -40,7 +40,7 @@ def expected_records(spec: dict):
             group = f"{'U' if i % 5 == 0 else ''}{spec['mcdc_conditions']}"
             yield f"MCDC:1,{group},t,{spec['hits']},{i},condition_{i:08d}\n"
             yield f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n"
-    elif shape not in ("lines", "branches-no-da"):
+    elif shape not in ("lines", "branches-no-da", "functions-no-da"):
         raise AssertionError(shape)
     yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
 
@@ -203,6 +203,11 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
             for i in range(size):
                 out.write(f"BRDA:2,70000,branch_{i:08d},0\n")
             lines, hits = 1, 0
+        elif shape == "functions-no-da":
+            out.write(f"DA:1,1\nend_of_record\nTN:removed\nSF:{source}\nFNL:7,1,1\n")
+            for i in range(size):
+                out.write(f"FNA:7,1,alias_{i:08d}\n")
+            lines, hits = 1, 1
         elif shape == "mcdc":
             conditions = size
             for i in range(conditions):
@@ -210,7 +215,7 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                 out.write(f"MCDC:1,{group},t,{hits},{i},condition_{i:08d}\n")
                 out.write(f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n")
             lines = 1
-        if shape not in ("lines", "checksums", "branches-no-da"):
+        if shape not in ("lines", "checksums", "branches-no-da", "functions-no-da"):
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
         out.write("end_of_record\n")
@@ -367,7 +372,8 @@ def main() -> int:
              ("mcdc-group", "mcdc", args.target_bytes // 70),
              ("branch-block", "branches", args.target_bytes // 28),
              ("checksum-group", "checksums", args.target_bytes // 28),
-             ("branches-no-da", "branches-no-da", args.target_bytes // 28))
+             ("branches-no-da", "branches-no-da", args.target_bytes // 28),
+             ("functions-no-da", "functions-no-da", args.target_bytes // 21))
     valid_cases = {name for name, _, _ in cases} | {"lines-stdin", "lines-mixed-stdin"}
     if args.case and set(args.case) - valid_cases:
         ap.error("unknown case: " + ", ".join(sorted(set(args.case) - valid_cases)))

@@ -23,15 +23,7 @@ pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error>
     let budget = o.mem_limit;
     #[cfg(not(test))]
     let budget = o.mem_limit.max(crate::common::MIN_WORKER_BUDGET);
-    Ok(match execute(req, budget)? {
-        Outcome::Executed => Some(Ok(())),
-        Outcome::Collector => None,
-    })
-}
-
-enum Outcome {
-    Executed,
-    Collector,
+    execute(req, budget).map(|()| Some(Ok(())))
 }
 
 fn scan(req: &Request) -> Result<bool, Error> {
@@ -127,7 +119,7 @@ fn scan(req: &Request) -> Result<bool, Error> {
     Ok(true)
 }
 
-fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
+fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
     let reserve = 5 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
@@ -530,11 +522,6 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
         if !eligibility.source(&row.source, row.input)?.alive {
             continue;
         }
-        if !eligibility.testcase(&row.source, row.input, &row.testcase)? {
-            // Preserve input-master functions through the collector until the
-            // private master alias stream has a bounded representation.
-            return Ok(Outcome::Collector);
-        }
         if (row.start == 0 || row.end == Some(0))
             && recover(
                 req,
@@ -641,6 +628,7 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
     let mut aliases = unique.cursor()?;
     let mut functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_profiles = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut ghost_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     while let Some(mut row) = aliases.next()? {
         let (src, input, start, tc, name) = decode_input_function_key(&row.key)?;
         let mut correction_key = function_check::prefix(&src, input)?;
@@ -672,6 +660,12 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
             .min(i64::MAX as u64);
         row.value.truncate(25);
         row.value[17..25].copy_from_slice(&count.to_be_bytes());
+        if !eligibility.testcase(&src, input, &tc)? {
+            // Retain removed-testcase aliases for source master checks, but
+            // exclude them before public testcase counts are combined.
+            ghost_functions.push(row.key, row.value)?;
+            continue;
+        }
         let mut key = key_prefix(&src, &tc)?;
         function_profiles.push(key.clone(), Vec::new())?;
         push_str(&mut key, &name)?;
@@ -685,6 +679,7 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
     let functions = functions.finish()?;
     let function_profiles_sorted = function_profiles.finish()?;
     let function_sources_sorted = function_sources.finish()?;
+    let ghost_functions = ghost_functions.finish()?;
     let mut generated_lines = None;
     let mut has_master_branch_coverpoints = false;
     let branch_rows = if let Some(branches) = branches {
@@ -1009,6 +1004,23 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
         has_functions = true;
     }
     drop(global_functions);
+    let mut ghost_cursor = ghost_functions.cursor()?;
+    while let Some(row) = ghost_cursor.next()? {
+        let (src, _, start, _, name) = decode_input_function_key(&row.key)?;
+        global.push_function(
+            &src,
+            0,
+            start,
+            decode_end(&row.value)?,
+            read_u64(&row.value, 17)?,
+            &name,
+            &src,
+            start,
+        )?;
+        has_functions = true;
+    }
+    drop(ghost_cursor);
+    drop(ghost_functions);
     if has_functions {
         let mut global_lines = BufReader::new(File::open(&line_path).map_err(ioerr)?);
         while let Some(line) = line_spill::read_next_public(&mut global_lines)? {
@@ -1160,8 +1172,7 @@ fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
             stats.runs, stats.passes, stats.bytes_read, stats.bytes_written, stats.workers
         );
     }
-    write_final(req, final_rows.cursor()?)?;
-    Ok(Outcome::Executed)
+    write_final(req, final_rows.cursor()?)
 }
 
 fn write_final(req: &Request, mut cursor: sort::Cursor) -> Result<(), Error> {
