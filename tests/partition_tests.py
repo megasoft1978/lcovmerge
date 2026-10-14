@@ -313,7 +313,7 @@ def partition_signal_tests(ptest: Path) -> int:
     """SIGTERM/SIGINT/SIGHUP while partitions are running: exit 3, 'interrupted', no staged files."""
     if os.name == "nt" or not hasattr(signal, "SIGSTOP"):
         return 0
-    text = trace([f"/t/p{i:06d}.c" for i in range(60000)], body=lambda i: tuple(f"DA:{k},{i % 7}" for k in range(1, 60)))
+    text = trace([f"/t/p{i:06d}.c" for i in range(1000)], body=lambda i: tuple(f"DA:{k},{i % 7}" for k in range(1, 60)))
     count = 0
     with tempfile.TemporaryDirectory(prefix="partition-signal-") as work_dir:
         work = Path(work_dir)
@@ -328,7 +328,7 @@ def partition_signal_tests(ptest: Path) -> int:
                 out_dir = work / f"{name.lower()}-{attempt}"
                 out_dir.mkdir()
                 output = out_dir / "out.info"
-                env = dict(os.environ, LCOVMERGE_TEST_PARTITION="4")
+                env = dict(os.environ, LCOVMERGE_TEST_PARTITION="4", LCOVMERGE_TEST_PARTITION_HOLD="1")
                 process = subprocess.Popen([str(ptest), "-j", "4", *inputs, "-o", str(output)],
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
                 try:
@@ -338,8 +338,9 @@ def partition_signal_tests(ptest: Path) -> int:
                         staged = os.listdir(out_dir)
                         if process.poll() is not None:
                             break
+                        time.sleep(0.005)
                     if process.poll() is not None or len(staged) < 4:
-                        process.communicate()
+                        process.communicate(timeout=60)
                         last = _RaceLost(f"{name}: run finished before staged files were observed")
                         continue
                     process.send_signal(signal.SIGSTOP)

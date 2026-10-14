@@ -34,9 +34,9 @@ unit:
 	$(CARGO) test --locked
 
 asan:
-	RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
+	RUSTFLAGS="-C opt-level=1 -C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
 		$(CARGO) test --locked --target $$(rustc -vV | sed -n 's/^host: //p')
-	RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
+	RUSTFLAGS="-C opt-level=1 -C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
 		$(CARGO) build --locked --features test-partition --target $$(rustc -vV | sed -n 's/^host: //p')
 	ASAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py \
 		--binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge --no-lcov \

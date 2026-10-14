@@ -927,6 +927,16 @@ fn merge_partition(
     rank_heads(&heads, &mut rank_order, &mut ranks);
     let mut tree = HeadTree::new(&heads, &ranks);
     let (stage, file) = make_temp(output_parent(&options.output), "lcovmerge-part").ok()?;
+    // Hold live stages for signal tests without requiring large, timing-sensitive inputs.
+    // This hook is absent from production builds and remains cancellable and bounded.
+    #[cfg(feature = "test-partition")]
+    if std::env::var_os("LCOVMERGE_TEST_PARTITION_HOLD").is_some() {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while std::time::Instant::now() < deadline {
+            check_cancelled().ok()?;
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
     let mut output = OutputState::new(BufWriter::with_capacity(IO_BLOCK, file));
     let mut aggregate: Option<Record> = None;
     let mut records = 0u64;

@@ -16,6 +16,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Configure CodeQL's supported Rust extraction mode, preserve shell-command failures when exporting build flags, and use a portable filename for the embedded-NUL regression fixture on Windows.
+- Synchronize partition interruption tests with live worker stages through a bounded test-only hold, replacing large timing-sensitive fixtures. Use modest optimization in AddressSanitizer builds to keep the full instrumented suite practical on CI runners.
 - Ensure caught POSIX termination signals interrupt blocked stdin and stdout operations and clean staged output and temporary sort runs. Add a blocked-stdout cleanup regression.
 
 ## [1.1.0] - 2026-10-12
