@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import shutil
+import statistics
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bench" / "compare-builds.py"
@@ -73,8 +74,11 @@ def main() -> int:
     spec.loader.exec_module(module)
     interval_a = module.bootstrap([0.9, 1.0, 1.1, 1.05], 12)
     interval_b = module.bootstrap([0.9, 1.0, 1.1, 1.05], 12)
-    if interval_a != interval_b or not (interval_a[0] <= math.exp(sum(map(math.log, [0.9, 1, 1.1, 1.05])) / 4) <= interval_a[1]):
+    if interval_a != interval_b or not (interval_a[0] <= math.exp(statistics.median(map(math.log, [0.9, 1, 1.1, 1.05]))) <= interval_a[1]):
         raise AssertionError("seeded bootstrap interval is not reproducible or well formed")
+    robust = module.bootstrap([1.05] * 15 + [0.2, 10], 12)
+    if not all(math.isclose(endpoint, 1.05, rel_tol=1e-12) for endpoint in robust):
+        raise AssertionError("interval no longer measures the reported median ratio")
     print("compare_builds=PASS")
     return 0
 

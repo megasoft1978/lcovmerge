@@ -48,9 +48,9 @@ def percentile(values, fraction):
 def bootstrap(ratios, seed):
     rng = random.Random(seed)
     logs = [math.log(value) for value in ratios]
-    means = [statistics.mean(rng.choices(logs, k=len(logs))) for _ in range(RESAMPLES)]
+    medians = [statistics.median(rng.choices(logs, k=len(logs))) for _ in range(RESAMPLES)]
     alpha = (1 - CONFIDENCE) / 2
-    return [math.exp(percentile(means, alpha)), math.exp(percentile(means, 1 - alpha))]
+    return [math.exp(percentile(medians, alpha)), math.exp(percentile(medians, 1 - alpha))]
 
 
 def child_run(command, stdout_path, stderr_path, timeout, temp_path):
@@ -123,12 +123,15 @@ def main():
     parser.add_argument("--jobs", type=int, nargs="+", default=[1, 4])
     parser.add_argument("--mem-limit", default="64M")
     parser.add_argument("--timeout", type=float, default=600)
-    parser.add_argument("--source", type=Path, action="append", default=[])
-    parser.add_argument("--profile", type=Path, action="append", default=[])
+    parser.add_argument("--source", type=Path, action="append", default=[], help="source file to hash for provenance (repeatable)")
+    parser.add_argument("--profile", type=Path, action="append", default=[], help="PGO profile file to hash for provenance (repeatable)")
     parser.add_argument("inputs", type=Path, nargs="+")
     args = parser.parse_args()
     if args.runs < 3 or args.timeout <= 0 or any(j < 1 for j in args.jobs):
         parser.error("runs must be at least 3, timeout and jobs must be positive")
+    for path in args.source + args.profile:
+        if not path.is_file():
+            parser.error(f"provenance file does not exist: {path}")
     workdir = args.workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     binaries = {"baseline": args.baseline.resolve(), "candidate": args.candidate.resolve()}
@@ -225,7 +228,7 @@ def main():
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "method": {"warmups_per_variant": 1, "seed": args.seed, "runs": args.runs,
                    "interleaved_paired": True, "bootstrap_resamples": RESAMPLES,
-                   "interval": "percentile interval of paired log-ratios",
+                   "interval": "percentile interval for the median paired log-ratio",
                    "warm_cache_caveat": "warm-up and repeated runs use warm OS caches",
                    "uncertainty": "conditional on these measured binaries, inputs, host, and layout; not a general performance proof",
                    "noise_band": "3% is diagnostic only and never changes acceptance"},
