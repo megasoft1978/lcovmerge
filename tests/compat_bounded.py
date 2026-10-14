@@ -209,7 +209,7 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
         else: child.unlink()
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
-               str(root / f"{name}.info"), "-o", str(output)]
+               "-" if spec.get("stdin") else str(root / f"{name}.info"), "-o", str(output)]
     if spec["shape"] in ("lines", "mcdc"):
         command.append("--no-function-coverage")
     if spec["shape"] == "mcdc":
@@ -218,8 +218,9 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     meter = TempMeter(tempdir)
     status, timed_out, rss, rss_note = None, False, None, "not measured"
     with meter, stdout.open("wb") as out, stderr.open("wb") as err:
+        input_file = (root / spec["input_name"]).open("rb") if spec.get("stdin") else None
         try:
-            proc = subprocess.Popen(command, cwd=root, stdout=out, stderr=err)
+            proc = subprocess.Popen(command, cwd=root, stdout=out, stderr=err, stdin=input_file)
             deadline = time.monotonic() + timeout
             while True:
                 if hasattr(os, "wait4"):
@@ -251,6 +252,9 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
                     break
         except OSError as exc:
             err.write(str(exc).encode())
+        finally:
+            if input_file is not None:
+                input_file.close()
     row = {"name": name, "argv": command, "status": status, "timed_out": timed_out,
            "seconds": round(time.monotonic() - started, 3), "input_bytes": spec["bytes"],
            "peak_temp_bytes": meter.peak, "peak_rss_bytes": rss, "rss_measurement": rss_note,
@@ -292,14 +296,25 @@ def main() -> int:
              ("alias-group", "aliases", args.target_bytes // 21),
              ("mcdc-group", "mcdc", args.target_bytes // 70))
     results, failures = [], []
+    stdin_spec = None
     for name, shape, size in cases:
         source = root / f"{name}.c"; source.write_text("int x;\n")
         spec = write_case(root / f"{name}.info", source, shape, size)
+        if name == "lines":
+            stdin_spec = spec.copy()
         row = run_case(binary, root, config, tempdir, name, spec, args.timeout)
         results.append(row)
         if not row.get("output_verified"):
             failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
             print(f"FAIL {name}: {row.get('failure')}", file=sys.stderr)
+    # Reuse the DA fixture through stdin without allocating its bytes in Python.
+    assert stdin_spec is not None
+    stdin_spec.update(stdin=True, input_name="lines.info")
+    row = run_case(binary, root, config, tempdir, "lines-stdin", stdin_spec, args.timeout)
+    results.append(row)
+    if not row.get("output_verified"):
+        failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
+        print(f"FAIL lines-stdin: {row.get('failure')}", file=sys.stderr)
     report = {"binary": str(binary), "byte_budget": BYTE_BUDGET, "minimum_input_bytes": MIN_INPUT_BYTES,
               "cases": results, "failures": failures}
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")

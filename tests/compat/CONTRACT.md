@@ -130,9 +130,11 @@ python3 tests/compat_bounded.py --binary /absolute/path/to/lcovmerge \
 ```
 
 The 8 MiB setting is a byte budget. Each generated input is at least 24 MiB
-(about 28 MiB by default), not 24 million records. The three workloads
+(about 28 MiB by default), not 24 million records. The regular-file workloads
 separately stress DA line volume, many distinct sparse modern function IDs,
-and one very large alias group. The validator streams the output against
+legacy functions, one very large alias group, and a large MC/DC group. A sixth
+case reuses the DA fixture through stdin and verifies every output record again.
+The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy
 function input to FNL/FNA records; the validator accepts TN before SF and

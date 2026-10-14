@@ -17,6 +17,8 @@ mod codec;
 mod function_runtime;
 #[path = "function_spill.rs"]
 mod function_spill;
+#[path = "input_spool.rs"]
+mod input_spool;
 #[path = "line_spill.rs"]
 mod line_spill;
 #[path = "mcdc_spill.rs"]
@@ -52,7 +54,7 @@ impl<R: Read> Read for StopOnCancel<R> {
     }
 }
 
-pub fn run(request: Request) -> Result<(), Error> {
+fn validate_request(request: &Request) -> Result<(), Error> {
     let opt = &request.resources;
     if opt.inputs.is_empty() {
         return Err(Error::new(1, "LCOV profile requires at least one -a input"));
@@ -104,6 +106,43 @@ pub fn run(request: Request) -> Result<(), Error> {
         return Err(Error::new(1, "stdin may appear only once in LCOV inputs"));
     }
 
+    Ok(())
+}
+
+pub fn run(mut request: Request) -> Result<(), Error> {
+    validate_request(&request)?;
+    // Stage a sole stdin input to disk so existing bounded executors can scan
+    // and sort it. Mixed inputs retain their original read/error ordering.
+    let staged =
+        if request.resources.inputs.len() == 1 && request.resources.inputs[0].as_os_str() == "-" {
+            if request.resources.verbose && !request.resources.quiet {
+                eprintln!("lcovmerge: reading LCOV input -");
+            }
+            let reader =
+                stdin_reader().map_err(|e| Error::new(3, format!("cannot read stdin: {e}")))?;
+            Some(input_spool::stage(
+                StopOnCancel(reader),
+                &request.resources.tmpdir,
+            )?)
+        } else {
+            None
+        };
+    if let Some(file) = &staged {
+        request.resources.inputs[0] = file.path().to_owned();
+    }
+    let result = run_inputs(request);
+    result.map_err(|mut error| {
+        if let Some(file) = &staged {
+            error.message = error
+                .message
+                .replace(&file.path().display().to_string(), "-");
+        }
+        error
+    })
+}
+
+fn run_inputs(request: Request) -> Result<(), Error> {
+    let opt = &request.resources;
     if let Some(result) = function_runtime::try_run(&request)? {
         return result;
     }

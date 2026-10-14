@@ -61,6 +61,19 @@ def main():
         gzinput.write_bytes(gzip.compress(a.read_bytes()) + gzip.compress(b.read_bytes()))
         r = run(prefix + ["-a", str(gzinput)])
         check(r.returncode == 0 and b"SF:" in r.stdout, f"concatenated gzip input failed: {r.stderr!r}")
+        # A sole stdin input uses disk staging and matches regular-file output.
+        from_file = run(prefix + ["-a", str(a)])
+        from_stdin = run(prefix + ["-a", "-"], input=a.read_bytes())
+        check(from_stdin.returncode == 0 and from_stdin.stdout == from_file.stdout,
+              f"stdin/file output differs: {from_stdin.stderr!r}")
+        check(not list(tmpdir.iterdir()), "stdin staging files remain after success")
+        dest_stdin = root / "stdin-error.info"
+        dest_stdin.write_bytes(b"keep-me")
+        invalid_stdin = run(prefix + ["-a", "-", "-o", str(dest_stdin)], input=bad.read_bytes())
+        check(invalid_stdin.returncode == 1 and b"-:" in invalid_stdin.stderr,
+              f"stdin diagnostics lost input identity: {invalid_stdin.stderr!r}")
+        check(dest_stdin.read_bytes() == b"keep-me" and not list(tmpdir.iterdir()),
+              "failed stdin merge changed destination or retained staging files")
         # Duplicate input and forgetting testcase identities.
         r = run(prefix + ["-a", str(a), "-a", str(a)])
         check(r.returncode == 0 and r.stdout.count(b"end_of_record") == 1, "duplicate input aggregation failed")
