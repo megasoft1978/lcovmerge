@@ -16,6 +16,8 @@ mod branch_check;
 mod branch_fold;
 #[path = "branch_spill.rs"]
 mod branch_spill;
+#[path = "checksum_spill.rs"]
+mod checksum_spill;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
