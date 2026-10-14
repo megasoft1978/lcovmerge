@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 import sys
+import os
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bench" / "profile-comparison.py"
@@ -30,6 +32,18 @@ def main():
     changed = data.replace(b"DA:2,3", b"DA:2,4")
     if normalized == oracle.normalized(changed):
         raise AssertionError("normalization discarded a supported line count")
+    if normalized == oracle.normalized(data + b"unclosed trailing record\n"):
+        raise AssertionError("normalization discarded corrupt trailing data")
+    compare = module.load("profile_measurement", ROOT / "bench/compare-builds.py")
+    (ROOT / ".cache").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=ROOT / ".cache", prefix="profile-harness-test-") as td:
+        directory = Path(td)
+        env = dict(os.environ, LCOV_PURE_PERL="1")
+        result = compare.child_run(
+            [sys.executable, "-c", "import os; print(os.environ['LCOV_PURE_PERL'])"],
+            directory / "stdout", directory / "stderr", 5, directory, env=env)
+        if result["returncode"] or (directory / "stdout").read_text().strip() != "1":
+            raise AssertionError("measurement did not pass backend selection to its child")
     print("profile_comparison=PASS")
 
 

@@ -8,6 +8,11 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+import hashlib
+import math
+import platform
+import shutil
+import statistics
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,6 +33,8 @@ def parser():
     p.add_argument("--input", type=Path, action="append", required=True)
     p.add_argument("--runs", type=int, default=19)
     p.add_argument("--jobs", type=int, required=True)
+    p.add_argument("--branch-coverage", action="store_true")
+    p.add_argument("--mcdc-coverage", action="store_true")
     return p
 
 
@@ -43,8 +50,13 @@ def main(argv=None):
             ap.error(f"{label} does not exist: {path}")
     work = args.workdir.resolve()
     work.mkdir(parents=True, exist_ok=True)
+    if (work / "report.json").exists():
+        ap.error(f"refusing to overwrite existing report: {work / 'report.json'}")
+    lcov = shutil.which(args.lcov)
+    if lcov is None:
+        ap.error(f"LCOV executable not found: {args.lcov}")
     identity_cmd = [sys.executable, str(ROOT / "tools/lcov-oracle-identity.py"),
-                    "--lcov", args.lcov, "--source-root", str(source), "--strict"]
+                    "--lcov", lcov, "--source-root", str(source), "--strict"]
     identity_run = subprocess.run(identity_cmd, capture_output=True, text=True)
     if identity_run.returncode:
         print(identity_run.stdout + identity_run.stderr, file=sys.stderr)
@@ -54,10 +66,10 @@ def main(argv=None):
     compare = load("compare_builds", ROOT / "bench/compare-builds.py")
     config = work / "empty.lcovrc"
     config.write_text("", encoding="utf-8")
-    function_flag = "--function-coverage" if any(b"FN:" in p.read_bytes() for p in inputs) else "--no-function-coverage"
+    family_flags = (["--branch-coverage"] if args.branch_coverage else []) + (["--mcdc-coverage"] if args.mcdc_coverage else [])
     seed = 20261014
     rng = random.Random(seed)
-    variants = [("candidate", None), ("lcov-xs", None), ("lcov-perl", "1")]
+    variants = [("lcov-xs", None), ("lcov-perl", "1"), ("candidate", None)]
     samples, records, expected = {}, [], None
 
     def run(name, pure, iteration, warmup):
@@ -70,16 +82,19 @@ def main(argv=None):
         tmp = d / "tmp"; tmp.mkdir()
         out, profile = d / "output.info", d / "profile.json"
         if name == "candidate":
-            cmd = [str(binary), "--lcov-compat=2.6", "--jobs", str(args.jobs),
-                   function_flag, "--tmpdir", str(tmp), "-o", str(out)]
+            cmd = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config), "--parallel", str(args.jobs),
+                   *family_flags, "--tempdir", str(tmp), "-o", str(out)]
             for p in inputs: cmd += ["-a", str(p)]
         else:
-            cmd = [args.lcov, "--quiet", "--config-file", str(config), "--profile", str(profile),
-                   function_flag, *sum((["-a", str(p)] for p in inputs), []), "-o", str(out)]
+            cmd = [lcov, "--quiet", "--config-file", str(config), "--profile", str(profile),
+                   "--parallel", str(args.jobs), "--tempdir", str(tmp), *family_flags,
+                   *sum((["-a", str(p)] for p in inputs), []), "-o", str(out)]
         env = dict(os.environ)
+        env.pop("LCOV_CONFIG", None)
+        env.pop("LCOV_CONFIG_FILE", None)
         if pure is None: env.pop("LCOV_PURE_PERL", None)
         else: env["LCOV_PURE_PERL"] = pure
-        meas = compare.child_run(cmd, d / "stdout", d / "stderr", 600, tmp)
+        meas = compare.child_run(cmd, d / "stdout", d / "stderr", 600, tmp, env=env)
         row = {"variant": name, "iteration": iteration, "warmup": warmup,
                "argv": cmd,
                "environment": {key: env.get(key) for key in
@@ -92,9 +107,11 @@ def main(argv=None):
         norm = oracle.normalized(out.read_bytes())
         if expected is None: expected = norm
         elif norm != expected: raise RuntimeError(f"normalized output mismatch for {name}")
+        if any(tmp.iterdir()): raise RuntimeError(f"temporary files remain for {name}: {tmp}")
+        row["output_sha256"] = compare.digest(out)
+        row["semantic_sha256"] = hashlib.sha256(repr(norm).encode("utf-8", "surrogateescape")).hexdigest()
         if not warmup: samples[(iteration, name)] = row
         records.append(row)
-        shutil.rmtree(d)
 
     try:
         for name, pure in variants: run(name, pure, -1, True)
@@ -106,15 +123,17 @@ def main(argv=None):
     results = {}
     for baseline in ("lcov-xs", "lcov-perl"):
         ratios = [samples[i, "candidate"]["elapsed_seconds"] / samples[i, baseline]["elapsed_seconds"] for i in range(args.runs)]
-        results[baseline] = {"median_log_ratio": __import__("statistics").median(map(__import__("math").log, ratios)),
-                             "median_ratio": __import__("statistics").median(ratios),
+        results[baseline] = {"median_log_ratio": statistics.median(map(math.log, ratios)),
+                             "median_ratio": math.exp(statistics.median(map(math.log, ratios))),
                              "bootstrap_95_percent_interval": compare.bootstrap(ratios, seed),
                              "paired_ratios": ratios}
     digest = compare.digest
     report = {"identity": identity, "inputs": [{"path": str(p), "sha256": digest(p), "size_bytes": p.stat().st_size} for p in inputs],
-              "parameters": {"runs": args.runs, "jobs": args.jobs, "seed": seed},
-              "binaries": {"candidate": {"path": str(binary), "sha256": digest(binary)}, "lcov": args.lcov},
-              "host": {"platform": __import__("platform").platform(), "python": sys.version},
+              "parameters": {"runs": args.runs, "jobs": args.jobs, "seed": seed,
+                             "branches": args.branch_coverage, "mcdc": args.mcdc_coverage,
+                             "timing_gate_sample_count": args.runs >= 19},
+              "binaries": {"candidate": {"path": str(binary), "sha256": digest(binary)}, "lcov": lcov},
+              "host": {"platform": platform.platform(), "python": sys.version},
               "records": records, "results": results}
     report_path = work / "report.json"
     if report_path.exists():

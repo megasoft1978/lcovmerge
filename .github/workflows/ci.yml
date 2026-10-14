@@ -221,6 +221,7 @@ jobs:
           make
           python3 -m unittest discover -s tests/compat -p 'test_*.py'
           python3 tests/test_compare_builds.py
+          python3 tests/test_profile_comparison.py
           python3 tests/compat_operations.py --binary "$PWD/bin/lcovmerge"
           python3 tests/compat/oracle.py --source-root "$PWD/.cache/lcov-oracle/source" --lcov "$PWD/.cache/lcov-oracle/source/bin/lcov" --genhtml "$PWD/.cache/lcov-oracle/source/bin/genhtml" --binary "$PWD/bin/lcovmerge" --workdir .cache/lcov-compat-ci
       - name: Retain conformance evidence

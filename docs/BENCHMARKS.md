@@ -28,6 +28,37 @@ python3 bench/compare-builds.py --baseline /path/to/c-lcovmerge \
 
 The gate interleaves paired runs, checks every output hash and temporary-run cleanup, and saves raw samples, hashes, resource measurements, and seeded bootstrap uncertainty under `.cache/`. Its acceptance boundary is a candidate/baseline timing ratio of 1. An interval wholly below 1 is an observed pass; one wholly above 1 is a regression; one spanning 1 is inconclusive. Regression and inconclusive results return nonzero. Run on an idle machine and investigate close results; 3% is a diagnostic noise band, not a regression allowance. These intervals describe the measured binaries and workloads, and do not account for arbitrary code layouts or prove universal parity. The earlier `--max-ratio` tolerance switch is removed.
 
+## LCOV profile comparison
+
+The opt-in merge profile requires separate measurements from native mode. Use
+the pinned LCOV source/install identity described in
+[the conformance contract](../tests/compat/CONTRACT.md), valid synthetic inputs,
+and an idle host:
+
+```sh
+python3 bench/profile-comparison.py --binary bin/lcovmerge --lcov lcov \
+  --source-root .cache/lcov-compat-implementation/oracle-source \
+  --workdir .cache/profile-comparison-j1 --jobs 1 --runs 19 \
+  --input /absolute/path/to/synthetic.info
+```
+
+Repeat `--input` for multiple tracefiles. Add `--branch-coverage` or
+`--mcdc-coverage` when measuring those families. The harness compares every
+warmup and seeded paired run with confirmed XS and pure-Perl LCOV backends,
+preserving testcase, function, branch, MC/DC, checksum, version, and summary
+semantics. LCOV emits profiling JSON on each invocation so backend selection
+can be verified; its exact command is retained. Both tools use an explicit
+empty configuration and the requested worker count.
+
+Reports retain commands, input/binary hashes, output hashes, process RSS,
+temporary disk peaks, and bootstrap intervals for median log timing ratios.
+Inputs and per-run outputs/logs remain under the supplied work directory.
+One-run functional smoke checks do not establish performance; the report marks
+sample counts below 19 accordingly. This comparison does not replace the
+native C1 and frozen-Rust gates or establish universal speed parity.
+
+## Historical measurements
+
 The C lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.
 
 For a local rerun of the deterministic S and M fixtures, see the [reproduction instructions](REPRODUCE.md).

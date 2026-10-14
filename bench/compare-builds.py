@@ -53,7 +53,7 @@ def bootstrap(ratios, seed):
     return [math.exp(percentile(medians, alpha)), math.exp(percentile(medians, 1 - alpha))]
 
 
-def child_run(command, stdout_path, stderr_path, timeout, temp_path):
+def child_run(command, stdout_path, stderr_path, timeout, temp_path, env=None):
     peak_disk = [tree_size(temp_path)]
     stop = threading.Event()
 
@@ -69,7 +69,7 @@ def child_run(command, stdout_path, stderr_path, timeout, temp_path):
     start = time.perf_counter()
     try:
         with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-            proc = subprocess.Popen(command, stdout=stdout, stderr=stderr)
+            proc = subprocess.Popen(command, stdout=stdout, stderr=stderr, env=env)
             if hasattr(os, "wait4"):
                 timed_out = threading.Event()
 
