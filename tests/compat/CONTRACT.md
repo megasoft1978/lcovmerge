@@ -177,6 +177,6 @@ case. Its XS row must match the retained rounded result with every other field
 equal, and is reported as an expected reference difference rather than an XS
 conformance pass. Other candidate differences continue to fail.
 
-The requested fractional FNA count with an explicit FNL end line is not a
-required case: pinned LCOV 2.6 rejects `FNDA:1.5` as an invalid, empty
-tracefile in both XS and pure-Perl modes.
+Fractional FNA counts truncate with an explicit FNL end line in both reference
+backends. The suite checks both external function joins and the branch-enabled
+collector, plus negative FNA recovery with consistency checking disabled.

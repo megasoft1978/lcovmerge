@@ -874,13 +874,19 @@ fn parse_input(
             continue;
         }
         if let Some(x) = s.strip_prefix("DA:") {
-            match section.add_line(x, label, line_no) {
+            let checksums = req.resources.strict_checksum || req.checksum;
+            match section.add_line_with_checksums(x, label, line_no, checksums) {
                 Err(e) if e.message.contains("negative coverage count") && can_recover(req, &e) => {
                     let mut fields = x.splitn(3, ',');
                     let location = fields.next().unwrap_or("");
                     let _ = fields.next();
                     let checksum = fields.next().map(|v| format!(",{v}")).unwrap_or_default();
-                    section.add_line(&format!("{location},0{checksum}"), label, line_no)?;
+                    section.add_line_with_checksums(
+                        &format!("{location},0{checksum}"),
+                        label,
+                        line_no,
+                        checksums,
+                    )?;
                 }
                 result => {
                     recover_line!(result);
@@ -979,7 +985,7 @@ fn parse_input(
             let result = (|| {
                 let mut f = x.splitn(3, ',');
                 let idx = num(f.next(), label, line_no)?;
-                let hits = num(f.next(), label, line_no)?;
+                let hits = policy::function_count(req, f.next().unwrap_or(""), label, line_no)?;
                 let name = f
                     .next()
                     .filter(|x| !x.is_empty())

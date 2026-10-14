@@ -76,6 +76,15 @@ pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> 
 
 impl Section {
     pub fn add_line(&mut self, payload: &str, file: &str, line: u64) -> Result<(), Error> {
+        self.add_line_with_checksums(payload, file, line, true)
+    }
+    pub fn add_line_with_checksums(
+        &mut self,
+        payload: &str,
+        file: &str,
+        line: u64,
+        checksums: bool,
+    ) -> Result<(), Error> {
         let mut fields = payload.split(',');
         let n = number(fields.next().unwrap_or(""), file, line)?;
         if n == 0 {
@@ -90,6 +99,7 @@ impl Section {
         {
             return Err(Error::at(2, file, line, "malformed DA record"));
         }
+        let checksum = if checksums { checksum } else { None };
         let entry = self.lines.entry(n).or_insert((0, None));
         if let Some(c) = checksum.as_ref() {
             if entry.1.as_ref().is_some_and(|old| old != c) {
@@ -101,10 +111,7 @@ impl Section {
                 ));
             }
         }
-        entry.0 = entry
-            .0
-            .checked_add(count)
-            .ok_or_else(|| Error::at(2, file, line, "DA count overflow"))?;
+        entry.0 = entry.0.saturating_add(count).min(i64::MAX as u64);
         if let Some(c) = checksum {
             entry.1 = Some(c);
         }

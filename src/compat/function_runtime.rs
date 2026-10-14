@@ -394,7 +394,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 let result = (|| {
                     let mut f = x.splitn(3, ',');
                     let idx = policy::num(f.next(), &label, line_no)?;
-                    let hits = policy::num(f.next(), &label, line_no)?;
+                    let hits =
+                        policy::function_count(req, f.next().unwrap_or(""), &label, line_no)?;
                     let name = f
                         .next()
                         .filter(|v| !v.is_empty())

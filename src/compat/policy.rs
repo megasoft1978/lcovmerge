@@ -251,6 +251,12 @@ pub(super) fn parse_named_count(s: &str, file: &str, line: u64) -> Result<(u64, 
 pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> {
     record::parse_count(s, file, line)
 }
+pub(super) fn function_count(req: &Request, s: &str, file: &str, line: u64) -> Result<u64, Error> {
+    match parse_count(s, file, line) {
+        Err(e) if e.message.contains("negative coverage count") && can_recover(req, &e) => Ok(0),
+        result => result,
+    }
+}
 pub(super) fn num(s: Option<&str>, file: &str, line: u64) -> Result<u64, Error> {
     let s = s.unwrap_or("");
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
