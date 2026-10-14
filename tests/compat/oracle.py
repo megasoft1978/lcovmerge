@@ -186,6 +186,12 @@ def fixtures(directory):
         "missing-ends-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:4,1\nFNA:4,1,without_end\nend_of_record\n",
         "missing-ends-b.info": f"TN:beta\nSF:{srcname}\nDA:2,1\nFNL:8,2,3\nFNA:8,1,with_end\nend_of_record\n",
         "orphan-function-hit.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNDA:3,orphan_name\nend_of_record\n",
+        # These fixtures intentionally contain no DA records in the named testcases.
+        "branch-no-da.info": f"TN:alpha\nSF:{srcname}\nBRDA:2,7,0,1\nend_of_record\n",
+        "mcdc-no-da.info": f"TN:alpha\nSF:{srcname}\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "removed-no-da.info": f"TN:keep\nSF:{srcname}\nDA:1,1\nend_of_record\nTN:removed\nSF:{srcname}\nBRDA:2,7,0,1\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "branch-fn-single.info": f"TN:single\nSF:{srcname}\nDA:1,1\nFNL:7,2,2\nFNA:7,1,branch_fn\nBRDA:2,7,0,1\nend_of_record\n",
+        "branch-fn-multiple.info": f"TN:branch\nSF:{srcname}\nDA:1,1\nFNL:7,2,2\nFNA:7,1,branch_fn\nBRDA:2,7,0,1\nend_of_record\nTN:other\nSF:{srcname}\nDA:1,1\nend_of_record\n",
         "other.info": f"TN:alpha\nSF:{othername}\nDA:1,1\nend_of_record\n",
     }
     for name, content in rows.items():
@@ -320,8 +326,25 @@ CASES = [
     ("fn-mangled-nested-not-lambda", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-mangled-nested.info"], 1),
     ("modern-missing-end-cross-input", ["--function-coverage", "-a", "missing-ends-a.info", "-a", "missing-ends-b.info"], 0),
     ("orphan-function-hit-strict", ["--function-coverage", "-a", "orphan-function-hit.info"], 1),
+    ("orphan-function-auto-mismatch-only", ["--ignore-errors", "mismatch", "-a", "orphan-function-hit.info"], 1),
     ("orphan-function-hit-recovery", ["--function-coverage", "--ignore-errors", "mismatch,empty", "-a", "orphan-function-hit.info"], 0),
+    ("branch-no-da-strict", ["--branch-coverage", "--no-function-coverage", "-a", "branch-no-da.info"], 1),
+    ("branch-no-da-empty-recovery", ["--branch-coverage", "--ignore-errors", "empty", "--no-function-coverage", "-a", "branch-no-da.info"], 0),
+    ("mcdc-no-da-strict", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-no-da.info"], 1),
+    ("mcdc-no-da-empty-recovery", ["--mcdc-coverage", "--ignore-errors", "empty", "--no-function-coverage", "-a", "mcdc-no-da.info"], 0),
+    ("removed-no-da-shared-source", ["--branch-coverage", "--mcdc-coverage", "--no-function-coverage", "-a", "removed-no-da.info"], 0),
+    ("branch-fn-synthesized-single", ["--branch-coverage", "--function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-fn-single.info"], 0),
+    ("branch-fn-synthesized-multiple", ["--branch-coverage", "--function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-fn-multiple.info"], 0),
 ]
+
+# These successful oracle runs produce exactly zero trace bytes; genhtml has
+# no worklist to consume. Keep this exception limited to named cases and assert
+# the empty bytes below before skipping genhtml.
+EMPTY_TRACE_CASES = {
+    "fn-explicit-no-da-empty",
+    "branch-no-da-empty-recovery",
+    "mcdc-no-da-empty-recovery",
+}
 
 
 def make_inputs(directory):
@@ -415,7 +438,7 @@ def main():
         if expected == 0 and ("inconsistent" in opts or "check_data_consistency=0" in opts or
                               name == "branch-line-cross-testcase-perl-exemption"):
             html_ignored_errors.append("inconsistent")
-        if name == "fn-explicit-no-da-empty":
+        if name in EMPTY_TRACE_CASES:
             html_ignored_errors.append("empty")
         case_dir = workdir / name
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -492,10 +515,16 @@ def main():
                            "oracle_output": semantic_oracle.decode("utf-8", "surrogateescape") if oracle["status"] == 0 else None,
                            "oracle_input_hashes": input_hashes,
                            "oracle_expected_status_match": oracle["status"] == expected and not oracle["timed_out"]}
+            if name in EMPTY_TRACE_CASES and oracle["status"] == 0 and semantic_oracle != b"":
+                backend_row["empty_trace_match"] = False
+                failures += 1
+                print(f"FAIL expected exact empty trace {backend}/{name}", file=sys.stderr)
+            elif name in EMPTY_TRACE_CASES:
+                backend_row["empty_trace_match"] = True
             if not backend_row["oracle_expected_status_match"] or not backend_row["backend_confirmed_for_invocation"]:
                 failures += 1
                 print(f"FAIL oracle {backend}/{name}: status={oracle['status']} xs={observed_xs} expected_xs={expected_xs}", file=sys.stderr)
-            if expected == 0 and name != "fn-explicit-no-da-empty":
+            if expected == 0 and name not in EMPTY_TRACE_CASES:
                 html_dir = case_dir / f"html-{backend}"
                 remove(html_dir)
                 html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
@@ -547,7 +576,7 @@ def main():
                             "semantic_match": expected != 0 or normalized(sem_cand) == normalized(semantic_oracle),
                             "match": ok, "expected_reference_difference": known_reference_difference,
                             "target_match": ok or known_reference_difference}
-                if expected == 0 and name != "fn-explicit-no-da-empty":
+                if expected == 0 and name not in EMPTY_TRACE_CASES:
                     html_dir = case_dir / f"html-candidate-{backend}"
                     remove(html_dir)
                     html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),

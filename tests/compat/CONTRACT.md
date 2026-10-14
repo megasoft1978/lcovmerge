@@ -144,7 +144,13 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `modern-alias-same-start-different-end-recovery` | Recover conflicting function end lines | success |
 | `modern-missing-end-cross-input` | Merge function definitions with and without end lines across inputs | success |
 | `orphan-function-hit-strict` | Reject FNDA without a matching FN definition | error |
+| `orphan-function-auto-mismatch-only` | Default-auto FNDA handling recovers the mismatch, then fails because function coverage has no coverpoints | error |
 | `orphan-function-hit-recovery` | Recover orphan FNDA with mismatch and empty handling | success |
+| `branch-no-da-strict` / `branch-no-da-empty-recovery` | BRDA-only input has no valid records; strict mode reports corrupt/empty input, while empty recovery succeeds with a zero-byte trace | error / success |
+| `mcdc-no-da-strict` / `mcdc-no-da-empty-recovery` | MC/DC-only input has no valid records; strict mode reports corrupt/empty input, while empty recovery succeeds with a zero-byte trace | error / success |
+| `removed-no-da-shared-source` | A no-DA testcase sharing an input and source with a DA testcase is removed; its BRDA and MC/DC records do not appear in output | success |
+| `branch-fn-synthesized-single` | Branch-derived DA is emitted for a single testcase and the function summary is FNF=1/FNH=1 | success |
+| `branch-fn-synthesized-multiple` | Branch-derived DA contributes to the source master summary but is omitted from a multi-testcase line output; function summary remains FNF=1/FNH=1 | success |
 | `modern-fna-line-mismatch-zero` | Strict consistency rejects FNA zero hits when its line is hit | error |
 | `modern-fna-line-mismatch-positive` | Strict consistency rejects positive FNA hits when no contained line is hit | error |
 | `modern-fna-overlap-end-range` | A hit in overlapping explicit FNL ranges conflicts with zero-hit function counts in both ranges | error |
@@ -201,8 +207,28 @@ with `--ignore-errors inconsistent`. The initial six added cases were run
 against pinned source with verified XS and `LCOV_PURE_PERL=1`; both successful
 outputs passed pinned genhtml. Their manifest is
 `.cache/fna-sourcewide-characterization/manifest.json` in the oracle worktree.
-Orphan hits need both `mismatch` and `empty` recovery categories; `mismatch`
-alone reports the orphan but then fails because no function coverpoints remain.
+Orphan hits under default-auto function handling need both `mismatch` and
+`empty` recovery categories: mismatch-only recovery emits the unknown-function
+warning, then errors that function coverage has no coverpoints. Explicit
+`--function-coverage` with mismatch and empty recovery succeeds and emits the
+valid DA record with zero function summaries.
+
+The BRDA-only and MC/DC-only inputs reference the existing synthetic source but
+contain no DA records. Both backends reject each strict input as corrupt because
+it has no valid records. Empty recovery succeeds but produces exactly zero
+trace bytes; genhtml is skipped only for these named cases after that byte
+condition is asserted. The same empty-trace exception applies to
+`fn-explicit-no-da-empty`.
+
+In `removed-no-da-shared-source`, LCOV retains only testcase `keep` and its
+`DA:1,1`; the removed testcase contributes neither branch nor MC/DC records.
+The function synthesis fixtures include `DA:1,1` so the testcase is valid, but
+line 2 has BRDA and no DA. For a single testcase LCOV emits synthesized
+`DA:2,1`; with multiple testcases the source summary contains the branch
+coverpoint while serialized testcase output omits `DA:2,1`. Both outputs report
+`FNF:1` and `FNH:1` for the testcase containing the function. These runs use
+`--ignore-errors inconsistent` because LCOV also reports the original
+branch-without-line inconsistency.
 
 ## Bounded runtime gates
 
