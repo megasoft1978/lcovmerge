@@ -666,6 +666,7 @@ fn direct(options: &Options) -> Result<DirectResult, Error> {
     rank_heads(&heads, &mut rank_order, &mut ranks);
     let mut tree = HeadTree::new(&heads, &ranks);
     let mut aggregate: Option<Record> = None;
+    let mut merge_diagnostics = Vec::new();
     loop {
         check_cancelled()?;
         let Some(i) = tree.first() else {
@@ -687,10 +688,10 @@ fn direct(options: &Options) -> Result<DirectResult, Error> {
             {
                 // Duplicate source marker; keep the current data key active.
             } else if same_key(a, &row) {
-                let mut d = Vec::new();
-                let merged = merge_aggregate(a, &row, options, &mut d);
+                merge_diagnostics.clear();
+                let merged = merge_aggregate(a, &row, options, &mut merge_diagnostics);
                 diag_writer
-                    .write_all(&d)
+                    .write_all(&merge_diagnostics)
                     .map_err(|e| error(e.to_string()))?;
                 if merged.is_err() {
                     return Ok(None);
