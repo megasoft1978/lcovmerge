@@ -11,6 +11,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Add the experimental opt-in `--lcov-compat=2.6` merge profile with quoted `-a` glob expansion and a documented, version-pinned command surface. Validation remains in progress; native defaults are unchanged and native benchmark data does not measure this profile.
 - Execute LCOV-profile branch sections containing DA with bounded signature/occurrence joins and input/merged consistency checks; retain negative-count recovery as zero, handle sparse block IDs, and honor explicit empty-family errors.
 - Execute source-version propagation with bounded sorting. Match automatic function-family empty errors and discard no-DA input sources and testcase output while retaining source master metadata.
+- Execute eligible checksum inputs with bounded source-line joins and a disk-backed source index, preserving source-wide checksum selection across testcases.
 - Check LCOV-profile function/line consistency before and after input aggregation with bounded source-wide joins, infer ends before merging, and match the pinned default recovery count adjustments and lambda exception.
 - Stage a sole LCOV-profile stdin input with bounded buffers so eligible DA/function/MC/DC merges use the spill executors; remove staged input on success, errors, and catchable interruption. Mixed stdin/file input ordering is unchanged.
 
@@ -21,6 +22,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Classify LCOV recovery errors explicitly so filenames and function names cannot change their ignore-error category; retain public API error codes.
 - Retain recovered negative branch counts as zero in LCOV collector paths, preserving their expressions, exception kinds, and branch positions.
 - Configure CodeQL's supported Rust extraction mode, preserve shell-command failures when exporting build flags, and use a portable filename for the embedded-NUL regression fixture on Windows.
 - Synchronize partition interruption tests with live worker stages through a bounded test-only hold, replacing large timing-sensitive fixtures. Use modest optimization in AddressSanitizer builds to keep the full instrumented suite practical on CI runners.

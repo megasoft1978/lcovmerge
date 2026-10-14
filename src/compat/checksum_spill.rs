@@ -50,102 +50,99 @@ impl Processor {
         } = self;
         let part = (budget / 3).max(1);
         let sorted = raw.finish()?;
-        let mut cursor = sorted.cursor()?;
+        let mut scan = sorted.cursor()?;
+        let mut emit = sorted.cursor()?;
+        let mut next = scan.next()?;
+        let mut emit_next = emit.next()?;
         let mut index = source::SourceIndex::new(&tmpdir, part)?;
         let mut output = line_spill::Spill::new(&tmpdir, part, fanin)?;
-        let mut group: Option<(String, u64, Option<String>)> = None;
-        let mut pending = Vec::new();
-        // Process one source/line group; its producer rows are ordered by input/section/ordinal.
-        while let Some(row) = cursor.next()? {
-            check_cancelled()?;
-            let (source, line) = decode_key(&row.key)?;
-            let (tc, provided, label, count, line_no, input, section, ordinal) =
-                decode_value(&row.value)?;
-            if group
+        // One cursor resolves each checksum; the second replays that group's
+        // producer rows. Even a single group larger than memory stays on disk.
+        while let Some(first) = next.as_ref() {
+            let (src, line) = decode_key(&first.key)?;
+            let prefix = first.key[..first.key.len() - 24].to_vec();
+            let mut chosen: Option<String> = None;
+            while next
                 .as_ref()
-                .is_some_and(|(s, l, _)| s != &source || *l != line)
+                .is_some_and(|row| row.key.starts_with(&prefix))
             {
-                flush_group_with_policy(&mut group, &mut pending, &mut output, req, &mut index)?;
-            }
-            if group.is_none() {
-                group = Some((source.clone(), line, None));
-            }
-            let g = group.as_mut().unwrap();
-            if g.2.is_none() && !provided.is_empty() {
-                g.2 = Some(provided.clone());
-            } else if !provided.is_empty() && g.2.as_deref().is_some_and(|old| old != provided) {
-                let e = Error::at(
-                    2,
-                    &label,
-                    line_no,
-                    format!("checksum mismatch at {source}:{line}"),
+                check_cancelled()?;
+                let row = decode_entry(next.take().unwrap())?;
+                let mut section = super::record::Section {
+                    source: src.clone(),
+                    ..Default::default()
+                };
+                section.lines.insert(
+                    line,
+                    (row.count, (!row.value.is_empty()).then_some(row.value)),
                 );
-                if !policy::can_recover(req, &e) {
-                    return Err(e);
+                let payload = format!("{line},{}", row.count);
+                policy::validate_or_generate_checksum(
+                    &mut section,
+                    &payload,
+                    req,
+                    &row.label,
+                    row.line_no,
+                    &mut index,
+                )
+                .map_err(|e| Error::at(e.code, &row.label, row.line_no, e.message))?;
+                if let Some(value) = section.lines.remove(&line).and_then(|(_, sum)| sum) {
+                    if chosen.as_ref().is_some_and(|old| old != &value) {
+                        let error = super::policy::at(
+                            super::policy::Kind::Version,
+                            &row.label,
+                            row.line_no,
+                            format!("checksum mismatch at {src}:{line}"),
+                        );
+                        if !policy::can_recover(req, &error) {
+                            return Err(error);
+                        }
+                    } else if chosen.is_none() {
+                        chosen = Some(value);
+                    }
                 }
+                next = scan.next()?;
             }
-            pending.push(line_spill::Entry {
-                kind: 1,
-                source,
-                testcase: tc,
-                value: provided,
-                line,
-                count,
-                input,
-                section,
-                ordinal,
-                label,
-                line_no,
-            });
-            // Bound group retention using sort budget; oversized producer groups fail clearly.
-            if pending
-                .len()
-                .saturating_mul(std::mem::size_of::<line_spill::Entry>())
-                > part / 2
+            while emit_next
+                .as_ref()
+                .is_some_and(|row| row.key.starts_with(&prefix))
             {
-                return Err(Error::new(
-                    3,
-                    "checksum source-line group exceeds memory budget; increase --mem-limit",
-                ));
+                let mut row = decode_entry(emit_next.take().unwrap())?;
+                row.value = chosen.clone().unwrap_or_default();
+                row.label.clear();
+                row.line_no = 0;
+                output.push(row)?;
+                emit_next = emit.next()?;
             }
-            let _ = line_no;
         }
-        flush_group_with_policy(&mut group, &mut pending, &mut output, req, &mut index)?;
-        drop(cursor);
+        drop(scan);
+        drop(emit);
         drop(sorted);
         drop(index);
         let path = output.finish()?;
         Ok((output, path))
     }
 }
-fn flush_group_with_policy(
-    g: &mut Option<(String, u64, Option<String>)>,
-    rows: &mut Vec<line_spill::Entry>,
-    out: &mut line_spill::Spill,
-    req: &Request,
-    index: &mut source::SourceIndex,
-) -> Result<(), Error> {
-    if let Some((src, ln, chosen)) = g.as_ref() {
-        let mut section = super::record::Section::default();
-        section.source = src.clone();
-        section.lines.insert(*ln, (0, chosen.clone()));
-        let label = rows.first().map(|r| r.label.as_str()).unwrap_or(src);
-        let line_no = rows.first().map_or(0, |r| r.line_no);
-        let payload = format!(
-            "{ln},0{}",
-            chosen.as_ref().map(|s| format!(",{s}")).unwrap_or_default()
-        );
-        policy::validate_or_generate_checksum(&mut section, &payload, req, label, line_no, index)
-            .map_err(|e| Error::at(e.code, label, line_no, e.message))?;
-        let value = section.lines.get(ln).and_then(|x| x.1.clone());
-        for mut r in rows.drain(..) {
-            r.value = value.clone().unwrap_or_default();
-            out.push(r)?;
-        }
-    }
-    *g = None;
-    Ok(())
+
+fn decode_entry(row: sort::Row) -> Result<line_spill::Entry, Error> {
+    let (source, line) = decode_key(&row.key)?;
+    let (testcase, value, label, count, line_no, input, section, ordinal) =
+        decode_value(&row.value)?;
+    Ok(line_spill::Entry {
+        kind: 1,
+        source,
+        testcase,
+        value,
+        line,
+        count,
+        input,
+        section,
+        ordinal,
+        label,
+        line_no,
+    })
 }
+
 fn put(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), Error> {
     let n = u32::try_from(bytes.len()).map_err(|_| Error::new(3, "checksum field too large"))?;
     out.extend_from_slice(&n.to_be_bytes());
@@ -177,7 +174,9 @@ fn decode_key(b: &[u8]) -> Result<(String, u64), Error> {
         String::from_utf8(b[..p].to_vec()).map_err(|_| Error::new(3, "invalid source UTF-8"))?;
     Ok((s, u64::from_be_bytes(b[p + 1..p + 9].try_into().unwrap())))
 }
-fn decode_value(b: &[u8]) -> Result<(String, String, String, u64, u64, u64, u64, u64), Error> {
+type Fields = (String, String, String, u64, u64, u64, u64, u64);
+
+fn decode_value(b: &[u8]) -> Result<Fields, Error> {
     let mut p = 0;
     let tc = String::from_utf8(take(b, &mut p)?.to_vec())
         .map_err(|_| Error::new(3, "invalid testcase UTF-8"))?;
@@ -205,6 +204,46 @@ mod tests {
     use super::*;
     use std::{fs, io::BufReader};
     #[test]
+    fn single_source_line_group_larger_than_budget_streams_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs = dir.path().join("runs");
+        fs::create_dir(&runs).unwrap();
+        let source = dir.path().join("unit.c");
+        fs::write(&source, "hello\n").unwrap();
+        let mut processor = Processor::new(&runs, 256 * 1024, 4).unwrap();
+        for input in 0..4096 {
+            processor
+                .push(line_spill::Entry {
+                    kind: 1,
+                    source: source.to_string_lossy().into_owned(),
+                    testcase: "same".into(),
+                    value: String::new(),
+                    line: 1,
+                    count: 1,
+                    input,
+                    section: 0,
+                    ordinal: 0,
+                    label: "trace.info".into(),
+                    line_no: 3,
+                })
+                .unwrap();
+        }
+        let (spill, path) = processor.finish(&Request::default()).unwrap();
+        let mut reader = BufReader::new(fs::File::open(path).unwrap());
+        let mut rows = 0;
+        while let Some(row) = line_spill::read_next_public(&mut reader).unwrap() {
+            assert_eq!(row.count, 1);
+            assert_eq!(row.input, rows);
+            assert_eq!(row.value, "XUFAKrxLKna5cZ2REBfFkg");
+            rows += 1;
+        }
+        assert_eq!(rows, 4096);
+        drop(reader);
+        drop(spill);
+        assert_eq!(fs::read_dir(runs).unwrap().count(), 0);
+    }
+
+    #[test]
     fn propagates_checksum_across_testcases_and_runs() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("unit.c");
@@ -217,7 +256,7 @@ mod tests {
                 testcase: tc.into(),
                 value: String::new(),
                 line: 1,
-                count: i as u64 + 2,
+                count: i + 2,
                 input: i,
                 section: 0,
                 ordinal: 0,

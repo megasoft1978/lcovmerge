@@ -14,7 +14,7 @@ pub(super) struct Reducer {
 }
 
 fn err(file: &str, line: u64, message: impl Into<String>) -> Error {
-    Error::at(2, file, line, message)
+    super::policy::at(super::policy::Kind::Format, file, line, message)
 }
 fn field(out: &mut Vec<u8>, s: &str, file: &str, line: u64) -> Result<(), Error> {
     if s.as_bytes().contains(&0) || s.len() > MAX_LINE {
@@ -169,7 +169,10 @@ impl Reducer {
             check_cancelled()?;
             if let Some((k, v)) = &last {
                 if *k == r.key && *v != r.value {
-                    let e = Error::new(2, "inconsistent MC/DC expression");
+                    let e = super::policy::new(
+                        super::policy::Kind::Inconsistent,
+                        "inconsistent MC/DC expression",
+                    );
                     if !can_recover(request, &e) {
                         return Err(e);
                     }
@@ -324,7 +327,10 @@ impl Reducer {
                             .get(9..)
                             .ok_or_else(|| Error::new(3, "corrupt MC/DC value"))?
                     {
-                        let e = Error::new(2, "inconsistent MC/DC expression");
+                        let e = super::policy::new(
+                            super::policy::Kind::Inconsistent,
+                            "inconsistent MC/DC expression",
+                        );
                         if !can_recover(request, &e) {
                             return Err(e);
                         }

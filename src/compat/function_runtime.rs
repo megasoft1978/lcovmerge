@@ -1,7 +1,7 @@
 //! Bounded DA and function compatibility executor.
 use super::{
-    branch_check, branch_spill, function_check, function_spill, line_spill, mcdc_spill, policy,
-    sort, version_spill, Request, StopOnCancel,
+    branch_check, branch_spill, checksum_spill, function_check, function_spill, line_spill,
+    mcdc_spill, policy, sort, version_spill, Request, StopOnCancel,
 };
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
@@ -13,7 +13,7 @@ use std::path::Path;
 
 pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
     let o = &req.resources;
-    if req.checksum || o.strict_checksum || o.inputs.iter().any(|p| p.as_os_str() == "-") {
+    if o.inputs.iter().any(|p| p.as_os_str() == "-") {
         return Ok(None);
     }
     if !scan(req)? {
@@ -141,6 +141,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         (memory / (3 * (MAX_LINE + crate::common::IO_BLOCK + 4096))).clamp(2, 32),
     )?;
     let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+    let checksums_enabled = req.checksum || o.strict_checksum;
+    let mut checksums = if checksums_enabled {
+        Some(checksum_spill::Processor::new(&o.tmpdir, each, fanin)?)
+    } else {
+        None
+    };
     let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_sources = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut versions = version_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?;
@@ -194,7 +200,9 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             if buf.last() == Some(&b'\r') {
                 buf.pop();
             }
-            let error = |message: &str| Error::at(2, &label, line_no, message);
+            let error = |message: &str| {
+                super::policy::at(super::policy::Kind::Format, &label, line_no, message)
+            };
             if buf.len() > MAX_LINE && recover(req, error("line exceeds 1 MiB"))? {
                 continue;
             }
@@ -219,7 +227,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 let rewritten = match crate::path::rewrite_path(o, sf) {
                     Ok(p) => p,
                     Err(e) => {
-                        if recover(req, Error::at(e.code, &label, line_no, e.message))? {
+                        if recover(req, policy::path_error(e, &label, line_no))? {
                             source = None;
                             continue;
                         } else {
@@ -296,68 +304,52 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             ordinal += 1;
             if let Some(x) = s.strip_prefix("DA:") {
                 let mut sec = super::record::Section::default();
-                let negative_recovered = if req
-                    .ignore_errors
-                    .iter()
-                    .any(|v| v.eq_ignore_ascii_case("negative"))
-                {
-                    let mut fields = x.split(',');
-                    let line_field = fields.next().unwrap_or("");
-                    let count_field = fields.next().unwrap_or("");
-                    if count_field.starts_with('-') && fields.next().is_none() {
-                        match policy::num(Some(line_field), &label, line_no) {
-                            Ok(n) if n > 0 => Some(n),
-                            Ok(_) => None,
-                            Err(e) => {
-                                if recover(req, e)? {
-                                    continue;
-                                }
-                                None
-                            }
+                match sec.add_line_with_checksums(x, &label, line_no, checksums_enabled) {
+                    Err(e)
+                        if e.message.ends_with("negative coverage count")
+                            && policy::can_recover(req, &e) =>
+                    {
+                        let mut fields = x.splitn(3, ',');
+                        let location = fields.next().unwrap_or("");
+                        let _ = fields.next();
+                        let sum = fields.next().map(|v| format!(",{v}")).unwrap_or_default();
+                        sec.add_line_with_checksums(
+                            &format!("{location},0{sum}"),
+                            &label,
+                            line_no,
+                            checksums_enabled,
+                        )?;
+                    }
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
                         }
-                    } else {
-                        None
                     }
-                } else {
-                    None
-                };
-                if let Some(ln) = negative_recovered {
-                    lines.push(line_spill::Entry {
+                    Ok(()) => {}
+                }
+                if let Some((ln, (count, sum))) = sec.lines.into_iter().next() {
+                    let row = line_spill::Entry {
                         kind: 1,
                         source: src.clone(),
                         testcase: section_tc.clone(),
-                        value: String::new(),
-                        line: ln,
-                        count: 0,
-                        input: input_id as u64,
-                        section,
-                        ordinal,
-                        // DA validation already reported its original input
-                        // location; the count-only join cannot fail semantically.
-                        label: String::new(),
-                        line_no: 0,
-                    })?;
-                    continue;
-                }
-                if let Err(e) = sec.add_line(x, &label, line_no) {
-                    if recover(req, e)? {
-                        continue;
-                    }
-                }
-                if let Some((ln, (count, _))) = sec.lines.into_iter().next() {
-                    lines.push(line_spill::Entry {
-                        kind: 1,
-                        source: src.clone(),
-                        testcase: section_tc.clone(),
-                        value: String::new(),
+                        value: sum.unwrap_or_default(),
                         line: ln,
                         count,
                         input: input_id as u64,
                         section,
                         ordinal,
-                        label: String::new(),
-                        line_no: 0,
-                    })?;
+                        label: if checksums_enabled {
+                            label.clone()
+                        } else {
+                            String::new()
+                        },
+                        line_no: if checksums_enabled { line_no } else { 0 },
+                    };
+                    if let Some(processor) = checksums.as_mut() {
+                        processor.push(row)?;
+                    } else {
+                        lines.push(row)?;
+                    }
                 }
                 continue;
             }
@@ -491,7 +483,13 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
-    let mut line_path = lines.finish()?;
+    let (mut lines, mut line_path) = if let Some(processor) = checksums {
+        drop(lines);
+        processor.finish(req)?
+    } else {
+        let path = lines.finish()?;
+        (lines, path)
+    };
     let mut input_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut linked = raw_functions.finish()?;
     loop {
@@ -511,7 +509,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         if (row.start == 0 || row.end == Some(0))
             && recover(
                 req,
-                Error::at(2, &row.label, row.line, "function line must be positive"),
+                super::policy::at(
+                    super::policy::Kind::Format,
+                    &row.label,
+                    row.line,
+                    "function line must be positive",
+                ),
             )?
         {
             continue;
@@ -545,7 +548,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 if end.is_some_and(|old| old != candidate) {
                     recover(
                         req,
-                        Error::new(2, "inconsistent function declaration within input"),
+                        super::policy::new(
+                            super::policy::Kind::Inconsistent,
+                            "inconsistent function declaration within input",
+                        ),
                     )?;
                 }
                 end = Some(end.map_or(candidate, |old| old.max(candidate)));
@@ -726,7 +732,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             let st = read_u64(&row.value, 0)?;
             let en = decode_end(&row.value)?;
             if st != start || en != end {
-                let e = Error::new(2, format!("inconsistent function declaration for '{name}'"));
+                let e = super::policy::new(
+                    super::policy::Kind::Inconsistent,
+                    format!("inconsistent function declaration for '{name}'"),
+                );
                 if !recover(req, e)? {
                     unreachable!();
                 }
@@ -805,6 +814,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 .as_ref()
                 .is_some_and(|p| p.key == source_only);
         let mut line = first.line;
+        let mut checksum = first.value.clone();
         let mut count = first.count.min(i64::MAX as u64);
         let mut lf = 0u64;
         let mut lh = 0u64;
@@ -823,13 +833,16 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             let mut k = key_prefix(&src, &tc)?;
             k.push(7);
             k.extend_from_slice(&line.to_be_bytes());
-            final_sort.push(k, count.to_be_bytes().to_vec())?;
+            let mut value = count.to_be_bytes().to_vec();
+            value.extend_from_slice(checksum.as_bytes());
+            final_sort.push(k, value)?;
             if count > 0 {
                 lh = lh.saturating_add(1);
             }
             match row.as_ref() {
                 Some(x) if x.source == src && x.testcase == tc => {
                     line = x.line;
+                    checksum = x.value.clone();
                     count = x.count.min(i64::MAX as u64);
                 }
                 _ => break,
@@ -866,8 +879,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             let row = map_row.take().unwrap();
             if let Some(candidate) = decode_fn_key(&row.key)?.3 {
                 if chosen.is_some_and(|old| old != candidate) {
-                    let e = Error::new(
-                        2,
+                    let e = super::policy::new(super::policy::Kind::Inconsistent,
                         format!("inconsistent function declaration: mismatched end line for {name} at {source}:{start}"),
                     );
                     if !recover(req, e)? {
@@ -1027,7 +1039,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         if end.is_none() && req.derive_function_end_line && derive_supported(&src, &name) {
             end = line_ends.derive(&src, &tc, start, next_start)?;
             if end.is_none() {
-                let e=Error::new(2,format!("inconsistent line coverage for function at {src}:{start}; cannot derive end line"));
+                let e=super::policy::new(super::policy::Kind::Inconsistent,format!("inconsistent line coverage for function at {src}:{start}; cannot derive end line"));
                 if !recover(req, e)? {
                     unreachable!();
                 }
@@ -1170,8 +1182,8 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
             .iter()
             .any(|e| e.eq_ignore_ascii_case("empty"))
     {
-        return Err(Error::new(
-            2,
+        return Err(super::policy::new(
+            super::policy::Kind::Empty,
             "empty LCOV trace after selecting valid coverpoints",
         ));
     }
@@ -1227,7 +1239,13 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
             7 => {
                 let line = read_u64(&row.key, row.key.len() - 8)?;
                 let hits = read_u64(&row.value, 0)?;
-                writeln!(out, "DA:{line},{hits}").map_err(ioerr)?;
+                let checksum = std::str::from_utf8(&row.value[8..])
+                    .map_err(|_| Error::new(3, "invalid checksum output row"))?;
+                if checksum.is_empty() {
+                    writeln!(out, "DA:{line},{hits}").map_err(ioerr)?;
+                } else {
+                    writeln!(out, "DA:{line},{hits},{checksum}").map_err(ioerr)?;
+                }
             }
             8 => {
                 let x = String::from_utf8(row.value)
@@ -1247,17 +1265,7 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
     Ok(())
 }
 fn recover(req: &Request, e: Error) -> Result<bool, Error> {
-    let lower = e.message.to_ascii_lowercase();
-    let function_reference = lower.contains("references undeclared function")
-        || lower.contains("references unknown function index");
-    if (function_reference
-        && (req.keep_going
-            || req
-                .ignore_errors
-                .iter()
-                .any(|x| x.eq_ignore_ascii_case("mismatch") || x.eq_ignore_ascii_case("empty"))))
-        || super::policy::can_recover(req, &e)
-    {
+    if policy::can_recover(req, &e) {
         Ok(true)
     } else {
         Err(e)
@@ -1286,7 +1294,10 @@ fn key_prefix(source: &str, tc: &str) -> Result<Vec<u8>, Error> {
 }
 fn push_str(k: &mut Vec<u8>, s: &str) -> Result<(), Error> {
     if s.as_bytes().contains(&0) {
-        return Err(Error::new(2, "NUL in compatibility key"));
+        return Err(super::policy::new(
+            super::policy::Kind::Format,
+            "NUL in compatibility key",
+        ));
     }
     k.extend_from_slice(s.as_bytes());
     k.push(0);

@@ -49,7 +49,12 @@ impl Reducer {
     ) -> Result<(), Error> {
         let source = source.as_bytes();
         if source.contains(&0) {
-            return Err(Error::at(2, label, line_no, "NUL in version source path"));
+            return Err(super::policy::at(
+                super::policy::Kind::Format,
+                label,
+                line_no,
+                "NUL in version source path",
+            ));
         }
         let mut key = Vec::with_capacity(source.len() + 1 + PRODUCER);
         key.extend_from_slice(source);
@@ -60,8 +65,10 @@ impl Reducer {
         // The value is framed internally as version length + version + label + line.
         let version = version.as_bytes();
         let label = label.as_bytes();
-        let vlen = u32::try_from(version.len()).map_err(|_| Error::new(2, "version too long"))?;
-        let llen = u32::try_from(label.len()).map_err(|_| Error::new(2, "input label too long"))?;
+        let vlen = u32::try_from(version.len())
+            .map_err(|_| super::policy::new(super::policy::Kind::Format, "version too long"))?;
+        let llen = u32::try_from(label.len())
+            .map_err(|_| super::policy::new(super::policy::Kind::Format, "input label too long"))?;
         let mut value = Vec::with_capacity(8 + version.len() + label.len() + 8);
         value.extend_from_slice(&vlen.to_be_bytes());
         value.extend_from_slice(version);
@@ -95,8 +102,8 @@ impl Reducer {
                     reduced.push(prior_key.clone(), prior_version.clone())?;
                     group = Some((source_key, version));
                 } else if prior_version != &version {
-                    let e = Error::at(
-                        2,
+                    let e = super::policy::at(
+                        super::policy::Kind::Version,
                         label,
                         line,
                         format!(
@@ -195,8 +202,8 @@ mod tests {
             Ok(_) => panic!("strict conflict accepted"),
             Err(e) => e,
         };
-        assert_eq!(err.code, 2);
         assert!(err.message.contains("second:19"));
+        assert_eq!(policy::public_error(err).code, 2);
 
         req.keep_going = true;
         let mut r = Reducer::new(dir.path(), 1 << 20, 1).unwrap();

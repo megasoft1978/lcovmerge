@@ -286,7 +286,7 @@ fn decode_fields(mut f: Vec<Vec<u8>>) -> Result<Entry, Error> {
     })
 }
 fn corrupt() -> Error {
-    Error::new(2, "corrupt compatibility spill record")
+    Error::new(3, "corrupt compatibility spill record")
 }
 fn ioerr(e: std::io::Error) -> Error {
     Error::new(3, format!("compatibility spill I/O failed: {e}"))

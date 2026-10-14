@@ -260,7 +260,12 @@ fn finish_line(
             _ => None,
         };
         if let Some(message) = error {
-            let error = Error::at(2, &source, line.number, message);
+            let error = super::policy::at(
+                super::policy::Kind::Inconsistent,
+                &source,
+                line.number,
+                message,
+            );
             if !policy::can_recover(req, &error) {
                 return Err(error);
             }

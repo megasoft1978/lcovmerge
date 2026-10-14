@@ -108,8 +108,8 @@ impl Records {
         key.push(family as u8);
         if family == Family::Modern {
             if symbol.len() != 8 {
-                return Err(Error::new(
-                    2,
+                return Err(super::policy::new(
+                    super::policy::Kind::Format,
                     "modern function symbol must be a big-endian u64",
                 ));
             }
@@ -117,8 +117,12 @@ impl Records {
         } else {
             push_string(
                 &mut key,
-                std::str::from_utf8(symbol)
-                    .map_err(|_| Error::new(2, "legacy function symbol is not UTF-8"))?,
+                std::str::from_utf8(symbol).map_err(|_| {
+                    super::policy::new(
+                        super::policy::Kind::Format,
+                        "legacy function symbol is not UTF-8",
+                    )
+                })?,
             )?;
         }
         key.extend_from_slice(&ordinal.to_be_bytes());
@@ -172,11 +176,19 @@ impl Rows {
         match row.kind {
             Kind::Declaration => {
                 if row.family == Family::Modern && self.declaration.is_some() {
-                    return Err(record_error(&row, "invalid or duplicate FNL index"));
+                    return Err(record_error(
+                        &row,
+                        super::policy::Kind::Format,
+                        "invalid or duplicate FNL index",
+                    ));
                 }
                 if let Some((start, end, _)) = self.declaration {
                     if start != row.start || end != row.end {
-                        return Err(record_error(&row, "inconsistent function declaration"));
+                        return Err(record_error(
+                            &row,
+                            super::policy::Kind::Inconsistent,
+                            "inconsistent function declaration",
+                        ));
                     }
                 } else {
                     self.declaration = Some((row.start, row.end, row.ordinal));
@@ -205,7 +217,7 @@ impl Rows {
                     } else {
                         "FNA references unknown function index"
                     };
-                    return Err(record_error(&row, message));
+                    return Err(record_error(&row, super::policy::Kind::Mismatch, message));
                 };
                 if row.ordinal < declaration_ordinal {
                     let message = if row.family == Family::Legacy {
@@ -213,7 +225,7 @@ impl Rows {
                     } else {
                         "FNA references unknown function index"
                     };
-                    return Err(record_error(&row, message));
+                    return Err(record_error(&row, super::policy::Kind::Mismatch, message));
                 }
                 Ok(Some(LinkedRow {
                     input: row.input,
@@ -231,13 +243,16 @@ impl Rows {
     }
 }
 
-fn record_error(row: &FunctionRow, message: &str) -> Error {
-    Error::at(2, &row.label, row.line, message)
+fn record_error(row: &FunctionRow, kind: super::policy::Kind, message: &str) -> Error {
+    super::policy::at(kind, &row.label, row.line, message)
 }
 
 fn push_string(dst: &mut Vec<u8>, s: &str) -> Result<(), Error> {
     if s.as_bytes().contains(&0) {
-        return Err(Error::new(2, "NUL in function spill key"));
+        return Err(super::policy::new(
+            super::policy::Kind::Format,
+            "NUL in function spill key",
+        ));
     }
     dst.extend_from_slice(s.as_bytes());
     dst.push(0);

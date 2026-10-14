@@ -57,8 +57,8 @@ impl SourceIndex {
         }
         let meta = std::fs::metadata(source).map_err(|e| source_error(source, e))?;
         if !meta.is_file() {
-            return Err(Error::new(
-                2,
+            return Err(super::policy::new(
+                super::policy::Kind::Source,
                 format!(
                     "cannot read source {}: not a regular file",
                     source.display()
@@ -134,8 +134,8 @@ impl SourceIndex {
                 break;
             }
             if line.len() > MAX_LINE + 1 {
-                return Err(Error::new(
-                    2,
+                return Err(super::policy::new(
+                    super::policy::Kind::Format,
                     format!(
                         "source {} line {} exceeds 1 MiB",
                         source.display(),
@@ -150,8 +150,8 @@ impl SourceIndex {
                 line.pop();
             }
             if line.len() > MAX_LINE {
-                return Err(Error::new(
-                    2,
+                return Err(super::policy::new(
+                    super::policy::Kind::Format,
                     format!(
                         "source {} line {} exceeds 1 MiB",
                         source.display(),
@@ -205,7 +205,12 @@ fn read_bounded_line<R: BufRead>(
                 check_cancelled()?;
                 continue;
             }
-            Err(e) => return Err(Error::new(2, format!("source read failed: {e}"))),
+            Err(e) => {
+                return Err(super::policy::new(
+                    super::policy::Kind::Source,
+                    format!("source read failed: {e}"),
+                ))
+            }
             Ok(v) => v,
         };
         if available.is_empty() {
@@ -217,7 +222,10 @@ fn read_bounded_line<R: BufRead>(
             .map_or(available.len(), |i| i + 1);
         let next_len = buf.len().saturating_add(take);
         if next_len > MAX_LINE + 2 {
-            return Err(Error::new(2, "source line exceeds 1 MiB"));
+            return Err(super::policy::new(
+                super::policy::Kind::Format,
+                "source line exceeds 1 MiB",
+            ));
         }
         if next_len > budget {
             return Err(limit_error(budget));
@@ -252,7 +260,10 @@ fn read_exact_cancel(file: &mut File, buf: &mut [u8]) -> Result<(), Error> {
 }
 
 fn source_error(path: &Path, e: io::Error) -> Error {
-    Error::new(2, format!("cannot read source {}: {e}", path.display()))
+    super::policy::new(
+        super::policy::Kind::Source,
+        format!("cannot read source {}: {e}", path.display()),
+    )
 }
 fn index_error(op: &str, e: io::Error) -> Error {
     Error::new(3, format!("{op} failed: {e}"))
@@ -319,11 +330,17 @@ mod tests {
         assert_eq!(ix.checksum(&src, 1).unwrap_err().code, 3);
         let mut ix = SourceIndex::new(d.path(), budget(&src)).unwrap();
         assert_eq!(
-            ix.checksum(&d.path().join("missing"), 1).unwrap_err().code,
+            super::super::policy::public_error(
+                ix.checksum(&d.path().join("missing"), 1).unwrap_err()
+            )
+            .code,
             2
         );
         std::fs::write(&src, vec![b'x'; MAX_LINE + 1]).unwrap();
-        assert_eq!(ix.checksum(&src, 1).unwrap_err().code, 2);
+        assert_eq!(
+            super::super::policy::public_error(ix.checksum(&src, 1).unwrap_err()).code,
+            2
+        );
         std::fs::remove_file(&src).unwrap();
         assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 0);
     }

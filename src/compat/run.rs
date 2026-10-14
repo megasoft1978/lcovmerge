@@ -90,8 +90,8 @@ fn check_family_coverpoints(
         (req.mcdc_coverage, mcdc, "MC/DC"),
     ] {
         if required && !present {
-            return Err(Error::new(
-                2,
+            return Err(policy::new(
+                policy::Kind::Empty,
                 format!("empty {family} coverage: no corresponding coverpoints found"),
             ));
         }
@@ -182,7 +182,7 @@ pub fn run(mut request: Request) -> Result<(), Error> {
                 .message
                 .replace(&file.path().display().to_string(), "-");
         }
-        error
+        policy::public_error(error)
     })
 }
 
@@ -228,7 +228,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             &mut held,
             opt.mem_limit,
         ) {
-            if request.keep_going && e.code == 2 {
+            if request.keep_going && e.code != 3 {
                 continue;
             }
             return Err(e);
@@ -251,8 +251,8 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             .iter()
             .any(|e| e.eq_ignore_ascii_case("empty"))
     {
-        return Err(Error::new(
-            2,
+        return Err(policy::new(
+            policy::Kind::Empty,
             "empty LCOV trace after selecting valid coverpoints",
         ));
     }
@@ -267,7 +267,10 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             if let Some(sum) = sum {
                 let key = (s.source.clone(), ln);
                 if source_checksums.get(&key).is_some_and(|old| old != sum) {
-                    let e = Error::new(2, format!("checksum mismatch at {}:{ln}", s.source));
+                    let e = policy::new(
+                        policy::Kind::Version,
+                        format!("checksum mismatch at {}:{ln}", s.source),
+                    );
                     if !can_recover(&request, &e) {
                         return Err(e);
                     }
@@ -294,7 +297,10 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             .cloned();
         if let Some(v) = known {
             if sections[i].version.as_ref().is_some_and(|x| x != &v) {
-                let e = Error::new(2, format!("conflicting source versions for {source}"));
+                let e = policy::new(
+                    policy::Kind::Version,
+                    format!("conflicting source versions for {source}"),
+                );
                 if !can_recover(&request, &e) {
                     return Err(e);
                 }
@@ -535,7 +541,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                 buf.pop();
             }
             if buf.len() > MAX_LINE {
-                let e = Error::at(2, &label, line_no, "line exceeds 1 MiB");
+                let e = policy::at(policy::Kind::Format, &label, line_no, "line exceeds 1 MiB");
                 if !can_recover(req, &e) {
                     return Ok(Some(Err(e)));
                 }
@@ -544,7 +550,12 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
             let s = match std::str::from_utf8(&buf) {
                 Ok(s) => s,
                 Err(_) => {
-                    let e = Error::at(2, &label, line_no, "invalid UTF-8 tracefile record");
+                    let e = policy::at(
+                        policy::Kind::Format,
+                        &label,
+                        line_no,
+                        "invalid UTF-8 tracefile record",
+                    );
                     if !can_recover(req, &e) {
                         return Ok(Some(Err(e)));
                     }
@@ -556,7 +567,12 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
             }
             if let Some(v) = s.strip_prefix("TN:") {
                 if source.is_some() {
-                    let e = Error::at(2, &label, line_no, "TN inside an open section");
+                    let e = policy::at(
+                        policy::Kind::Format,
+                        &label,
+                        line_no,
+                        "TN inside an open section",
+                    );
                     if !can_recover(req, &e) {
                         return Ok(Some(Err(e)));
                     }
@@ -570,7 +586,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                     source = None;
                 }
                 if sf.is_empty() {
-                    let e = Error::at(2, &label, line_no, "empty SF path");
+                    let e = policy::at(policy::Kind::Path, &label, line_no, "empty SF path");
                     if !can_recover(req, &e) {
                         return Ok(Some(Err(e)));
                     }
@@ -579,7 +595,7 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                 let rewritten = match crate::path::rewrite_path(o, sf) {
                     Ok(p) => p,
                     Err(e) => {
-                        let e = Error::at(e.code, &label, line_no, e.message);
+                        let e = policy::path_error(e, &label, line_no);
                         if !can_recover(req, &e) {
                             return Ok(Some(Err(e)));
                         }
@@ -636,7 +652,12 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                         match num(Some(line_field), &label, line_no) {
                             Ok(ln) if ln > 0 => Some(ln),
                             Ok(_) => {
-                                let e = Error::at(2, &label, line_no, "DA line must be positive");
+                                let e = policy::at(
+                                    policy::Kind::Format,
+                                    &label,
+                                    line_no,
+                                    "DA line must be positive",
+                                );
                                 if !can_recover(req, &e) {
                                     return Ok(Some(Err(e)));
                                 }
@@ -787,7 +808,12 @@ fn emit_spill(path: &Path, out: &mut dyn Write, req: &Request) -> Result<(), Err
             if version.is_none() {
                 version = Some(x.value.clone());
             } else if version.as_ref() != Some(&x.value) {
-                let e = Error::at(2, &x.label, x.line_no, "conflicting source versions");
+                let e = policy::at(
+                    policy::Kind::Version,
+                    &x.label,
+                    x.line_no,
+                    "conflicting source versions",
+                );
                 if !can_recover(req, &e) {
                     return Err(e);
                 }
@@ -814,7 +840,12 @@ fn emit_spill(path: &Path, out: &mut dyn Write, req: &Request) -> Result<(), Err
                     writeln!(out, "DA:{line},{}", count.min(i64::MAX as u64)).map_err(ioout)?;
                     if count > 0 {
                         lh = lh.checked_add(1).ok_or_else(|| {
-                            Error::at(2, &x.label, x.line_no, "DA hit-line count overflow")
+                            policy::at(
+                                policy::Kind::Count,
+                                &x.label,
+                                x.line_no,
+                                "DA hit-line count overflow",
+                            )
                         })?;
                     }
                 }
@@ -822,7 +853,12 @@ fn emit_spill(path: &Path, out: &mut dyn Write, req: &Request) -> Result<(), Err
                     line = x.line;
                     count = x.count.min(i64::MAX as u64);
                     lf = lf.checked_add(1).ok_or_else(|| {
-                        Error::at(2, &x.label, x.line_no, "DA line count overflow")
+                        policy::at(
+                            policy::Kind::Count,
+                            &x.label,
+                            x.line_no,
+                            "DA line count overflow",
+                        )
                     })?;
                 } else {
                     count = count.saturating_add(x.count).min(i64::MAX as u64);
@@ -832,9 +868,9 @@ fn emit_spill(path: &Path, out: &mut dyn Write, req: &Request) -> Result<(), Err
             if lf > 0 {
                 writeln!(out, "DA:{line},{}", count.min(i64::MAX as u64)).map_err(ioout)?;
                 if count > 0 {
-                    lh = lh
-                        .checked_add(1)
-                        .ok_or_else(|| Error::new(2, "DA hit-line count overflow"))?;
+                    lh = lh.checked_add(1).ok_or_else(|| {
+                        policy::new(policy::Kind::Count, "DA hit-line count overflow")
+                    })?;
                 }
             }
             writeln!(out, "LF:{lf}\nLH:{lh}\nend_of_record").map_err(ioout)?;
@@ -990,7 +1026,12 @@ fn parse_input(
             .iter()
             .any(|e| e.eq_ignore_ascii_case("empty"))
     {
-        return Err(Error::at(2, label, 0, "empty LCOV input: no valid records"));
+        return Err(policy::at(
+            policy::Kind::Empty,
+            label,
+            0,
+            "empty LCOV input: no valid records",
+        ));
     }
     for section in &mut local {
         section.discarded_testcase = section.lines.is_empty();
@@ -1066,7 +1107,7 @@ fn parse_input_sections(
             line.pop();
         }
         if line.len() > MAX_LINE {
-            let e = Error::at(2, label, line_no, "line exceeds 1 MiB");
+            let e = policy::at(policy::Kind::Format, label, line_no, "line exceeds 1 MiB");
             if can_recover(req, &e) {
                 continue;
             } else {
@@ -1074,15 +1115,26 @@ fn parse_input_sections(
             }
         }
         if line.contains(&0) {
-            let e = Error::at(2, label, line_no, "NUL byte in tracefile");
+            let e = policy::at(
+                policy::Kind::Format,
+                label,
+                line_no,
+                "NUL byte in tracefile",
+            );
             if can_recover(req, &e) {
                 continue;
             } else {
                 return Err(e);
             }
         }
-        let s = std::str::from_utf8(&line)
-            .map_err(|_| Error::at(2, label, line_no, "invalid UTF-8 tracefile record"));
+        let s = std::str::from_utf8(&line).map_err(|_| {
+            policy::at(
+                policy::Kind::Format,
+                label,
+                line_no,
+                "invalid UTF-8 tracefile record",
+            )
+        });
         let s = match s {
             Ok(s) => s,
             Err(e) => {
@@ -1098,7 +1150,12 @@ fn parse_input_sections(
         }
         if let Some(tn) = s.strip_prefix("TN:") {
             if current.is_some() {
-                let e = Error::at(2, label, line_no, "TN inside an open section");
+                let e = policy::at(
+                    policy::Kind::Format,
+                    label,
+                    line_no,
+                    "TN inside an open section",
+                );
                 if can_recover(req, &e) {
                     continue;
                 } else {
@@ -1113,7 +1170,7 @@ fn parse_input_sections(
                 finish_section(section, sections, indexes, held, limit, label, line_no, req)?;
             }
             if sf.is_empty() {
-                let e = Error::at(2, label, line_no, "empty SF path");
+                let e = policy::at(policy::Kind::Path, label, line_no, "empty SF path");
                 if can_recover(req, &e) {
                     continue;
                 } else {
@@ -1123,7 +1180,7 @@ fn parse_input_sections(
             let rewritten = match crate::path::rewrite_path(&req.resources, sf) {
                 Ok(p) => p,
                 Err(e) => {
-                    let e = Error::at(e.code, label, line_no, e.message);
+                    let e = policy::path_error(e, label, line_no);
                     if can_recover(req, &e) {
                         continue;
                     } else {
@@ -1147,7 +1204,12 @@ fn parse_input_sections(
             continue;
         }
         let Some(section) = current.as_mut() else {
-            let e = Error::at(2, label, line_no, "record outside an SF section");
+            let e = policy::at(
+                policy::Kind::Format,
+                label,
+                line_no,
+                "record outside an SF section",
+            );
             if can_recover(req, &e) {
                 continue;
             } else {
@@ -1196,7 +1258,12 @@ fn parse_input_sections(
         }
         if let Some(x) = s.strip_prefix("VER:") {
             if section.version.as_deref().is_some_and(|v| v != x) {
-                let e = Error::at(2, label, line_no, "conflicting source versions");
+                let e = policy::at(
+                    policy::Kind::Version,
+                    label,
+                    line_no,
+                    "conflicting source versions",
+                );
                 if can_recover(req, &e) {
                     continue;
                 } else {
@@ -1245,7 +1312,12 @@ fn parse_input_sections(
                 }
             };
             let Some((start, end)) = legacy_decls.get(&name).copied() else {
-                let e = Error::at(2, label, line_no, "FNDA references undeclared function");
+                let e = policy::at(
+                    policy::Kind::Mismatch,
+                    label,
+                    line_no,
+                    "FNDA references undeclared function",
+                );
                 if can_recover(req, &e) {
                     continue;
                 } else {
@@ -1266,8 +1338,8 @@ fn parse_input_sections(
                     None => None,
                 };
                 if f.next().is_some() || modern_decls.contains_key(&idx) {
-                    return Err(Error::at(
-                        2,
+                    return Err(policy::at(
+                        policy::Kind::Format,
                         label,
                         line_no,
                         "invalid or duplicate FNL index",
@@ -1285,12 +1357,16 @@ fn parse_input_sections(
                 let mut f = x.splitn(3, ',');
                 let idx = num(f.next(), label, line_no)?;
                 let hits = policy::function_count(req, f.next().unwrap_or(""), label, line_no)?;
-                let name = f
-                    .next()
-                    .filter(|x| !x.is_empty())
-                    .ok_or_else(|| Error::at(2, label, line_no, "malformed FNA record"))?;
+                let name = f.next().filter(|x| !x.is_empty()).ok_or_else(|| {
+                    policy::at(policy::Kind::Format, label, line_no, "malformed FNA record")
+                })?;
                 let (start, end) = modern_decls.get(&idx).copied().ok_or_else(|| {
-                    Error::at(2, label, line_no, "FNA references unknown function index")
+                    policy::at(
+                        policy::Kind::Mismatch,
+                        label,
+                        line_no,
+                        "FNA references unknown function index",
+                    )
                 })?;
                 section.add_function(name.to_owned(), start, end, hits, label, line_no)
             })();
@@ -1321,8 +1397,8 @@ fn parse_input_sections(
         {
             continue;
         }
-        let e = Error::at(
-            2,
+        let e = policy::at(
+            policy::Kind::Format,
             label,
             line_no,
             format!(
@@ -1379,12 +1455,17 @@ fn finish_section(
                 .map(|b| u64::from(b.hits.is_some_and(|n| n > 0)))
                 .try_fold(0u64, |a, b| a.checked_add(b))
                 .ok_or_else(|| {
-                    Error::at(2, label, branch_line, "branch-derived DA count overflow")
+                    policy::at(
+                        policy::Kind::Count,
+                        label,
+                        branch_line,
+                        "branch-derived DA count overflow",
+                    )
                 })?;
             if let Some((line_hits, _)) = s.lines.get(&branch_line) {
                 if req.check_data_consistency && (*line_hits > 0) != (hits > 0) {
-                    let e = Error::at(
-                        2,
+                    let e = policy::at(
+                        policy::Kind::Inconsistent,
                         label,
                         branch_line,
                         "inconsistent branch and line hit status",
@@ -1394,8 +1475,8 @@ fn finish_section(
                     }
                 }
             } else {
-                let e = Error::at(
-                    2,
+                let e = policy::at(
+                    policy::Kind::Inconsistent,
                     label,
                     branch_line,
                     "inconsistent branch coverage without line coverage data",
@@ -1429,7 +1510,12 @@ fn finish_section(
         for old in sections.iter().filter(|x| x.source == s.source) {
             if let Some(v) = &old.version {
                 if s.version.as_ref().is_some_and(|n| n != v) {
-                    let e = Error::at(2, label, line, "conflicting source versions");
+                    let e = policy::at(
+                        policy::Kind::Version,
+                        label,
+                        line,
+                        "conflicting source versions",
+                    );
                     if !can_recover(req, &e) {
                         return Err(e);
                     }
@@ -1445,8 +1531,8 @@ fn finish_section(
                 if old.functions.get(name).is_some_and(|existing| {
                     existing.line != function.line || existing.end_line != function.end_line
                 }) {
-                    let e = Error::at(
-                        2,
+                    let e = policy::at(
+                        policy::Kind::Inconsistent,
                         label,
                         line,
                         format!("inconsistent function declaration for '{name}'"),
@@ -1463,8 +1549,8 @@ fn finish_section(
                             .get(key)
                             .is_some_and(|prior| prior.expr != item.expr)
                         {
-                            let e = Error::at(
-                                2,
+                            let e = policy::at(
+                                policy::Kind::Inconsistent,
                                 label,
                                 line,
                                 "inconsistent MC/DC expression across testcases",

@@ -20,6 +20,9 @@ TIMEOUT = 240
 def expected_records(spec: dict):
     """Yield canonical record lines independently from the input writer."""
     shape = spec["shape"]
+    if shape == "checksums":
+        yield f"DA:1,{spec['hits']},{spec['checksum']}\n"
+        return
     if shape in ("functions", "legacy"):
         for i in range(spec["functions"]):
             yield f"FNL:{i},{i + 1},{i + 1}\n"
@@ -48,6 +51,7 @@ def verify_output(path: Path, spec: dict) -> None:
     records = iter(expected_records(spec))
     got_summary: dict[str, int] = {}
     seen_end = False
+    version_seen = False
     with path.open("rt", encoding="utf-8", errors="strict") as stream:
         for raw in stream:
             line = raw.rstrip("\n")
@@ -65,6 +69,10 @@ def verify_output(path: Path, spec: dict) -> None:
                 source_seen = True
             elif key == "TN":
                 continue
+            elif key == "VER":
+                if version_seen or value != spec.get("version"):
+                    raise AssertionError(f"unexpected source version {value!r}")
+                version_seen = True
             elif key in ("LF", "LH", "FNF", "FNH", "BRF", "BRH", "MCF", "MCH"):
                 if key in got_summary:
                     raise AssertionError(f"duplicate summary {key}")
@@ -80,6 +88,8 @@ def verify_output(path: Path, spec: dict) -> None:
                 raise AssertionError(f"unexpected output family {key!r}")
     if not source_seen or not seen_end:
         raise AssertionError("output missing SF or end_of_record")
+    if bool(spec.get("version")) != version_seen:
+        raise AssertionError("source version missing")
     extra = next(records, None)
     if extra is not None:
         raise AssertionError(f"truncated output; next expected record {extra[:100]!r}")
@@ -156,6 +166,11 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
             lines = size
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
+        elif shape == "checksums":
+            out.write("VER:bounded-rust-v1\n")
+            for _ in range(size):
+                out.write("DA:1,1,XUFAKrxLKna5cZ2REBfFkg\n")
+            lines, hits = 1, size
         elif shape == "functions":
             functions = size
             for i in range(functions):
@@ -190,7 +205,7 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                 out.write(f"MCDC:1,{group},t,{hits},{i},condition_{i:08d}\n")
                 out.write(f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n")
             lines = 1
-        if shape != "lines":
+        if shape not in ("lines", "checksums"):
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
         out.write("end_of_record\n")
@@ -201,7 +216,9 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     return {"source": str(source), "shape": shape, "hits": hits, "lines": lines,
             "functions": functions, "aliases": aliases,
             "mcdc_conditions": conditions, "branch_points": branches,
-            "function_count": functions or int(bool(aliases)), "bytes": byte_size}
+            "function_count": functions or int(bool(aliases)), "bytes": byte_size,
+            **({"checksum": "XUFAKrxLKna5cZ2REBfFkg", "version": "bounded-rust-v1"}
+               if shape == "checksums" else {})}
 
 
 class TempMeter:
@@ -248,12 +265,14 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
                "-" if spec.get("stdin") else str(root / f"{name}.info"), "-o", str(output)]
-    if spec["shape"] in ("lines", "mcdc", "branches"):
+    if spec["shape"] in ("lines", "mcdc", "branches", "checksums"):
         command.append("--no-function-coverage")
     if spec["shape"] == "branches":
         command.append("--branch-coverage")
     if spec["shape"] == "mcdc":
         command.append("--mcdc-coverage")
+    if spec["shape"] == "checksums":
+        command.append("--checksum")
     started = time.monotonic()
     meter = TempMeter(tempdir)
     status, timed_out, rss, rss_note = None, False, None, "not measured"
@@ -318,6 +337,7 @@ def main() -> int:
     ap.add_argument("--binary", required=True, type=Path)
     ap.add_argument("--workdir", required=True, type=Path)
     ap.add_argument("--timeout", type=int, default=TIMEOUT)
+    ap.add_argument("--case", action="append", help="run only the named case (repeatable)")
     ap.add_argument("--target-bytes", type=int, default=28 * 1024 * 1024,
                     help="approximate payload bytes per case (minimum is 24 MiB)")
     args = ap.parse_args()
@@ -336,27 +356,36 @@ def main() -> int:
              ("legacy-functions", "legacy", args.target_bytes // 50),
              ("alias-group", "aliases", args.target_bytes // 21),
              ("mcdc-group", "mcdc", args.target_bytes // 70),
-             ("branch-block", "branches", args.target_bytes // 28))
+             ("branch-block", "branches", args.target_bytes // 28),
+             ("checksum-group", "checksums", args.target_bytes // 28))
+    valid_cases = {name for name, _, _ in cases} | {"lines-stdin"}
+    if args.case and set(args.case) - valid_cases:
+        ap.error("unknown case: " + ", ".join(sorted(set(args.case) - valid_cases)))
     results, failures = [], []
     stdin_spec = None
     for name, shape, size in cases:
-        source = root / f"{name}.c"; source.write_text("int x;\n")
+        if args.case and name not in args.case and not (name == "lines" and "lines-stdin" in args.case):
+            continue
+        source = root / f"{name}.c"; source.write_text("hello\n" if shape == "checksums" else "int x;\n")
         spec = write_case(root / f"{name}.info", source, shape, size)
         if name == "lines":
             stdin_spec = spec.copy()
+            if args.case and name not in args.case:
+                continue
         row = run_case(binary, root, config, tempdir, name, spec, args.timeout)
         results.append(row)
         if not row.get("output_verified"):
             failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
             print(f"FAIL {name}: {row.get('failure')}", file=sys.stderr)
     # Reuse the DA fixture through stdin without allocating its bytes in Python.
-    assert stdin_spec is not None
-    stdin_spec.update(stdin=True, input_name="lines.info")
-    row = run_case(binary, root, config, tempdir, "lines-stdin", stdin_spec, args.timeout)
-    results.append(row)
-    if not row.get("output_verified"):
-        failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
-        print(f"FAIL lines-stdin: {row.get('failure')}", file=sys.stderr)
+    if not args.case or "lines-stdin" in args.case:
+        assert stdin_spec is not None
+        stdin_spec.update(stdin=True, input_name="lines.info")
+        row = run_case(binary, root, config, tempdir, "lines-stdin", stdin_spec, args.timeout)
+        results.append(row)
+        if not row.get("output_verified"):
+            failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
+            print(f"FAIL lines-stdin: {row.get('failure')}", file=sys.stderr)
     report = {"binary": str(binary), "byte_budget": BYTE_BUDGET, "minimum_input_bytes": MIN_INPUT_BYTES,
               "cases": results, "failures": failures}
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")

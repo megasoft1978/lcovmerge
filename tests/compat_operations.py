@@ -74,6 +74,17 @@ def main():
               f"stdin diagnostics lost input identity: {invalid_stdin.stderr!r}")
         check(dest_stdin.read_bytes() == b"keep-me" and not list(tmpdir.iterdir()),
               "failed stdin merge changed destination or retained staging files")
+        # Diagnostic words in filenames must not alter the recovery category.
+        misleading = root / "negative-checksum-path.info"
+        misleading.write_text("TN:a\nSF:x.c\nDA:1,0\nBRDA:1,7,one,-1\nBRDA:1,7,two,0\nend_of_record\n")
+        recovered = run(prefix + ["--branch-coverage", "--no-function-coverage",
+                                  "--ignore-errors", "negative", "-a", str(misleading)])
+        check(recovered.returncode == 0 and b"BRDA:1,0,one,0\nBRDA:1,0,two,0\n" in recovered.stdout,
+              f"filename changed negative recovery or branch positions: {recovered.stderr!r}")
+        misleading.write_text("TN:a\nSF:x.c\nDA:1,1\nFNL:0,1,1\nFNA:0,0,checksum/path/negative\nend_of_record\n")
+        recovered = run(prefix + ["--ignore-errors", "inconsistent", "-a", str(misleading)])
+        check(recovered.returncode == 0 and b"FNA:0,1,checksum/path/negative\n" in recovered.stdout,
+              f"function name changed inconsistency recovery: {recovered.stderr!r}")
         # Duplicate input and forgetting testcase identities.
         r = run(prefix + ["-a", str(a), "-a", str(a)])
         check(r.returncode == 0 and r.stdout.count(b"end_of_record") == 1, "duplicate input aggregation failed")

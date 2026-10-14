@@ -26,7 +26,12 @@ pub(super) fn parse_fn(
             None,
             format!("{first_name},{rest}"),
         )),
-        _ => Err(Error::at(2, file, line, "malformed FN record")),
+        _ => Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed FN record",
+        )),
     }
 }
 
@@ -39,17 +44,37 @@ pub(super) fn parse_branch(
 ) -> Result<(), Error> {
     let mut f = payload.splitn(4, ',');
     let ln = num(f.next(), file, line)?;
-    let block_field = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
-    let expr_first = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
-    let tail = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
+    let block_field = f.next().ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed BRDA record",
+        )
+    })?;
+    let expr_first = f.next().ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed BRDA record",
+        )
+    })?;
+    let tail = f.next().ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed BRDA record",
+        )
+    })?;
     if ln == 0 {
-        return Err(Error::at(2, file, line, "branch line must be positive"));
+        return Err(super::policy::at(
+            super::policy::Kind::Branch,
+            file,
+            line,
+            "branch line must be positive",
+        ));
     }
     let kind = block_field
         .chars()
@@ -65,12 +90,22 @@ pub(super) fn parse_branch(
     let rest = rest.strip_prefix('U').unwrap_or(rest);
     let block = num(Some(rest), file, line)?;
     let combined = format!("{expr_first},{tail}");
-    let (expr, count) = combined
-        .rsplit_once(',')
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA count"))?;
+    let (expr, count) = combined.rsplit_once(',').ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed BRDA count",
+        )
+    })?;
     let expr = expr.to_owned();
     if expr.is_empty() {
-        return Err(Error::at(2, file, line, "empty BRDA expression"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "empty BRDA expression",
+        ));
     }
     let hits = if count == "-" {
         None
@@ -82,11 +117,17 @@ pub(super) fn parse_branch(
         })
     };
     let blocks = s.branches.entry(ln).or_default();
-    let bi = usize::try_from(block)
-        .map_err(|_| Error::at(2, file, line, "branch block index overflow"))?;
+    let bi = usize::try_from(block).map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Count,
+            file,
+            line,
+            "branch block index overflow",
+        )
+    })?;
     if bi > 65535 {
-        return Err(Error::at(
-            2,
+        return Err(super::policy::at(
+            super::policy::Kind::Branch,
             file,
             line,
             "branch block index exceeds supported range",
@@ -113,25 +154,39 @@ pub(super) fn parse_mcdc(
 ) -> Result<(), Error> {
     let mut f = payload.splitn(6, ',');
     let ln = num(f.next(), file, line)?;
-    let group = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC record"))?;
+    let group = f.next().ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed MCDC record",
+        )
+    })?;
     let sense = f.next().unwrap_or("");
     let count = parse_count(f.next().unwrap_or(""), file, line)?;
     let index = num(f.next(), file, line)?;
-    let expr = f
-        .next()
-        .filter(|x| !x.is_empty())
-        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC expression"))?;
+    let expr = f.next().filter(|x| !x.is_empty()).ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed MCDC expression",
+        )
+    })?;
     if ln == 0 {
-        return Err(Error::at(2, file, line, "MC/DC line must be positive"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "MC/DC line must be positive",
+        ));
     }
     let unreachable = group.starts_with('U');
     let g = group.strip_prefix('U').unwrap_or(group);
     let group = num(Some(g), file, line)?;
     if group == 0 {
-        return Err(Error::at(
-            2,
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
             file,
             line,
             "MC/DC group size must be positive",
@@ -141,7 +196,14 @@ pub(super) fn parse_mcdc(
         .chars()
         .next()
         .filter(|c| *c == 't' || *c == 'f')
-        .ok_or_else(|| Error::at(2, file, line, "invalid MC/DC sense"))?;
+        .ok_or_else(|| {
+            super::policy::at(
+                super::policy::Kind::Format,
+                file,
+                line,
+                "invalid MC/DC sense",
+            )
+        })?;
     let key = (group, index, sense);
     let item = record::Mcdc {
         hits: count,
@@ -150,7 +212,12 @@ pub(super) fn parse_mcdc(
     };
     if let Some(old) = s.mcdc.entry(ln).or_default().get_mut(&key) {
         if old.expr != item.expr {
-            return Err(Error::at(2, file, line, "inconsistent MC/DC expression"));
+            return Err(super::policy::at(
+                super::policy::Kind::Inconsistent,
+                file,
+                line,
+                "inconsistent MC/DC expression",
+            ));
         }
         old.hits = old.hits.saturating_add(item.hits).min(i64::MAX as u64);
         old.unreachable |= item.unreachable;
@@ -189,8 +256,8 @@ pub(super) fn validate_or_generate_checksum(
         && (req.checksum || req.resources.strict_checksum)
         && (existing.is_none() || existing != sum)
     {
-        let e = Error::at(
-            2,
+        let e = super::policy::at(
+            super::policy::Kind::Version,
             file,
             line,
             format!(
@@ -209,6 +276,77 @@ pub(super) fn validate_or_generate_checksum(
     }
     Ok(())
 }
+/// Private error tags are normalized to the public data-error status at run's
+/// boundary. Recovery never inspects paths, function names, or rendered text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i32)]
+pub(super) enum Kind {
+    Path = -101,
+    Negative = -102,
+    Format = -103,
+    Count = -104,
+    Version = -105,
+    Source = -106,
+    Inconsistent = -107,
+    Branch = -108,
+    Mismatch = -109,
+    Empty = -110,
+}
+impl Kind {
+    fn from_code(code: i32) -> Option<Self> {
+        Some(match code {
+            -101 => Self::Path,
+            -102 => Self::Negative,
+            -103 => Self::Format,
+            -104 => Self::Count,
+            -105 => Self::Version,
+            -106 => Self::Source,
+            -107 => Self::Inconsistent,
+            -108 => Self::Branch,
+            -109 => Self::Mismatch,
+            -110 => Self::Empty,
+            _ => return None,
+        })
+    }
+    fn category(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::Negative => "negative",
+            Self::Format => "format",
+            Self::Count => "count",
+            Self::Version => "version",
+            Self::Source => "source",
+            Self::Inconsistent => "inconsistent",
+            Self::Branch => "branch",
+            Self::Mismatch => "mismatch",
+            Self::Empty => "empty",
+        }
+    }
+}
+pub(super) fn new(kind: Kind, message: impl Into<String>) -> Error {
+    Error::new(kind as i32, message)
+}
+pub(super) fn at(
+    kind: Kind,
+    file: impl AsRef<Path>,
+    line: u64,
+    message: impl Into<String>,
+) -> Error {
+    Error::at(kind as i32, file, line, message)
+}
+pub(super) fn public_error(mut error: Error) -> Error {
+    if Kind::from_code(error.code).is_some() {
+        error.code = 2;
+    }
+    error
+}
+pub(super) fn path_error(error: Error, file: &str, line: u64) -> Error {
+    if error.code == 2 {
+        at(Kind::Path, file, line, error.message)
+    } else {
+        Error::at(error.code, file, line, error.message)
+    }
+}
 pub(super) fn can_recover(req: &Request, error: &Error) -> bool {
     if error.code == 3 {
         return false;
@@ -216,37 +354,29 @@ pub(super) fn can_recover(req: &Request, error: &Error) -> bool {
     if req.keep_going {
         return true;
     }
-    let m = error.message.to_ascii_lowercase();
-    let category = if m.contains("path") {
-        "path"
-    } else if m.contains("negative") {
-        "negative"
-    } else if m.contains("non-integer") {
-        "format"
-    } else if m.contains("overflow") {
-        "count"
-    } else if m.contains("checksum") || m.contains("source version") {
-        "version"
-    } else if m.contains("read source") || m.contains("source read") || m.contains("source changed")
-    {
-        "source"
-    } else if m.contains("inconsistent") || m.contains("conflicting") {
-        "inconsistent"
-    } else if m.contains("branch") {
-        "branch"
-    } else {
-        "format"
+    let Some(kind) = Kind::from_code(error.code) else {
+        return false;
     };
     req.ignore_errors
         .iter()
-        .any(|x| x.eq_ignore_ascii_case(category))
+        .any(|x| x.eq_ignore_ascii_case(kind.category()))
 }
 pub(super) fn parse_named_count(s: &str, file: &str, line: u64) -> Result<(u64, String), Error> {
-    let (n, name) = s
-        .split_once(',')
-        .ok_or_else(|| Error::at(2, file, line, "malformed FNDA record"))?;
+    let (n, name) = s.split_once(',').ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "malformed FNDA record",
+        )
+    })?;
     if name.is_empty() {
-        return Err(Error::at(2, file, line, "empty function name"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "empty function name",
+        ));
     }
     Ok((parse_count(n, file, line)?, name.to_owned()))
 }
@@ -262,10 +392,21 @@ pub(super) fn function_count(req: &Request, s: &str, file: &str, line: u64) -> R
 pub(super) fn num(s: Option<&str>, file: &str, line: u64) -> Result<u64, Error> {
     let s = s.unwrap_or("");
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(Error::at(2, file, line, "invalid numeric LCOV field"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "invalid numeric LCOV field",
+        ));
     }
-    s.parse()
-        .map_err(|_| Error::at(2, file, line, "numeric LCOV field overflow"))
+    s.parse().map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Count,
+            file,
+            line,
+            "numeric LCOV field overflow",
+        )
+    })
 }
 
 /// LCOV derives missing end lines from the source-wide line-coverage map.
@@ -322,7 +463,7 @@ pub(super) fn derive_function_ends(sections: &mut [Section], req: &Request) -> R
                 if let Some(end) = end {
                     groups.insert(start, Some(end));
                 } else {
-                    let error = Error::new(2, format!("inconsistent line coverage for function at {source}:{start}; cannot derive end line"));
+                    let error = super::policy::new(super::policy::Kind::Inconsistent, format!("inconsistent line coverage for function at {source}:{start}; cannot derive end line"));
                     if !can_recover(req, &error) {
                         return Err(error);
                     }

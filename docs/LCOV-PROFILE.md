@@ -89,7 +89,9 @@ DA/function inputs, branch sections containing DA, and MC/DC sections containing
 DA use external sort runs. Branch blocks use streamed, exact signature ranking
 and bounded joins; sparse block IDs do not allocate sparse arrays. A sole stdin input is staged to disk with fixed-size buffers and then uses the
 same eligible executors as a regular file. Source versions use bounded producer-order
-reduction and propagate across retained testcases. Branch sections without DA, checksums,
+reduction and propagate across retained testcases. Eligible checksum inputs use a
+source-line sort and disk-backed source index; even one checksum group larger
+than memory is streamed. Branch sections without DA,
 mixed stdin/file inputs, and MC/DC-only sections still use the
 collector; large working sets can exceed its record budget. Completing those
 bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be

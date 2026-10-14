@@ -42,16 +42,32 @@ pub struct Section {
 
 fn number(s: &str, file: &str, line: u64) -> Result<u64, Error> {
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(Error::at(2, file, line, "invalid numeric LCOV field"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "invalid numeric LCOV field",
+        ));
     }
-    s.parse()
-        .map_err(|_| Error::at(2, file, line, "numeric LCOV field overflow"))
+    s.parse().map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Count,
+            file,
+            line,
+            "numeric LCOV field overflow",
+        )
+    })
 }
 
 pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> {
     const MAX_COUNT: u64 = i64::MAX as u64;
     if s.is_empty() {
-        return Err(Error::at(2, file, line, "non-integer coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "non-integer coverage count",
+        ));
     }
     let digits = s.strip_prefix('+').unwrap_or(s);
     if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
@@ -62,14 +78,29 @@ pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> 
                 .min(MAX_COUNT)
         }));
     }
-    let value = s
-        .parse::<f64>()
-        .map_err(|_| Error::at(2, file, line, "non-integer coverage count"))?;
+    let value = s.parse::<f64>().map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "non-integer coverage count",
+        )
+    })?;
     if !value.is_finite() {
-        return Err(Error::at(2, file, line, "non-integer coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            file,
+            line,
+            "non-integer coverage count",
+        ));
     }
     if value < 0.0 {
-        return Err(Error::at(2, file, line, "negative coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Negative,
+            file,
+            line,
+            "negative coverage count",
+        ));
     }
     if value >= MAX_COUNT as f64 {
         return Ok(MAX_COUNT);
@@ -91,7 +122,12 @@ impl Section {
         let mut fields = payload.split(',');
         let n = number(fields.next().unwrap_or(""), file, line)?;
         if n == 0 {
-            return Err(Error::at(2, file, line, "DA line must be positive"));
+            return Err(super::policy::at(
+                super::policy::Kind::Format,
+                file,
+                line,
+                "DA line must be positive",
+            ));
         }
         let count = parse_count(fields.next().unwrap_or(""), file, line)?;
         let checksum = fields.next().map(str::to_owned);
@@ -100,14 +136,19 @@ impl Section {
                 .as_ref()
                 .is_some_and(|s| s.is_empty() || s.chars().any(char::is_whitespace))
         {
-            return Err(Error::at(2, file, line, "malformed DA record"));
+            return Err(super::policy::at(
+                super::policy::Kind::Format,
+                file,
+                line,
+                "malformed DA record",
+            ));
         }
         let checksum = if checksums { checksum } else { None };
         let entry = self.lines.entry(n).or_insert((0, None));
         if let Some(c) = checksum.as_ref() {
             if entry.1.as_ref().is_some_and(|old| old != c) {
-                return Err(Error::at(
-                    2,
+                return Err(super::policy::at(
+                    super::policy::Kind::Version,
                     file,
                     line,
                     "conflicting checksums for source line",
@@ -131,7 +172,12 @@ impl Section {
         line: u64,
     ) -> Result<(), Error> {
         if start == 0 || end == Some(0) {
-            return Err(Error::at(2, file, line, "function line must be positive"));
+            return Err(super::policy::at(
+                super::policy::Kind::Format,
+                file,
+                line,
+                "function line must be positive",
+            ));
         }
         let f = self.functions.entry(name).or_insert(Function {
             line: start,
@@ -139,8 +185,8 @@ impl Section {
             hits: 0,
         });
         if f.line != start || f.end_line != end {
-            return Err(Error::at(
-                2,
+            return Err(super::policy::at(
+                super::policy::Kind::Inconsistent,
                 file,
                 line,
                 "inconsistent function declaration",

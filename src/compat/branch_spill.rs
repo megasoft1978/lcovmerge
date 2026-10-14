@@ -47,7 +47,12 @@ impl Reducer {
     ) -> Result<Option<(u64, bool)>, Error> {
         check_cancelled()?;
         if source.as_bytes().contains(&0) || tc.as_bytes().contains(&0) {
-            return Err(Error::at(2, label, line_no, "NUL in BRDA identity"));
+            return Err(super::policy::at(
+                super::policy::Kind::Format,
+                label,
+                line_no,
+                "NUL in BRDA identity",
+            ));
         }
         let parsed = match parse(payload, label, line_no, req) {
             Ok(parsed) => parsed,
@@ -356,16 +361,33 @@ struct Tagged {
 fn parse(payload: &str, label: &str, line_no: u64, req: &Request) -> Result<Parsed, Error> {
     let mut fields = payload.splitn(4, ',');
     let line = number(fields.next().unwrap_or(""), label, line_no)?;
-    let block_field = fields
-        .next()
-        .ok_or_else(|| Error::at(2, label, line_no, "malformed BRDA record"))?;
+    let block_field = fields.next().ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line_no,
+            "malformed BRDA record",
+        )
+    })?;
     let expression_count = fields
         .next()
         .zip(fields.next())
         .map(|(a, b)| format!("{a},{b}"))
-        .ok_or_else(|| Error::at(2, label, line_no, "malformed BRDA record"))?;
+        .ok_or_else(|| {
+            super::policy::at(
+                super::policy::Kind::Format,
+                label,
+                line_no,
+                "malformed BRDA record",
+            )
+        })?;
     if line == 0 {
-        return Err(Error::at(2, label, line_no, "branch line must be positive"));
+        return Err(super::policy::at(
+            super::policy::Kind::Branch,
+            label,
+            line_no,
+            "branch line must be positive",
+        ));
     }
     let kind = match block_field.as_bytes().first() {
         Some(b'e') => 'e',
@@ -380,11 +402,21 @@ fn parse(payload: &str, label: &str, line_no: u64, req: &Request) -> Result<Pars
     let unreachable = rest.starts_with('U');
     let block_text = rest.strip_prefix('U').unwrap_or(rest);
     let block = number(block_text, label, line_no)?;
-    let (expression, count) = expression_count
-        .rsplit_once(',')
-        .ok_or_else(|| Error::at(2, label, line_no, "malformed BRDA count"))?;
+    let (expression, count) = expression_count.rsplit_once(',').ok_or_else(|| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line_no,
+            "malformed BRDA count",
+        )
+    })?;
     if expression.is_empty() {
-        return Err(Error::at(2, label, line_no, "empty BRDA expression"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line_no,
+            "empty BRDA expression",
+        ));
     }
     let hits = if count == "-" {
         None
@@ -414,14 +446,30 @@ fn parse(payload: &str, label: &str, line_no: u64, req: &Request) -> Result<Pars
 
 fn number(s: &str, label: &str, line: u64) -> Result<u64, Error> {
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(Error::at(2, label, line, "invalid numeric LCOV field"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line,
+            "invalid numeric LCOV field",
+        ));
     }
-    s.parse()
-        .map_err(|_| Error::at(2, label, line, "numeric LCOV field overflow"))
+    s.parse().map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Count,
+            label,
+            line,
+            "numeric LCOV field overflow",
+        )
+    })
 }
 fn count_value(s: &str, label: &str, line: u64) -> Result<u64, Error> {
     if s.is_empty() {
-        return Err(Error::at(2, label, line, "non-integer coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line,
+            "non-integer coverage count",
+        ));
     }
     let digits = s.strip_prefix('+').unwrap_or(s);
     if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
@@ -431,14 +479,29 @@ fn count_value(s: &str, label: &str, line: u64) -> Result<u64, Error> {
                 .min(MAX_HITS)
         }));
     }
-    let value = s
-        .parse::<f64>()
-        .map_err(|_| Error::at(2, label, line, "non-integer coverage count"))?;
+    let value = s.parse::<f64>().map_err(|_| {
+        super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line,
+            "non-integer coverage count",
+        )
+    })?;
     if !value.is_finite() {
-        return Err(Error::at(2, label, line, "non-integer coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Format,
+            label,
+            line,
+            "non-integer coverage count",
+        ));
     }
     if value < 0.0 {
-        return Err(Error::at(2, label, line, "negative coverage count"));
+        return Err(super::policy::at(
+            super::policy::Kind::Negative,
+            label,
+            line,
+            "negative coverage count",
+        ));
     }
     Ok(if value >= MAX_HITS as f64 {
         MAX_HITS

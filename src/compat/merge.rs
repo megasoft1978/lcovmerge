@@ -33,8 +33,8 @@ pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Err
         e.0 = checked_add(e.0, count, file, "DA")?;
         if let Some(c) = checksum {
             if e.1.as_ref().is_some_and(|x| x != &c) {
-                return Err(Error::new(
-                    2,
+                return Err(super::policy::new(
+                    super::policy::Kind::Version,
                     format!("{file}: checksum mismatch at {}:{}", dst.source, line),
                 ));
             }
@@ -51,8 +51,8 @@ pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Err
                 hits: 0,
             });
         if e.line != f.line || e.end_line != f.end_line {
-            return Err(Error::new(
-                2,
+            return Err(super::policy::new(
+                super::policy::Kind::Inconsistent,
                 format!("{file}: inconsistent function declaration for '{name}'"),
             ));
         }
@@ -86,8 +86,8 @@ pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Err
         for (key, item) in items {
             if let Some(old) = dest.get_mut(&key) {
                 if old.expr != item.expr {
-                    return Err(Error::new(
-                        2,
+                    return Err(super::policy::new(
+                        super::policy::Kind::Inconsistent,
                         format!(
                             "{file}: inconsistent MC/DC expression at {}:{}",
                             dst.source, line
@@ -103,8 +103,8 @@ pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Err
     }
     if let (Some(a), Some(b)) = (&dst.version, &src.version) {
         if a != b {
-            return Err(Error::new(
-                2,
+            return Err(super::policy::new(
+                super::policy::Kind::Version,
                 format!("{file}: conflicting source versions"),
             ));
         }

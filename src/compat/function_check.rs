@@ -178,7 +178,12 @@ impl Checker {
                 if !self.global && g.end.is_some_and(|old| old != end) {
                     recover(
                         req,
-                        Error::at(2, &label, line_no, "inconsistent function end lines"),
+                        super::policy::at(
+                            super::policy::Kind::Inconsistent,
+                            &label,
+                            line_no,
+                            "inconsistent function end lines",
+                        ),
                     )?;
                 }
                 g.end = Some(g.end.map_or(end, |old| old.max(end)));
@@ -270,8 +275,8 @@ impl Checker {
             if req.check_data_consistency && function_hit != line_hit.is_some() {
                 recover(
                     req,
-                    Error::at(
-                        2,
+                    super::policy::at(
+                        super::policy::Kind::Inconsistent,
                         &label,
                         line_no,
                         format!("inconsistent function and line coverage for '{name}'"),
@@ -373,8 +378,8 @@ fn resolve_group(
         if g.end.is_none() && maximum.is_some() {
             recover(
                 req,
-                Error::at(
-                    2,
+                super::policy::at(
+                    super::policy::Kind::Inconsistent,
                     &g.label,
                     g.line_no,
                     "inconsistent line coverage: cannot derive function end",
@@ -438,8 +443,8 @@ fn emit_group(
     if end < g.start {
         return recover(
             req,
-            Error::at(
-                2,
+            super::policy::at(
+                super::policy::Kind::Inconsistent,
                 &g.label,
                 g.line_no,
                 "inconsistent function end before start",
@@ -449,8 +454,8 @@ fn emit_group(
     if req.check_data_consistency && maximum.is_none_or(|last| last < g.start) {
         return recover(
             req,
-            Error::at(
-                2,
+            super::policy::at(
+                super::policy::Kind::Inconsistent,
                 &g.label,
                 g.line_no,
                 "inconsistent file line coverage and function coverage",
