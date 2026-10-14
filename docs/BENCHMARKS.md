@@ -38,7 +38,9 @@ PGO and a recorded seed-42 training set. This is a reconstructed C1 baseline;
 the historical executable was tuned for the original host and is not assumed
 portable to another CPU.
 
-The job checks an idle-runner preflight after compilation. It allows up to 30
+The disposable macOS benchmark VM disables Spotlight indexing before building;
+the setup log is retained. The job checks an idle-runner preflight after
+compilation. It allows up to 30
 preflight attempts for build activity to settle, retaining every diagnostic log;
 the last two CPU samples must both show at least 90% idle before any timing starts.
 It then runs 99 seeded

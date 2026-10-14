@@ -26,14 +26,17 @@ The Homebrew formula installs a macOS binary from the published release archive.
 - [ ] Review all CLI behavior against `man/lcovmerge.1` and `docs/USAGE.md`.
 - [ ] Confirm the documented limits, especially MC/DC, supported job count, path/line sizes, checksum
 behavior, and memory accounting.
-- [ ] Refresh benchmark results only from a recorded run; update `data/benchmarks.json` and regenerate both
-tables with `python3 tools/render_benchmarks.py`.
+- [ ] Refresh benchmark results only from a recorded run. Preserve historical `data/benchmarks.json`;
+  native Rust and LCOV-profile measurements use separate JSON reports with their exact build provenance.
+  Keep documentation tables consistent with their source reports; `python3 tools/render_benchmarks.py`
+  regenerates the historical tables without changing the underlying measurements.
 - [ ] Review benchmark caveats and ensure no values outside the JSON were copied into documentation without a
 `<!-- BENCH -->` marker.
 - [ ] Run parser tests, sanitizer/fuzz checks, and the documented regression suite in the code repository.
 - [ ] Verify Rust runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
   confirm the release-target size budget job and the Windows release-binary job pass on the final commit.
-- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the published v1.1.0 download and checks byte-for-byte output against the CLI.
+- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the currently
+  published download and checks byte-for-byte output against the CLI. Rerun against the new version after publication.
 - [ ] Run `actionlint` and confirm the action references remain SHA-pinned and match `docs/validation/action-pins.txt`.
 - [ ] Verify Linux binaries are static musl builds and macOS/Windows artifacts match their target
 architecture.

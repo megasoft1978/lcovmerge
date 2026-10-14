@@ -83,6 +83,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Disable Spotlight indexing in the disposable benchmark VM
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/remote-native-setup
+          sudo mdutil -a -i off 2>&1 | tee .cache/remote-native-setup/spotlight.log
+          mdutil -as >> .cache/remote-native-setup/spotlight.log 2>&1
+
       - name: Check out C 1.1.0 baseline source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -122,6 +129,7 @@ jobs:
           path: |
             .cache/remote-native
             .cache/remote-native-download/native-benchmark-bundle.tar.gz
+            .cache/remote-native-setup
             .cache/optimized/build.json
             .cache/optimized/profile.profdata
           if-no-files-found: error
