@@ -41,6 +41,75 @@ fn read_num(b: &[u8], at: &mut usize) -> Result<u64, Error> {
             .map_err(|_| Error::new(3, "corrupt MC/DC frame"))?,
     ))
 }
+#[derive(Clone, Debug)]
+#[allow(dead_code)] // Used by the input-aware staging wrapper.
+pub(super) struct Point {
+    pub line: u64,
+    pub group: u64,
+    pub index: u64,
+    pub sense: u64,
+    pub count: u64,
+    pub unreachable: bool,
+    pub expression: String,
+}
+#[allow(dead_code)]
+pub(super) fn parse_point(
+    payload: &str,
+    label: &str,
+    line_no: u64,
+    request: &Request,
+) -> Result<Option<Point>, Error> {
+    let parsed = (|| {
+        if payload.len() > MAX_LINE {
+            return Err(err(label, line_no, "MC/DC field exceeds 1 MiB"));
+        }
+        let mut f = payload.splitn(6, ',');
+        let line = num(f.next(), label, line_no)?;
+        let g = f
+            .next()
+            .ok_or_else(|| err(label, line_no, "malformed MCDC record"))?;
+        let sense = f
+            .next()
+            .filter(|c| *c == "t" || *c == "f")
+            .and_then(|c| c.chars().next())
+            .ok_or_else(|| err(label, line_no, "invalid MC/DC sense"))?;
+        let raw = f.next().unwrap_or("");
+        let count = match parse_count(raw, label, line_no) {
+            Err(e) if e.message.contains("negative") && can_recover(request, &e) => 0,
+            x => x?,
+        };
+        let index = num(f.next(), label, line_no)?;
+        let expression = f
+            .next()
+            .filter(|x| !x.is_empty())
+            .ok_or_else(|| err(label, line_no, "malformed MC/DC expression"))?;
+        if line == 0 {
+            return Err(err(label, line_no, "MC/DC line must be positive"));
+        }
+        let unreachable = g.starts_with('U');
+        let group = num(Some(g.strip_prefix('U').unwrap_or(g)), label, line_no)?;
+        if group == 0 {
+            return Err(err(label, line_no, "MC/DC group size must be positive"));
+        }
+        if expression.len() > MAX_LINE || expression.as_bytes().contains(&0) {
+            return Err(err(label, line_no, "invalid MC/DC expression"));
+        }
+        Ok(Point {
+            line,
+            group,
+            index,
+            sense: u64::from(sense == 'f'),
+            count,
+            unreachable,
+            expression: expression.to_owned(),
+        })
+    })();
+    match parsed {
+        Ok(p) => Ok(Some(p)),
+        Err(e) if can_recover(request, &e) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
 type ParsedKey<'a> = (&'a [u8], &'a [u8], u64, u64, u64, u64);
 fn split_key(k: &[u8]) -> Result<ParsedKey<'_>, Error> {
     let mut fields = k.splitn(3, |b| *b == 0);
@@ -157,6 +226,38 @@ impl Reducer {
         numeric(&mut ek, if sense == 't' { 0 } else { 1 });
         self.rows.push(key, value)?;
         self.expressions.push(ek, expr.as_bytes().to_vec())
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
+    pub(super) fn push_point(
+        &mut self,
+        source: &str,
+        testcase: &str,
+        point: &Point,
+        label: &str,
+        line_no: u64,
+    ) -> Result<(), Error> {
+        let payload = format!(
+            "{},{},{},{},{},{}",
+            point.line,
+            if point.unreachable {
+                format!("U{}", point.group)
+            } else {
+                point.group.to_string()
+            },
+            if point.sense == 0 { "t" } else { "f" },
+            point.count,
+            point.index,
+            point.expression
+        );
+        self.push(
+            source,
+            testcase,
+            &payload,
+            label,
+            line_no,
+            &Request::default(),
+        )
     }
     pub(super) fn finish(self, request: &Request) -> Result<Sorted, Error> {
         let budget = self.budget;

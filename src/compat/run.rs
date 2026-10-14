@@ -33,6 +33,9 @@ mod function_spill;
 mod input_spool;
 #[path = "line_spill.rs"]
 mod line_spill;
+#[path = "mcdc_input.rs"]
+#[allow(dead_code)] // Runtime integration is owned by the parent task.
+mod mcdc_input;
 #[path = "mcdc_spill.rs"]
 mod mcdc_spill;
 #[path = "merge.rs"]
