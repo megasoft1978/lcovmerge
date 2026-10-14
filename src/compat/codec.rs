@@ -5,15 +5,19 @@ use std::io::{Read, Write};
 const MAGIC: &[u8; 8] = b"LCVCRUN\0";
 const VERSION: u32 = 1;
 pub const MAX_FIELD: usize = 1 << 20;
+pub const MAX_FIELDS: usize = 64;
 
 pub fn write_record(mut out: impl Write, fields: &[&[u8]]) -> Result<(), Error> {
+    if fields.len() > MAX_FIELDS {
+        return Err(Error::new(2, "compatibility run has too many fields"));
+    }
+    if fields.iter().any(|field| field.len() > MAX_FIELD) {
+        return Err(Error::new(2, "compatibility run field exceeds 1 MiB"));
+    }
     out.write_all(MAGIC)
         .and_then(|_| out.write_all(&VERSION.to_le_bytes()))
         .map_err(|e| Error::new(3, format!("compatibility run write failed: {e}")))?;
     for field in fields {
-        if field.len() > MAX_FIELD {
-            return Err(Error::new(2, "compatibility run field exceeds 1 MiB"));
-        }
         out.write_all(&(field.len() as u32).to_le_bytes())
             .and_then(|_| out.write_all(field))
             .map_err(|e| Error::new(3, format!("compatibility run write failed: {e}")))?;
@@ -24,6 +28,9 @@ pub fn write_record(mut out: impl Write, fields: &[&[u8]]) -> Result<(), Error> 
 }
 
 pub fn read_record(mut input: impl Read, field_count: usize) -> Result<Vec<Vec<u8>>, Error> {
+    if field_count > MAX_FIELDS {
+        return Err(Error::new(2, "compatibility run has too many fields"));
+    }
     let mut magic = [0; 8];
     input
         .read_exact(&mut magic)

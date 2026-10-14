@@ -2,11 +2,14 @@ use self::merge::{merge_into, write_sections};
 use self::record::Section;
 use super::Request;
 use crate::common::{check_cancelled, stdin_reader, stdout_writer, Error, MAX_LINE};
+use base64::Engine;
+use flate2::read::MultiGzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::Path;
 
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
@@ -16,55 +19,53 @@ mod merge;
 #[path = "record.rs"]
 mod record;
 
-static TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
 pub fn run(request: Request) -> Result<(), Error> {
     let opt = &request.resources;
     if opt.inputs.is_empty() {
         return Err(Error::new(1, "LCOV profile requires at least one -a input"));
     }
-    if !opt.includes.is_empty()
-        || !opt.excludes.is_empty()
-        || !opt.rebases.is_empty()
-        || opt.prefix_strip.is_some()
-    {
-        return Err(Error::new(
-            1,
-            "LCOV-compatible include/exclude and path rewrite controls are not implemented",
-        ));
-    }
-    if opt.strict_checksum {
-        return Err(Error::new(
-            1,
-            "LCOV source checksum verification is not implemented",
-        ));
-    }
-    if request.checksum {
-        return Err(Error::new(
-            1,
-            "LCOV checksum generation and conflict validation are not implemented",
-        ));
-    }
-    if !request.ignore_errors.is_empty() || request.keep_going {
-        return Err(Error::new(
-            1,
-            "LCOV error recovery and keep-going are not implemented",
-        ));
-    }
-    if request.mcdc_coverage {
-        return Err(Error::new(1, "LCOV MC/DC aggregation is not implemented"));
-    }
-    if is_gzip_path(&opt.output) {
-        return Err(Error::new(
-            1,
-            "gzip output is unsupported: no approved streaming codec dependency",
-        ));
-    }
-    if opt.inputs.iter().any(|p| is_gzip_path(p)) {
-        return Err(Error::new(
-            1,
-            "gzip input is unsupported: no approved streaming codec dependency",
-        ));
+    for category in &request.ignore_errors {
+        if ![
+            "annotate",
+            "branch",
+            "callback",
+            "category",
+            "child",
+            "corrupt",
+            "count",
+            "deprecated",
+            "empty",
+            "excessive",
+            "format",
+            "fork",
+            "gcov",
+            "graph",
+            "inconsistent",
+            "internal",
+            "mismatch",
+            "missing",
+            "negative",
+            "package",
+            "parallel",
+            "parent",
+            "path",
+            "range",
+            "source",
+            "unmapped",
+            "unreachable",
+            "unsupported",
+            "unused",
+            "usage",
+            "utility",
+            "version",
+        ]
+        .contains(&category.to_ascii_lowercase().as_str())
+        {
+            return Err(Error::new(
+                1,
+                format!("unknown argument for --ignore-errors: '{category}'"),
+            ));
+        }
     }
     if opt.inputs.iter().filter(|p| p.as_os_str() == "-").count() > 1 {
         return Err(Error::new(1, "stdin may appear only once in LCOV inputs"));
@@ -83,11 +84,15 @@ pub fn run(request: Request) -> Result<(), Error> {
         let reader: Box<dyn Read> = if path.as_os_str() == "-" {
             stdin_reader().map_err(|e| Error::new(3, format!("cannot read stdin: {e}")))?
         } else {
-            Box::new(
-                File::open(path).map_err(|e| Error::new(3, format!("cannot open {label}: {e}")))?,
-            )
+            let file =
+                File::open(path).map_err(|e| Error::new(3, format!("cannot open {label}: {e}")))?;
+            if is_gzip_path(path) {
+                Box::new(MultiGzDecoder::new(file))
+            } else {
+                Box::new(file)
+            }
         };
-        parse_input(
+        if let Err(e) = parse_input(
             reader,
             &label,
             &request,
@@ -95,41 +100,130 @@ pub fn run(request: Request) -> Result<(), Error> {
             &mut indexes,
             &mut held,
             opt.mem_limit,
-        )?;
+        ) {
+            if request.keep_going && e.code == 2 {
+                continue;
+            }
+            return Err(e);
+        }
     }
+    for s in &mut sections {
+        for blocks in s.branches.values_mut() {
+            blocks.retain(|b| !b.is_empty());
+        }
+    }
+    let mut source_checksums: HashMap<(String, u64), String> = HashMap::new();
+    for s in &sections {
+        for (&ln, (_, sum)) in &s.lines {
+            if let Some(sum) = sum {
+                let key = (s.source.clone(), ln);
+                if source_checksums.get(&key).is_some_and(|old| old != sum) {
+                    let e = Error::new(2, format!("checksum mismatch at {}:{ln}", s.source));
+                    if !can_recover(&request, &e) {
+                        return Err(e);
+                    }
+                    continue;
+                }
+                source_checksums.insert(key, sum.clone());
+            }
+        }
+    }
+    for s in &mut sections {
+        for (&ln, value) in &mut s.lines {
+            if value.1.is_none() {
+                value.1 = source_checksums.get(&(s.source.clone(), ln)).cloned();
+            }
+        }
+    }
+    for i in 0..sections.len() {
+        let source = sections[i].source.clone();
+        let known = sections
+            .iter()
+            .filter(|x| x.source == source)
+            .filter_map(|x| x.version.as_ref())
+            .next()
+            .cloned();
+        if let Some(v) = known {
+            if sections[i].version.as_ref().is_some_and(|x| x != &v) {
+                let e = Error::new(2, format!("conflicting source versions for {source}"));
+                if !can_recover(&request, &e) {
+                    return Err(e);
+                }
+            }
+            sections[i].version = Some(v);
+        }
+    }
+    sections.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then_with(|| a.testcase.cmp(&b.testcase))
+    });
     if opt.output.as_os_str() == "-" || opt.output.as_os_str().is_empty() {
         let stdout =
             stdout_writer().map_err(|e| Error::new(3, format!("cannot write stdout: {e}")))?;
         write_sections(
             BufWriter::new(stdout),
             &sections,
-            request.checksum,
+            request.checksum || opt.strict_checksum,
             opt.function_data,
+            opt.branch_coverage,
+            request.mcdc_coverage,
         )
     } else {
-        let (mut file, temp) = create_stage(&opt.output)?;
-        let result = write_sections(
-            BufWriter::new(&mut file),
-            &sections,
-            request.checksum,
-            opt.function_data,
+        let mut staged = tempfile::NamedTempFile::new_in(
+            opt.output
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new(".")),
         )
+        .map_err(|e| {
+            Error::new(
+                3,
+                format!("cannot stage output near {}: {e}", opt.output.display()),
+            )
+        })?;
+        let result = if is_gzip_path(&opt.output) {
+            let mut encoder = GzEncoder::new(&mut staged, Compression::default());
+            write_sections(
+                BufWriter::new(&mut encoder),
+                &sections,
+                request.checksum || opt.strict_checksum,
+                opt.function_data,
+                opt.branch_coverage,
+                request.mcdc_coverage,
+            )
+            .and_then(|_| {
+                encoder
+                    .finish()
+                    .map(|_| ())
+                    .map_err(|e| Error::new(3, format!("gzip output failed: {e}")))
+            })
+        } else {
+            write_sections(
+                BufWriter::new(&mut staged),
+                &sections,
+                request.checksum || opt.strict_checksum,
+                opt.function_data,
+                opt.branch_coverage,
+                request.mcdc_coverage,
+            )
+        }
         .and_then(|_| {
-            file.sync_all()
+            staged
+                .as_file()
+                .sync_all()
                 .map_err(|e| Error::new(3, format!("cannot sync staged output: {e}")))
         });
         if let Err(e) = result {
-            let _ = fs::remove_file(&temp);
             return Err(e);
         }
-        drop(file);
-        if let Err(e) = fs::rename(&temp, &opt.output) {
-            let _ = fs::remove_file(&temp);
-            return Err(Error::new(
+        check_cancelled()?;
+        staged.persist(&opt.output).map_err(|e| {
+            Error::new(
                 3,
-                format!("cannot replace {}: {e}", opt.output.display()),
-            ));
-        }
+                format!("cannot replace {}: {}", opt.output.display(), e.error),
+            )
+        })?;
         Ok(())
     }
 }
@@ -150,6 +244,17 @@ fn parse_input(
     let mut current: Option<Section> = None;
     let mut modern_decls: HashMap<u64, (u64, Option<u64>)> = HashMap::new();
     let mut legacy_decls: HashMap<String, (u64, Option<u64>)> = HashMap::new();
+    macro_rules! recover_line {
+        ($expr:expr) => {
+            if let Err(err) = $expr {
+                if !can_recover(req, &err) {
+                    return Err(err);
+                } else {
+                    continue;
+                }
+            }
+        };
+    }
     loop {
         check_cancelled()?;
         line.clear();
@@ -161,40 +266,82 @@ fn parse_input(
             break;
         }
         line_no += 1;
-        if line.len() > MAX_LINE + 1 {
-            return Err(Error::at(2, label, line_no, "line exceeds 1 MiB"));
-        }
         if line.last() == Some(&b'\n') {
             line.pop();
         }
         if line.last() == Some(&b'\r') {
             line.pop();
         }
+        if line.len() > MAX_LINE {
+            let e = Error::at(2, label, line_no, "line exceeds 1 MiB");
+            if can_recover(req, &e) {
+                continue;
+            } else {
+                return Err(e);
+            }
+        }
         if line.contains(&0) {
-            return Err(Error::at(2, label, line_no, "NUL byte in tracefile"));
+            let e = Error::at(2, label, line_no, "NUL byte in tracefile");
+            if can_recover(req, &e) {
+                continue;
+            } else {
+                return Err(e);
+            }
         }
         let s = std::str::from_utf8(&line)
-            .map_err(|_| Error::at(2, label, line_no, "invalid UTF-8 tracefile record"))?;
+            .map_err(|_| Error::at(2, label, line_no, "invalid UTF-8 tracefile record"));
+        let s = match s {
+            Ok(s) => s,
+            Err(e) => {
+                if can_recover(req, &e) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        };
         if s.is_empty() || s.starts_with('#') {
             continue;
         }
         if let Some(tn) = s.strip_prefix("TN:") {
             if current.is_some() {
-                return Err(Error::at(2, label, line_no, "TN inside an open section"));
+                let e = Error::at(2, label, line_no, "TN inside an open section");
+                if can_recover(req, &e) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
             }
             testcase = tn.to_owned();
             continue;
         }
         if let Some(sf) = s.strip_prefix("SF:") {
             if let Some(section) = current.take() {
-                finish_section(section, sections, indexes, held, limit, label, line_no)?;
+                finish_section(section, sections, indexes, held, limit, label, line_no, req)?;
             }
             if sf.is_empty() {
-                return Err(Error::at(2, label, line_no, "empty SF path"));
+                let e = Error::at(2, label, line_no, "empty SF path");
+                if can_recover(req, &e) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
             }
+            let rewritten = match crate::path::rewrite_path(&req.resources, sf) {
+                Ok(p) => p,
+                Err(e) => {
+                    let e = Error::at(e.code, label, line_no, e.message);
+                    if can_recover(req, &e) {
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
             current = Some(Section {
                 testcase: testcase.clone(),
-                source: sf.to_owned(),
+                selected: crate::path::path_selected(&req.resources, &rewritten),
+                source: rewritten,
                 ..Section::default()
             });
             testcase.clear();
@@ -203,7 +350,12 @@ fn parse_input(
             continue;
         }
         let Some(section) = current.as_mut() else {
-            return Err(Error::at(2, label, line_no, "record outside an SF section"));
+            let e = Error::at(2, label, line_no, "record outside an SF section");
+            if can_recover(req, &e) {
+                continue;
+            } else {
+                return Err(e);
+            }
         };
         if s == "end_of_record" {
             finish_section(
@@ -214,117 +366,161 @@ fn parse_input(
                 limit,
                 label,
                 line_no,
+                req,
             )?;
             modern_decls.clear();
             legacy_decls.clear();
             continue;
         }
         if let Some(x) = s.strip_prefix("DA:") {
-            section.add_line(x, label, line_no)?;
-            ensure_budget(section, *held, limit, label, line_no)?;
+            recover_line!(section.add_line(x, label, line_no));
+            if req.resources.strict_checksum || req.checksum {
+                validate_or_generate_checksum(section, x, req, label, line_no)?;
+            }
+            recover_line!(ensure_budget(section, *held, limit, label, line_no));
             continue;
         }
         if let Some(x) = s.strip_prefix("VER:") {
             if section.version.as_deref().is_some_and(|v| v != x) {
-                return Err(Error::at(2, label, line_no, "conflicting source versions"));
+                let e = Error::at(2, label, line_no, "conflicting source versions");
+                if can_recover(req, &e) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
             }
             section.version = Some(x.to_owned());
             continue;
         }
+        if !req.resources.function_data
+            && (s.starts_with("FN:")
+                || s.starts_with("FNDA:")
+                || s.starts_with("FNL:")
+                || s.starts_with("FNA:"))
+        {
+            continue;
+        }
         if let Some(x) = s.strip_prefix("FN:") {
-            let (start, end, name) = parse_fn(x, label, line_no)?;
+            let (start, end, name) = match parse_fn(x, label, line_no) {
+                Ok(v) => v,
+                Err(e) => {
+                    if can_recover(req, &e) {
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
             legacy_decls.insert(name.clone(), (start, end));
-            section.add_function(name, start, end, 0, label, line_no)?;
-            ensure_budget(section, *held, limit, label, line_no)?;
+            recover_line!(section.add_function(name, start, end, 0, label, line_no));
+            recover_line!(ensure_budget(section, *held, limit, label, line_no));
             continue;
         }
         if let Some(x) = s.strip_prefix("FNDA:") {
-            let (hits, name) = parse_named_count(x, label, line_no)?;
-            let (start, end) = legacy_decls.get(&name).copied().ok_or_else(|| {
-                Error::at(2, label, line_no, "FNDA references undeclared function")
-            })?;
-            section.add_function(name, start, end, hits, label, line_no)?;
-            ensure_budget(section, *held, limit, label, line_no)?;
+            let (hits, name) = match parse_named_count(x, label, line_no) {
+                Ok(v) => v,
+                Err(e) => {
+                    if can_recover(req, &e) {
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+            let Some((start, end)) = legacy_decls.get(&name).copied() else {
+                let e = Error::at(2, label, line_no, "FNDA references undeclared function");
+                if can_recover(req, &e) {
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            };
+            recover_line!(section.add_function(name, start, end, hits, label, line_no));
+            recover_line!(ensure_budget(section, *held, limit, label, line_no));
             continue;
         }
         if let Some(x) = s.strip_prefix("FNL:") {
-            let mut f = x.split(',');
-            let idx = num(f.next(), label, line_no)?;
-            let start = num(f.next(), label, line_no)?;
-            let end = match f.next() {
-                Some(v) => Some(num(Some(v), label, line_no)?),
-                None => None,
-            };
-            if f.next().is_some() || modern_decls.insert(idx, (start, end)).is_some() {
-                return Err(Error::at(
-                    2,
-                    label,
-                    line_no,
-                    "invalid or duplicate FNL index",
-                ));
-            }
+            let result = (|| {
+                let mut f = x.split(',');
+                let idx = num(f.next(), label, line_no)?;
+                let start = num(f.next(), label, line_no)?;
+                let end = match f.next() {
+                    Some(v) => Some(num(Some(v), label, line_no)?),
+                    None => None,
+                };
+                if f.next().is_some() || modern_decls.contains_key(&idx) {
+                    return Err(Error::at(
+                        2,
+                        label,
+                        line_no,
+                        "invalid or duplicate FNL index",
+                    ));
+                }
+                modern_decls.insert(idx, (start, end));
+                Ok(())
+            })();
+            recover_line!(result);
             section.modern = true;
             continue;
         }
         if let Some(x) = s.strip_prefix("FNA:") {
-            let mut f = x.splitn(3, ',');
-            let idx = num(f.next(), label, line_no)?;
-            let hits = num(f.next(), label, line_no)?;
-            let name = f
-                .next()
-                .filter(|x| !x.is_empty())
-                .ok_or_else(|| Error::at(2, label, line_no, "malformed FNA record"))?;
-            let (start, end) = modern_decls.get(&idx).copied().ok_or_else(|| {
-                Error::at(2, label, line_no, "FNA references unknown function index")
-            })?;
-            section.add_function(name.to_owned(), start, end, hits, label, line_no)?;
+            let result = (|| {
+                let mut f = x.splitn(3, ',');
+                let idx = num(f.next(), label, line_no)?;
+                let hits = num(f.next(), label, line_no)?;
+                let name = f
+                    .next()
+                    .filter(|x| !x.is_empty())
+                    .ok_or_else(|| Error::at(2, label, line_no, "malformed FNA record"))?;
+                let (start, end) = modern_decls.get(&idx).copied().ok_or_else(|| {
+                    Error::at(2, label, line_no, "FNA references unknown function index")
+                })?;
+                section.add_function(name.to_owned(), start, end, hits, label, line_no)
+            })();
+            recover_line!(result);
             section.modern = true;
             ensure_budget(section, *held, limit, label, line_no)?;
             continue;
         }
-        if s.starts_with("BRDA:") {
+        if let Some(x) = s.strip_prefix("BRDA:") {
             if req.resources.branch_coverage {
-                return Err(Error::at(
-                    1,
-                    label,
-                    line_no,
-                    "LCOV branch signature aggregation is not implemented",
-                ));
+                recover_line!(parse_branch(section, x, label, line_no));
+                recover_line!(ensure_budget(section, *held, limit, label, line_no));
             }
             continue;
         }
-        if s.starts_with("MCDC:") {
+        if let Some(x) = s.strip_prefix("MCDC:") {
             if req.mcdc_coverage {
-                return Err(Error::at(
-                    1,
-                    label,
-                    line_no,
-                    "LCOV MC/DC aggregation is not implemented",
-                ));
+                recover_line!(parse_mcdc(section, x, label, line_no));
+                recover_line!(ensure_budget(section, *held, limit, label, line_no));
             }
             continue;
         }
         if [
-            "LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MD:", "DA:", "TN:", "SF:", "MCF:",
-            "MCH:",
+            "LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MD:", "MCF:", "MCH:",
         ]
         .iter()
         .any(|p| s.starts_with(p))
         {
             continue;
         }
-        return Err(Error::at(
-            1,
+        let e = Error::at(
+            2,
             label,
             line_no,
             format!(
                 "unsupported LCOV record '{}': refusing to discard semantics",
                 s.split(':').next().unwrap_or(s)
             ),
-        ));
+        );
+        if can_recover(req, &e) {
+            continue;
+        } else {
+            return Err(e);
+        }
     }
     if let Some(section) = current {
-        finish_section(section, sections, indexes, held, limit, label, line_no)?;
+        finish_section(section, sections, indexes, held, limit, label, line_no, req)?;
     }
     Ok(())
 }
@@ -343,21 +539,114 @@ fn ensure_budget(
 }
 
 fn finish_section(
-    s: Section,
+    mut s: Section,
     sections: &mut Vec<Section>,
     indexes: &mut HashMap<(String, String), usize>,
     held: &mut usize,
     limit: usize,
     label: &str,
     line: u64,
+    req: &Request,
 ) -> Result<(), Error> {
-    if !s.saw_coverpoint {
+    if s.selected {
+        let branch_lines: Vec<_> = s.branches.iter().map(|(&ln, b)| (ln, b.clone())).collect();
+        for (branch_line, blocks) in branch_lines {
+            let hits = blocks
+                .iter()
+                .flatten()
+                .filter_map(|b| b.hits)
+                .try_fold(0u64, |a, b| a.checked_add(b))
+                .ok_or_else(|| {
+                    Error::at(2, label, branch_line, "branch-derived DA count overflow")
+                })?;
+            if let Some((line_hits, _)) = s.lines.get(&branch_line) {
+                if (*line_hits > 0) != (hits > 0) {
+                    let e = Error::at(
+                        2,
+                        label,
+                        branch_line,
+                        "inconsistent branch and line hit status",
+                    );
+                    if !can_recover(req, &e) {
+                        return Err(e);
+                    }
+                }
+            } else {
+                let e = Error::at(
+                    2,
+                    label,
+                    branch_line,
+                    "inconsistent branch coverage without line coverage data",
+                );
+                if !can_recover(req, &e) {
+                    return Err(e);
+                }
+                s.lines.insert(branch_line, (hits, None));
+                s.saw_coverpoint = true;
+            }
+        }
+        let mut pairs = Vec::new();
+        for (&ln, items) in &s.mcdc {
+            for (&(group, index, sense), item) in items {
+                let other = if sense == 't' { 'f' } else { 't' };
+                if !items.contains_key(&(group, index, other)) {
+                    pairs.push((ln, group, index, other, item.expr.clone(), item.unreachable));
+                }
+            }
+        }
+        for (ln, g, i, sense, expr, unreachable) in pairs {
+            s.mcdc.entry(ln).or_default().insert(
+                (g, i, sense),
+                record::Mcdc {
+                    hits: 0,
+                    expr,
+                    unreachable,
+                },
+            );
+        }
+        for old in sections.iter().filter(|x| x.source == s.source) {
+            if let Some(v) = &old.version {
+                if s.version.as_ref().is_some_and(|n| n != v) {
+                    let e = Error::at(2, label, line, "conflicting source versions");
+                    if !can_recover(req, &e) {
+                        return Err(e);
+                    }
+                }
+                if s.version.is_none() {
+                    s.version = Some(v.clone());
+                }
+            }
+            for (name, function) in &s.functions {
+                if old.functions.get(name).is_some_and(|existing| {
+                    existing.line != function.line || existing.end_line != function.end_line
+                }) {
+                    let e = Error::at(
+                        2,
+                        label,
+                        line,
+                        format!("inconsistent function declaration for '{name}'"),
+                    );
+                    if !can_recover(req, &e) {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+    if !s.saw_coverpoint || !s.selected {
         return Ok(());
     }
     let key = (s.testcase.clone(), s.source.clone());
     if let Some(&idx) = indexes.get(&key) {
         let before = sections[idx].memory_size();
-        merge_into(&mut sections[idx], s, label)?;
+        let mut merged = sections[idx].clone();
+        if let Err(e) = merge_into(&mut merged, s, label) {
+            if !can_recover(req, &e) {
+                return Err(e);
+            }
+        } else {
+            sections[idx] = merged;
+        }
         let after = sections[idx].memory_size();
         *held = held.saturating_add(after.saturating_sub(before));
         if *held > limit {
@@ -391,6 +680,229 @@ fn parse_fn(s: &str, file: &str, line: u64) -> Result<(u64, Option<u64>, String)
         _ => Err(Error::at(2, file, line, "malformed FN record")),
     }
 }
+
+fn parse_branch(s: &mut Section, payload: &str, file: &str, line: u64) -> Result<(), Error> {
+    let mut f = payload.splitn(4, ',');
+    let ln = num(f.next(), file, line)?;
+    let block_field = f
+        .next()
+        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
+    let expr_first = f
+        .next()
+        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
+    let tail = f
+        .next()
+        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
+    if ln == 0 {
+        return Err(Error::at(2, file, line, "branch line must be positive"));
+    }
+    let kind = block_field
+        .chars()
+        .next()
+        .filter(|c| *c == 'e' || *c == 'f')
+        .unwrap_or('v');
+    let rest = if kind == 'v' {
+        block_field
+    } else {
+        &block_field[1..]
+    };
+    let unreachable = rest.starts_with('U');
+    let rest = rest.strip_prefix('U').unwrap_or(rest);
+    let block = num(Some(rest), file, line)?;
+    let combined = format!("{expr_first},{tail}");
+    let (expr, count) = combined
+        .rsplit_once(',')
+        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA count"))?;
+    let expr = expr.to_owned();
+    if expr.is_empty() {
+        return Err(Error::at(2, file, line, "empty BRDA expression"));
+    }
+    let hits = if count == "-" {
+        None
+    } else {
+        Some(num(Some(count), file, line)?)
+    };
+    let blocks = s.branches.entry(ln).or_default();
+    let bi = usize::try_from(block)
+        .map_err(|_| Error::at(2, file, line, "branch block index overflow"))?;
+    if bi > 65535 {
+        return Err(Error::at(
+            2,
+            file,
+            line,
+            "branch block index exceeds supported range",
+        ));
+    }
+    while blocks.len() <= bi {
+        blocks.push(Vec::new());
+    }
+    blocks[bi].push(record::Branch {
+        expr,
+        hits,
+        kind,
+        unreachable,
+    });
+    s.saw_coverpoint = true;
+    Ok(())
+}
+
+fn parse_mcdc(s: &mut Section, payload: &str, file: &str, line: u64) -> Result<(), Error> {
+    let mut f = payload.splitn(6, ',');
+    let ln = num(f.next(), file, line)?;
+    let group = f
+        .next()
+        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC record"))?;
+    let sense = f.next().unwrap_or("");
+    let count = num(f.next(), file, line)?;
+    let index = num(f.next(), file, line)?;
+    let expr = f
+        .next()
+        .filter(|x| !x.is_empty())
+        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC expression"))?;
+    if ln == 0 {
+        return Err(Error::at(2, file, line, "MC/DC line must be positive"));
+    }
+    let unreachable = group.starts_with('U');
+    let g = group.strip_prefix('U').unwrap_or(group);
+    let group = num(Some(g), file, line)?;
+    if group == 0 {
+        return Err(Error::at(
+            2,
+            file,
+            line,
+            "MC/DC group size must be positive",
+        ));
+    }
+    let sense = sense
+        .chars()
+        .next()
+        .filter(|c| *c == 't' || *c == 'f')
+        .ok_or_else(|| Error::at(2, file, line, "invalid MC/DC sense"))?;
+    let key = (group, index, sense);
+    let item = record::Mcdc {
+        hits: count,
+        expr: expr.to_owned(),
+        unreachable,
+    };
+    if let Some(old) = s.mcdc.entry(ln).or_default().get_mut(&key) {
+        if old.expr != item.expr {
+            return Err(Error::at(2, file, line, "inconsistent MC/DC expression"));
+        }
+        old.hits = old
+            .hits
+            .checked_add(item.hits)
+            .ok_or_else(|| Error::at(2, file, line, "MC/DC count overflow"))?;
+        old.unreachable |= item.unreachable;
+    } else {
+        s.mcdc.entry(ln).or_default().insert(key, item);
+    }
+    s.saw_coverpoint = true;
+    Ok(())
+}
+
+fn validate_or_generate_checksum(
+    s: &mut Section,
+    payload: &str,
+    req: &Request,
+    file: &str,
+    line: u64,
+) -> Result<(), Error> {
+    let line_no = num(payload.split(',').next(), file, line)?;
+    let existing = s.lines.get(&line_no).and_then(|x| x.1.clone());
+    let src = Path::new(&s.source);
+    let Ok(source) = File::open(src) else {
+        return Ok(());
+    };
+    let mut reader = BufReader::new(source);
+    let mut buf = Vec::new();
+    let mut found = true;
+    for n in 1..=line_no {
+        buf.clear();
+        let read = (&mut reader)
+            .take((MAX_LINE + 2) as u64)
+            .read_until(b'\n', &mut buf)
+            .map_err(|e| Error::at(3, file, line, format!("source read failed: {e}")))?;
+        if read == 0 {
+            found = false;
+            break;
+        }
+        if buf.len() > MAX_LINE + 1 {
+            return Err(Error::at(
+                2,
+                file,
+                line,
+                "source line exceeds 1 MiB while computing checksum",
+            ));
+        }
+        if n == line_no {
+            break;
+        }
+    }
+    if buf.last() == Some(&b'\n') {
+        buf.pop();
+    }
+    if buf.last() == Some(&b'\r') {
+        buf.pop();
+    }
+    if buf.len() > MAX_LINE {
+        return Err(Error::at(
+            2,
+            file,
+            line,
+            "source line exceeds 1 MiB while computing checksum",
+        ));
+    }
+    let sum = found
+        .then(|| base64::engine::general_purpose::STANDARD_NO_PAD.encode(md5::compute(&buf).0));
+    let mismatch = existing
+        .as_deref()
+        .is_some_and(|c| Some(c) != sum.as_deref());
+    let missing = existing.is_none();
+    if req.checksum || req.resources.strict_checksum {
+        if let Some(v) = s.lines.get_mut(&line_no) {
+            if v.1.is_none() {
+                v.1 = sum.clone();
+            }
+        }
+    }
+    if (req.resources.strict_checksum || req.checksum) && (mismatch || missing) {
+        let message = if mismatch {
+            format!("source checksum mismatch for {}:{}", s.source, line_no)
+        } else {
+            format!("no checksum for {}:{}", s.source, line_no)
+        };
+        let e = Error::at(2, file, line, message);
+        if !can_recover(req, &e) {
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+fn can_recover(req: &Request, error: &Error) -> bool {
+    if error.code == 3 {
+        return false;
+    }
+    if req.keep_going {
+        return true;
+    }
+    let m = error.message.to_ascii_lowercase();
+    let category = if m.contains("path") {
+        "path"
+    } else if m.contains("overflow") {
+        "count"
+    } else if m.contains("checksum") || m.contains("source version") {
+        "version"
+    } else if m.contains("inconsistent") || m.contains("conflicting") {
+        "inconsistent"
+    } else if m.contains("branch") {
+        "branch"
+    } else {
+        "format"
+    };
+    req.ignore_errors
+        .iter()
+        .any(|x| x.eq_ignore_ascii_case(category))
+}
 fn parse_named_count(s: &str, file: &str, line: u64) -> Result<(u64, String), Error> {
     let (n, name) = s
         .split_once(',')
@@ -411,32 +923,11 @@ fn num(s: Option<&str>, file: &str, line: u64) -> Result<u64, Error> {
 fn is_gzip_path(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gz"))
 }
-fn create_stage(dst: &Path) -> Result<(File, PathBuf), Error> {
-    let parent = dst
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    for _ in 0..100 {
-        let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let name = format!(".lcovmerge-stage-{}-{id}", std::process::id());
-        let path = parent.join(name);
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(f) => return Ok((f, path)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => {
-                return Err(Error::new(
-                    3,
-                    format!("cannot stage output near {}: {e}", dst.display()),
-                ))
-            }
-        }
-    }
-    Err(Error::new(3, "cannot allocate unique staged output"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::PathBuf;
     #[test]
     fn request_merges_tn_separately_and_regenerates_summary() {
         let mut r = Request::default();
@@ -457,7 +948,7 @@ mod tests {
         )
         .unwrap();
         let mut out = Vec::new();
-        write_sections(&mut out, &sections, false, true).unwrap();
+        write_sections(&mut out, &sections, false, true, false, false).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert!(out.contains("TN:a\nSF:x.c\nDA:1,2\nLF:1\nLH:1"));
         assert!(out.contains("TN:b\nSF:x.c\nDA:1,3\n"));
@@ -471,6 +962,102 @@ mod tests {
         b.lines.insert(4, (2, Some("sum".into())));
         merge_into(&mut a, b, "fixture").unwrap();
         assert_eq!(a.lines[&4], (3, Some("sum".into())));
+    }
+
+    #[test]
+    fn modern_function_aliases_branches_and_mcdc_are_normalized() {
+        let input=b"TN:case\nSF:x.c\nFNL:8,5,10\nFNA:8,3,zeta\nFNL:9,5,10\nFNA:9,0,alpha\nBRDA:5,0,0,2\nBRDA:5,0,1,0\nMCDC:5,2,t,1,0,A\nMCDC:5,2,f,0,0,A\nDA:5,2\nend_of_record\n";
+        let mut req = Request::default();
+        req.resources.branch_coverage = true;
+        req.mcdc_coverage = true;
+        let mut sections = Vec::new();
+        let mut indexes = HashMap::new();
+        let mut held = 0;
+        parse_input(
+            Box::new(&input[..]),
+            "valid-info",
+            &req,
+            &mut sections,
+            &mut indexes,
+            &mut held,
+            1 << 20,
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        write_sections(&mut out, &sections, false, true, true, true).unwrap();
+        let out = String::from_utf8(out).unwrap();
+        assert_eq!(out,"TN:case\nSF:x.c\nFNL:0,5,10\nFNA:0,0,alpha\nFNA:0,3,zeta\nFNF:1\nFNH:1\nBRDA:5,0,0,2\nBRDA:5,0,1,0\nBRF:2\nBRH:1\nMCDC:5,2,t,1,0,A\nMCDC:5,2,f,0,0,A\nMCF:2\nMCH:1\nDA:5,2\nLF:1\nLH:1\nend_of_record\n");
+    }
+
+    #[test]
+    fn ignored_format_error_skips_only_bad_record_and_disabled_functions_skip_payload() {
+        let input =
+            b"TN:x\nSF:x.c\nDA:not-a-line\nDA:2,4\nFN:garbage\nFNL:bad-payload\nend_of_record\n";
+        let mut req = Request::default();
+        req.resources.function_data = false;
+        req.ignore_errors.insert("format".into());
+        let mut sections = Vec::new();
+        let mut indexes = HashMap::new();
+        let mut held = 0;
+        parse_input(
+            Box::new(&input[..]),
+            "recover-info",
+            &req,
+            &mut sections,
+            &mut indexes,
+            &mut held,
+            1 << 20,
+        )
+        .unwrap();
+        assert_eq!(sections[0].lines.get(&2).unwrap().0, 4);
+        assert!(sections[0].functions.is_empty());
+    }
+
+    #[test]
+    fn ignored_branch_line_inconsistency_synthesizes_da_from_taken_branches() {
+        let input = b"TN:x\nSF:x.c\nBRDA:4,0,0,7\nBRDA:4,0,1,0\nend_of_record\n";
+        let mut req = Request::default();
+        req.resources.branch_coverage = true;
+        req.ignore_errors.insert("inconsistent".into());
+        let mut sections = Vec::new();
+        let mut indexes = HashMap::new();
+        let mut held = 0;
+        parse_input(
+            Box::new(&input[..]),
+            "branch-only",
+            &req,
+            &mut sections,
+            &mut indexes,
+            &mut held,
+            1 << 20,
+        )
+        .unwrap();
+        assert_eq!(sections[0].lines.get(&4).unwrap().0, 7);
+    }
+
+    #[test]
+    fn duplicate_branch_signatures_merge_by_occurrence_and_sort_exception_blocks() {
+        // The BRDA ordering and totals are from the pinned lcov 2.6 oracle.
+        let input=b"TN:dup\nSF:x.c\nDA:1,2\nBRDA:1,0,a,1\nBRDA:1,0,b,1\nBRDA:1,1,c,0\nBRDA:1,1,d,0\nBRDA:1,e2,ex,0\nend_of_record\nTN:dup\nSF:x.c\nDA:1,2\nBRDA:1,4,a2,2\nBRDA:1,4,b2,0\nBRDA:1,9,c2,1\nBRDA:1,9,d2,0\nBRDA:1,eU11,ex2,0\nend_of_record\n";
+        let mut req = Request::default();
+        req.resources.function_data = false;
+        req.resources.branch_coverage = true;
+        let mut sections = Vec::new();
+        let mut indexes = HashMap::new();
+        let mut held = 0;
+        parse_input(
+            Box::new(&input[..]),
+            "duplicate-signatures",
+            &req,
+            &mut sections,
+            &mut indexes,
+            &mut held,
+            1 << 20,
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        write_sections(&mut out, &sections, false, false, true, false).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(),"TN:dup\nSF:x.c\nBRDA:1,eU0,ex,0\nBRDA:1,1,a,3\nBRDA:1,1,b,1\nBRDA:1,2,c,1\nBRDA:1,2,d,0\nBRF:4\nBRH:3\nDA:1,4\nLF:1\nLH:1\nend_of_record\n");
     }
 
     #[test]
@@ -492,5 +1079,51 @@ mod tests {
         assert!(bytes.contains("DA:3,6\nLF:1\nLH:1\nend_of_record"));
         std::fs::remove_file(input).unwrap();
         std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn checksum_generation_matches_lcov_md5_base64_and_gzip_round_trips() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.c");
+        std::fs::write(&source, "if (a && b) return 1;\n").unwrap();
+        let input = root.path().join("trace.info");
+        let text = format!(
+            "TN:checksum\nSF:{}\nDA:1,1\nend_of_record\n",
+            source.display()
+        );
+        std::fs::write(&input, &text).unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input.clone()];
+        req.resources.output = root.path().join("out.info");
+        req.checksum = true;
+        req.ignore_errors.insert("version".into());
+        run(req).unwrap();
+        let out = std::fs::read_to_string(root.path().join("out.info")).unwrap();
+        assert!(out.contains("DA:1,1,nNCtFK7xrOM2IVOXfEgG7g\n"));
+        let gz_input = root.path().join("trace.info.gz");
+        let file = File::create(&gz_input).unwrap();
+        let mut enc = flate2::write::GzEncoder::new(file, Compression::default());
+        enc.write_all(text.as_bytes()).unwrap();
+        enc.finish().unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![gz_input];
+        req.resources.output = root.path().join("out.info.gz");
+        run(req).unwrap();
+        let compressed = File::open(root.path().join("out.info.gz")).unwrap();
+        let mut decoded = String::new();
+        MultiGzDecoder::new(compressed)
+            .read_to_string(&mut decoded)
+            .unwrap();
+        assert!(decoded.contains("DA:1,1\n"));
+        let mut corrupted = std::fs::read(root.path().join("trace.info.gz")).unwrap();
+        let last = corrupted.len() - 1;
+        corrupted[last] ^= 0x80;
+        let bad = root.path().join("corrupt.info.gz");
+        std::fs::write(&bad, corrupted).unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![bad];
+        req.resources.output = root.path().join("bad-output.info");
+        assert!(run(req).is_err());
+        assert!(!root.path().join("bad-output.info").exists());
     }
 }
