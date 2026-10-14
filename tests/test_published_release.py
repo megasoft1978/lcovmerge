@@ -148,7 +148,9 @@ class PublishedReleaseTests(unittest.TestCase):
         sentinel.write_bytes(b"existing")
         with self.assertRaises(SystemExit):
             self.validate()
-        self.assertEqual(list(self.workdir.iterdir()), [sentinel])
+        remaining = list(self.workdir.iterdir())
+        self.assertEqual(len(remaining), 1)
+        self.assertTrue(remaining[0].samefile(sentinel))
         self.assertEqual(sentinel.read_bytes(), b"existing")
         self.assertEqual(self.urls, [])
 
