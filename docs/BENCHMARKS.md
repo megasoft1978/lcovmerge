@@ -102,6 +102,43 @@ The JSON output reports runs, passes, merge bytes read, bytes written, fan-in,
 and workers. Read counters cover sort I/O and exclude the consumer's final
 cursor reads. This deterministic probe is not timing evidence.
 
+### Isolated Linux characterization, 2026-10-14
+
+Rust commit `31be2d8` was measured on an otherwise idle four-core Linux Azure
+runner against pinned LCOV 2.6 XS and pure Perl. Each row uses 19 seeded paired
+runs after warmup, with matching normalized output and verified backend selection
+on every invocation. Ratios are Rust elapsed time divided by reference elapsed
+time; below 1 is faster. Brackets are 95% bootstrap intervals for the median
+paired ratio.
+
+| Workload | Jobs | Rust / XS (95% interval) | Rust / Perl (95% interval) |
+| --- | ---: | ---: | ---: |
+| lines | 1 | 0.534 [0.530, 0.542] | 0.290 [0.287, 0.293] |
+| lines | 4 | 0.783 [0.777, 0.797] | 0.374 [0.368, 0.377] |
+| mixed | 1 | 1.956 [1.943, 1.978] | 0.822 [0.813, 0.835] |
+| mixed | 4 | 2.441 [2.426, 2.469] | 0.970 [0.967, 0.979] |
+| testcases | 1 | 0.331 [0.326, 0.335] | 0.175 [0.172, 0.177] |
+| testcases | 4 | 0.326 [0.324, 0.331] | 0.173 [0.173, 0.175] |
+| single-source | 1 | 0.697 [0.685, 0.701] | 0.301 [0.298, 0.306] |
+| single-source | 4 | 1.239 [1.231, 1.254] | 0.462 [0.459, 0.469] |
+| many-shards | 1 | 0.336 [0.334, 0.340] | 0.214 [0.212, 0.218] |
+| many-shards | 4 | 0.381 [0.374, 0.388] | 0.280 [0.278, 0.284] |
+| gzip | 1 | 1.769 [1.763, 1.787] | 0.770 [0.760, 0.781] |
+| gzip | 4 | 2.329 [2.307, 2.345] | 0.947 [0.945, 0.962] |
+
+Rust was faster than pure Perl in these measured cases. XS was faster for mixed
+records and gzip at both job counts, and for the large single source at four
+jobs. These results characterize these synthetic inputs and this runner; they
+establish neither universal superiority nor native-mode parity with C1.
+
+[Measured samples, input/binary/profile hashes, commands, resource metrics and
+oracle identity](../data/lcov-profile-validation.json) preserve the provenance.
+Wall and CPU measurements include CLI startup; RSS is `wait4`'s `ru_maxrss`,
+not the simultaneous sum of a process tree. Temporary disk peaks are sampled
+every 20 ms and can miss shorter peaks. The
+[workflow artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/38633742948)
+retain full outputs, logs, source fixtures and PGO feedback for 90 days.
+
 ## Historical measurements
 
 The C lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.

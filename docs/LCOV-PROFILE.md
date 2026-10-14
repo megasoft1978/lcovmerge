@@ -99,6 +99,10 @@ tested contract, not every LCOV operation or producer. Native performance
 measurements do not establish this profile's speed. See the
 [implementation and validation plan](LCOV-MERGE-COMPATIBILITY-PLAN.md).
 
+The [isolated Linux comparison](BENCHMARKS.md#isolated-linux-characterization-2026-10-14)
+reports six synthetic workloads against XS and pure Perl, including slower cases,
+uncertainty intervals, resource metrics and exact build/input provenance.
+
 Development validation is still in progress. No stable drop-in or performance
 claim is made before the implementation's release gates pass.
 

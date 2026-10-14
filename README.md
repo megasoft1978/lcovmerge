@@ -28,7 +28,7 @@ genhtml coverage/merged.info --output-directory coverage/html
 
 Experimental opt-in LCOV 2.6 merge profile (quote the glob for profile expansion): `./bin/lcovmerge --lcov-compat=2.6 -a 'coverage/shard-*.info' -o coverage/merged.info`.
 
-This version-pinned merge profile excludes LCOV collection, reset, extraction, report generation, and Perl callbacks; it does not install or replace `lcov`. See its [contract and validation status](docs/LCOV-PROFILE.md).
+This version-pinned merge profile excludes LCOV collection, reset, extraction, report generation, and Perl callbacks; it does not install or replace `lcov`. See the [contract](docs/LCOV-PROFILE.md) and [profile benchmarks](docs/BENCHMARKS.md#isolated-linux-characterization-2026-10-14).
 
 <!-- README-BENCHMARK:START -->
 Native Rust · macOS arm64 · 2026-10-14; 19-run medians after one warm-up.

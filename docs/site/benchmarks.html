@@ -57,7 +57,13 @@
             <tbody><tr><th scope="row">Sorted · 104.6 MB · 8 shards</th><td>210 ms</td><td>207 ms</td><td>210 ms</td><td>145 ms</td></tr><tr><th scope="row">Unsorted · 11.7 MB · 1 shard</th><td>71 ms</td><td>65 ms</td><td>71 ms</td><td>64 ms</td></tr></tbody>
           </table>
         </div>
-        <p>Rust matched single-job sorted performance within timing variation, was 31% faster with four jobs, and 9% faster on unsorted input. Unsorted peak memory was about 38.8 MiB versus 18.8 MiB for the previous release. Unprofiled cargo release builds were slower in initial tests; use make for the optimized build. These results do not predict every workload. <a href="data/rust-port-validation.json">Read raw runs, hashes, methods, and validation limits</a>.</p>
+        <p>The single-job sorted medians are close; those medians alone do not establish performance parity. Rust reduced the four-job sorted median by 31% and the unsorted median by 9%. Unsorted peak memory was about 38.8 MiB versus 18.8 MiB for the previous release. Unprofiled cargo release builds were slower in initial tests; use make for the optimized build. These results do not predict every workload. <a href="data/rust-port-validation.json">Read raw runs, hashes, methods, and validation limits</a>.</p>
+      </section>
+      <section id="lcov-profile-comparison" aria-labelledby="lcov-profile-title">
+        <h2 id="lcov-profile-title">LCOV 2.6 merge profile</h2>
+        <p>On 2026-10-14, Rust commit <code>31be2d8</code> was measured against pinned LCOV 2.6 XS and pure Perl on an idle four-core Linux Azure runner. Six synthetic workloads cover lines, mixed records, testcases, a large single source, 64 shards, and gzip. Each used 19 paired runs at one and four jobs, with matching normalized output on every invocation.</p>
+        <p>Rust was faster than pure Perl in these measured cases. XS was faster for mixed records and gzip at both job counts, and for the large single source at four jobs. These results do not establish universal superiority or native-mode parity with the previous implementation.</p>
+        <p><a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/BENCHMARKS.md#isolated-linux-characterization-2026-10-14">Read every timing ratio and uncertainty interval</a>, or inspect the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/data/lcov-profile-validation.json">samples, resource metrics, hashes, and provenance</a>.</p>
       </section>
       <section id="primary-results" aria-labelledby="results-title">
         <h2 id="results-title">Primary host results</h2>
