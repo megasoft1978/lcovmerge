@@ -242,11 +242,9 @@ impl Sorter {
                 .saturating_add(n)
                 .saturating_add(requested.saturating_mul(item_size))
                 .saturating_add(IO);
-            if peak > self.batch_budget {
-                if self.handles.is_empty() && self.requested > 1 {
-                    self.requested = 1;
-                    self.batch_budget = self.budget;
-                }
+            if peak > self.batch_budget && self.handles.is_empty() && self.requested > 1 {
+                self.requested = 1;
+                self.batch_budget = self.budget;
             }
             if peak > self.batch_budget {
                 return Err(err(

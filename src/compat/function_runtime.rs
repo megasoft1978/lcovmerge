@@ -91,14 +91,6 @@ fn scan(req: &Request) -> Result<bool, Error> {
             ]
             .iter()
             .any(|p| s.starts_with(p))
-            {
-                if !open {
-                    return Ok(false);
-                }
-            } else if (!req.resources.function_data
-                && ["FN:", "FNDA:", "FNL:", "FNA:"]
-                    .iter()
-                    .any(|p| s.starts_with(p)))
                 || (!req.resources.branch_coverage && s.starts_with("BRDA:"))
                 || (!req.mcdc_coverage && s.starts_with("MCDC:"))
             {
@@ -170,10 +162,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 buf.pop();
             }
             let error = |message: &str| Error::at(2, &label, line_no, message);
-            if buf.len() > MAX_LINE {
-                if recover(req, error("line exceeds 1 MiB"))? {
-                    continue;
-                }
+            if buf.len() > MAX_LINE && recover(req, error("line exceeds 1 MiB"))? {
+                continue;
             }
             let s = match std::str::from_utf8(&buf) {
                 Ok(s) => s,
@@ -437,6 +427,9 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
     }
+    // Release the DA batch before opening the three normalization sorters.
+    // The spill directory stays alive until all line cursors have finished.
+    let line_path = lines.finish()?;
     let mut functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_profiles = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut linked = raw_functions.finish()?;
@@ -454,6 +447,14 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         if row.name.is_empty() {
             continue;
         }
+        if (row.start == 0 || row.end == Some(0))
+            && recover(
+                req,
+                Error::at(2, &row.label, row.line, "function line must be positive"),
+            )?
+        {
+            continue;
+        }
         function_profiles.push(key_prefix(&row.source, &row.testcase)?, Vec::new())?;
         let mut key = key_prefix(&row.source, &row.testcase)?;
         push_str(&mut key, &row.name)?;
@@ -469,8 +470,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut pending = names.next()?;
     while let Some(first) = pending.take() {
         let (source, testcase, name) = decode_name_key(&first.key)?;
-        let mut start = read_u64(&first.value, 0)?;
-        let mut end = decode_end(&first.value)?;
+        let start = read_u64(&first.value, 0)?;
+        let end = decode_end(&first.value)?;
         let mut hits = read_u64(&first.value, 17)?;
         pending = names.next()?;
         while pending.as_ref().is_some_and(|r| {
@@ -496,16 +497,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         key.push(u8::from(end.is_some()));
         push_str(&mut key, &name)?;
         normalized.push(key, hits.to_be_bytes().to_vec())?;
-        start = 0;
-        end = None;
-        let _ = (start, end);
     }
     let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_profiles = function_profiles.finish()?.cursor()?;
     let mut function_profile = function_profiles.next()?;
     let mut function_sources = function_sources.finish()?.cursor()?;
     let mut function_source = function_sources.next()?;
-    let line_path = lines.finish()?;
     let mut lr = BufReader::new(File::open(&line_path).map_err(|e| Error::new(3, e.to_string()))?);
     let mut row = line_spill::read_next_public(&mut lr)?;
     while let Some(first) = row.take() {
@@ -666,6 +663,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut fnf = 0u64;
     let mut fnh = 0u64;
     let mut any_hit = false;
+    let mut line_ends = LineEnds::new(&line_path)?;
     while let Some(first) = fn_rows.take() {
         let (src, tc, start, first_name, declared_end, name) = decode_ordered_fn_key(&first.key)?;
         let mut end = declared_end;
@@ -682,7 +680,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             break;
         }
         if end.is_none() && req.derive_function_end_line && derive_supported(&src, &name) {
-            end = derive_end(&line_path, &src, &tc, start, next_start)?;
+            end = line_ends.derive(&src, &tc, start, next_start)?;
             if end.is_none() {
                 let e=Error::new(2,format!("inconsistent line coverage for function at {src}:{start}; cannot derive end line"));
                 if !recover(req, e)? {
@@ -746,7 +744,15 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         k.push(2);
         final_sort.push(k, format!("{fnf},{fnh}").into_bytes())?;
     }
-    write_final(req, final_sort.finish()?.cursor()?)
+    let final_rows = final_sort.finish()?;
+    if o.verbose && !o.quiet {
+        let stats = final_rows.stats();
+        eprintln!(
+            "output sort: runs={}, passes={}, bytes read={}, bytes written={}, workers={}",
+            stats.runs, stats.passes, stats.bytes_read, stats.bytes_written, stats.workers
+        );
+    }
+    write_final(req, final_rows.cursor()?)
 }
 
 fn write_final(req: &Request, mut cursor: sort::Cursor) -> Result<(), Error> {
@@ -901,9 +907,8 @@ fn decode_fn_key(k: &[u8]) -> Result<(String, String, u64, Option<u64>, String),
     x = &x[17..];
     Ok((s, t, start, end, take_str(&mut x)?))
 }
-fn decode_ordered_fn_key(
-    k: &[u8],
-) -> Result<(String, String, u64, String, Option<u64>, String), Error> {
+type OrderedFunctionKey = (String, String, u64, String, Option<u64>, String);
+fn decode_ordered_fn_key(k: &[u8]) -> Result<OrderedFunctionKey, Error> {
     let mut x = k;
     let s = take_str(&mut x)?;
     let t = take_str(&mut x)?;
@@ -954,24 +959,85 @@ fn derive_supported(source: &str, name: &str) -> bool {
     ) && !name.contains("{lambda(")
         && !(ext == "java" && name.contains(".lambda$"))
 }
-fn derive_end(
-    path: &Path,
-    source: &str,
-    testcase: &str,
+struct LineEnds {
+    reader: BufReader<File>,
+    pending: Option<line_spill::Entry>,
+    cached: Option<EndCache>,
+    #[cfg(test)]
+    rows_read: usize,
+}
+struct EndCache {
+    source: String,
+    testcase: String,
     start: u64,
     next: Option<u64>,
-) -> Result<Option<u64>, Error> {
-    let file = File::open(path).map_err(ioerr)?;
-    let mut reader = BufReader::new(file);
-    let mut best = None;
-    let upper = next.unwrap_or(u64::MAX);
-    while let Some(row) = line_spill::read_next_public(&mut reader)? {
-        if row.source == source && row.testcase == testcase && row.line >= start && row.line < upper
-        {
-            best = Some(row.line);
-        }
+    end: Option<u64>,
+}
+impl LineEnds {
+    fn new(path: &Path) -> Result<Self, Error> {
+        let mut result = Self {
+            reader: BufReader::new(File::open(path).map_err(ioerr)?),
+            pending: None,
+            cached: None,
+            #[cfg(test)]
+            rows_read: 0,
+        };
+        result.advance()?;
+        Ok(result)
     }
-    Ok(best)
+    fn advance(&mut self) -> Result<(), Error> {
+        check_cancelled()?;
+        self.pending = None;
+        self.pending = line_spill::read_next_public(&mut self.reader)?;
+        #[cfg(test)]
+        if self.pending.is_some() {
+            self.rows_read += 1;
+        }
+        Ok(())
+    }
+    // Function groups and DA rows share source/testcase/start ordering. Cache
+    // equal-start aliases, then consume each DA row at most once.
+    fn derive(
+        &mut self,
+        source: &str,
+        testcase: &str,
+        start: u64,
+        next: Option<u64>,
+    ) -> Result<Option<u64>, Error> {
+        if let Some(cache) = &self.cached {
+            if (
+                cache.source.as_str(),
+                cache.testcase.as_str(),
+                cache.start,
+                cache.next,
+            ) == (source, testcase, start, next)
+            {
+                return Ok(cache.end);
+            }
+        }
+        let mut best = None;
+        let upper = next.unwrap_or(u64::MAX);
+        while let Some(row) = &self.pending {
+            let identity = (row.source.as_str(), row.testcase.as_str());
+            if identity > (source, testcase)
+                || (identity == (source, testcase) && row.line >= upper)
+            {
+                break;
+            }
+            if identity == (source, testcase) && row.line >= start {
+                best = Some(row.line);
+            }
+            self.advance()?;
+        }
+        self.cached = Some(EndCache {
+            source: source.into(),
+            testcase: testcase.into(),
+            start,
+            next,
+            end: best,
+        });
+        Ok(best)
+    }
 }
 fn take_str(x: &mut &[u8]) -> Result<String, Error> {
     let n = x
@@ -1003,4 +1069,52 @@ fn decode_end(b: &[u8]) -> Result<Option<u64>, Error> {
 }
 fn ioerr(e: std::io::Error) -> Error {
     Error::new(3, format!("compat output failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_line_join_reads_once_and_preserves_testcase_boundaries() {
+        let root = tempfile::tempdir().unwrap();
+        let mut spill = line_spill::Spill::new(root.path(), 32768, 2).unwrap();
+        for (source, testcase, line) in [
+            ("a.c", "a", 1),
+            ("a.c", "a", 3),
+            ("a.c", "a", 8),
+            ("a.c", "b", 2),
+            ("a.c", "b", 7),
+            ("b.c", "a", 4),
+        ] {
+            spill
+                .push(line_spill::Entry {
+                    kind: 1,
+                    source: source.into(),
+                    testcase: testcase.into(),
+                    value: String::new(),
+                    line,
+                    count: 1,
+                    input: 0,
+                    section: 0,
+                    ordinal: line,
+                    label: String::new(),
+                    line_no: line,
+                })
+                .unwrap();
+        }
+        let mut ends = LineEnds::new(&spill.finish().unwrap()).unwrap();
+        assert_eq!(ends.derive("a.c", "a", 1, Some(5)).unwrap(), Some(3));
+        let reads = ends.rows_read;
+        for _ in 0..1000 {
+            assert_eq!(ends.derive("a.c", "a", 1, Some(5)).unwrap(), Some(3));
+        }
+        assert_eq!(ends.rows_read, reads);
+        assert_eq!(ends.derive("a.c", "a", 5, None).unwrap(), Some(8));
+        assert_eq!(ends.derive("a.c", "b", 1, Some(6)).unwrap(), Some(2));
+        assert_eq!(ends.derive("a.c", "b", 6, None).unwrap(), Some(7));
+        assert_eq!(ends.derive("b.c", "a", 1, Some(3)).unwrap(), None);
+        assert_eq!(ends.derive("b.c", "a", 3, None).unwrap(), Some(4));
+        assert_eq!(ends.rows_read, 6);
+    }
 }

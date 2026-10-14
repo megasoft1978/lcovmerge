@@ -20,25 +20,17 @@ TIMEOUT = 240
 def expected_records(spec: dict):
     """Yield canonical record lines independently from the input writer."""
     shape = spec["shape"]
-    if shape == "lines":
-        yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
-    elif shape == "functions":
+    if shape in ("functions", "legacy"):
         for i in range(spec["functions"]):
-            fid = i * 7 + 2
-            yield f"FNL:{fid},{i + 1},{i + 1}\n"
-        for i in range(spec["functions"]):
-            fid = i * 7 + 2
-            yield f"FNA:{fid},1,fn_{i:08d}\n"
-        for i in range(spec["functions"]):
-            yield f"FNDA:{spec['hits']},fn_{i:08d}\n"
+            yield f"FNL:{i},{i + 1},{i + 1}\n"
+            yield f"FNA:{i},{spec['hits']},fn_{i:08d}\n"
     elif shape == "aliases":
-        yield f"FNL:17,1,1\n"
+        yield "FNL:0,1,1\n"
         for i in range(spec["aliases"]):
-            yield f"FNA:17,1,alias_{i:08d}\n"
-        for i in range(spec["aliases"]):
-            yield f"FNDA:{spec['hits']},alias_{i:08d}\n"
-    else:
+            yield f"FNA:0,{spec['hits']},alias_{i:08d}\n"
+    elif shape != "lines":
         raise AssertionError(shape)
+    yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
 
 
 def verify_output(path: Path, spec: dict) -> None:
@@ -94,13 +86,15 @@ def validator_self_test() -> None:
     """Guard against regressions that accept altered values, IDs or truncation."""
     import tempfile
     spec = {"source": "/tmp/verify.c", "shape": "functions", "hits": 2,
-            "lines": 0, "functions": 1, "aliases": 0, "function_count": 1}
-    good = ("TN:t\nSF:/tmp/verify.c\nFNL:2,1,1\nFNA:2,1,fn_00000000\n"
-            "FNDA:2,fn_00000000\nFNF:1\nFNH:1\nend_of_record\n")
-    mutants = (good.replace("FNDA:2,", "FNDA:3,"),
-               good.replace("FNL:2,", "FNL:9,"),
+            "lines": 1, "functions": 1, "aliases": 0, "function_count": 1}
+    good = ("TN:t\nSF:/tmp/verify.c\nFNL:0,1,1\nFNA:0,2,fn_00000000\n"
+            "FNF:1\nFNH:1\nDA:1,2\nLF:1\nLH:1\nend_of_record\n")
+    mutants = (good.replace("FNA:0,2,", "FNA:0,3,"),
+               good.replace("FNL:0,", "FNL:9,"),
                good.replace("FNH:1", "FNH:0"),
-               good.replace("FNDA:2,fn_00000000\n", ""))
+               good.replace("DA:1,2", "DA:1,3"),
+               good.replace("LF:1", "LF:2"),
+               good.replace("FNA:0,2,fn_00000000\n", ""))
     with tempfile.TemporaryDirectory() as directory:
         target = Path(directory) / "out.info"
         target.write_text(good)
@@ -129,16 +123,24 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
             for i in range(functions):
                 out.write(f"FNL:{i * 7 + 2},{i + 1},{i + 1}\n")
             for i in range(functions):
-                out.write(f"FNA:{i * 7 + 2},1,fn_{i:08d}\n")
+                out.write(f"FNA:{i * 7 + 2},{hits},fn_{i:08d}\n")
+            lines = functions
+        elif shape == "legacy":
+            functions = size
+            for i in range(functions):
+                out.write(f"FN:{i + 1},{i + 1},fn_{i:08d}\n")
             for i in range(functions):
                 out.write(f"FNDA:{hits},fn_{i:08d}\n")
+            lines = functions
         elif shape == "aliases":
             aliases = size
             out.write("FNL:17,1,1\n")
             for i in range(aliases):
-                out.write(f"FNA:17,1,alias_{i:08d}\n")
-            for i in range(aliases):
-                out.write(f"FNDA:{hits},alias_{i:08d}\n")
+                out.write(f"FNA:17,{hits},alias_{i:08d}\n")
+            lines = 1
+        if shape != "lines":
+            for i in range(1, lines + 1):
+                out.write(f"DA:{i},{hits}\n")
         out.write("end_of_record\n")
     byte_size = path.stat().st_size
     if byte_size < MIN_INPUT_BYTES:
@@ -146,7 +148,7 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     # Each function has line 1 covered; DA shape uses its full line sequence.
     return {"source": str(source), "shape": shape, "hits": hits, "lines": lines,
             "functions": functions, "aliases": aliases,
-            "function_count": functions or aliases, "bytes": byte_size}
+            "function_count": functions or int(bool(aliases)), "bytes": byte_size}
 
 
 class TempMeter:
@@ -182,23 +184,6 @@ class TempMeter:
         self._size()
 
 
-def peak_rss_bytes(pid: int) -> tuple[int | None, str]:
-    """Use the platform's explicit resource support; units follow its API."""
-    try:
-        import resource
-    except ImportError:
-        return None, "unsupported: Python resource module unavailable"
-    # resource.ru_maxrss is bytes on macOS, KiB on Linux/BSD.
-    try:
-        with open(f"/proc/{pid}/status", encoding="ascii") as f:
-            for line in f:
-                if line.startswith("VmHWM:"):
-                    return int(line.split()[1]) * 1024, "Linux /proc VmHWM"
-    except OSError:
-        pass
-    return None, "unsupported: per-process peak RSS sampling unavailable on this platform"
-
-
 def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
              name: str, spec: dict, timeout: int) -> dict:
     output = root / f"{name}.out.info"
@@ -210,6 +195,8 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
                str(root / f"{name}.info"), "-o", str(output)]
+    if spec["shape"] == "lines":
+        command.append("--no-function-coverage")
     started = time.monotonic()
     meter = TempMeter(tempdir)
     status, timed_out, rss, rss_note = None, False, None, "not measured"
@@ -218,18 +205,33 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
             proc = subprocess.Popen(command, cwd=root, stdout=out, stderr=err)
             deadline = time.monotonic() + timeout
             while True:
-                current_rss, current_note = peak_rss_bytes(proc.pid)
-                if current_rss is not None:
-                    rss = max(rss or 0, current_rss)
-                    rss_note = current_note
-                try:
-                    status = proc.wait(timeout=.05)
-                    break
-                except subprocess.TimeoutExpired:
-                    if time.monotonic() >= deadline:
-                        timed_out = True
-                        proc.kill(); status = proc.wait()
+                if hasattr(os, "wait4"):
+                    pid, wait_status, usage = os.wait4(proc.pid, os.WNOHANG)
+                    if pid:
+                        status = os.waitstatus_to_exitcode(wait_status)
+                        proc.returncode = status
+                        rss = int(usage.ru_maxrss) * (1 if sys.platform == "darwin" else 1024)
+                        rss_note = "per-process wait4 ru_maxrss"
                         break
+                    time.sleep(.05)
+                else:
+                    status = proc.poll()
+                    rss_note = "unsupported: per-process wait4 unavailable"
+                    if status is not None:
+                        break
+                    time.sleep(.05)
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    proc.kill()
+                    if hasattr(os, "wait4"):
+                        _, wait_status, usage = os.wait4(proc.pid, 0)
+                        status = os.waitstatus_to_exitcode(wait_status)
+                        proc.returncode = status
+                        rss = int(usage.ru_maxrss) * (1 if sys.platform == "darwin" else 1024)
+                        rss_note = "per-process wait4 ru_maxrss"
+                    else:
+                        status = proc.wait()
+                    break
         except OSError as exc:
             err.write(str(exc).encode())
     row = {"name": name, "argv": command, "status": status, "timed_out": timed_out,
@@ -267,9 +269,10 @@ def main() -> int:
     tempdir = root / "tmp"; tempdir.mkdir(exist_ok=True)
     # DA rows, many distinct function IDs, and one enormous alias group each
     # independently occupy roughly 28 MiB. This is a byte budget, never rows.
-    cases = (("lines", "lines", args.target_bytes // 16),
-             ("function-ids", "functions", args.target_bytes // 82),
-             ("alias-group", "aliases", args.target_bytes // 54))
+    cases = (("lines", "lines", args.target_bytes // 10),
+             ("function-ids", "functions", args.target_bytes // 55),
+             ("legacy-functions", "legacy", args.target_bytes // 50),
+             ("alias-group", "aliases", args.target_bytes // 21))
     results, failures = [], []
     for name, shape, size in cases:
         source = root / f"{name}.c"; source.write_text("int x;\n")

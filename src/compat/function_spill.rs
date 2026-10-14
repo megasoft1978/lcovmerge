@@ -66,9 +66,6 @@ pub(super) struct FunctionRow {
 pub(super) struct LinkedRow {
     pub source: String,
     pub testcase: String,
-    pub input: u64,
-    pub section: u64,
-    pub ordinal: u64,
     pub start: u64,
     pub end: Option<u64>,
     pub hits: u64,
@@ -156,84 +153,76 @@ impl Rows {
     /// Join each hit to its immediately preceding declaration without an ID/name map.
     /// Records are keyed by section and symbol, then ordered by their original line ordinal.
     pub fn next_linked(&mut self) -> Result<Option<LinkedRow>, Error> {
-        loop {
-            let Some(row) = self.next()? else {
-                return Ok(None);
-            };
-            let group = Group {
-                source: row.source.clone(),
-                testcase: row.testcase.clone(),
-                input: row.input,
-                section: row.section,
-                family: row.family,
-                symbol: row.symbol.clone(),
-            };
-            if self.group.as_ref() != Some(&group) {
-                self.group = Some(group);
-                self.declaration = None;
+        let Some(row) = self.next()? else {
+            return Ok(None);
+        };
+        let group = Group {
+            source: row.source.clone(),
+            testcase: row.testcase.clone(),
+            input: row.input,
+            section: row.section,
+            family: row.family,
+            symbol: row.symbol.clone(),
+        };
+        if self.group.as_ref() != Some(&group) {
+            self.group = Some(group);
+            self.declaration = None;
+        }
+        match row.kind {
+            Kind::Declaration => {
+                if row.family == Family::Modern && self.declaration.is_some() {
+                    return Err(record_error(&row, "invalid or duplicate FNL index"));
+                }
+                if let Some((start, end, _)) = self.declaration {
+                    if start != row.start || end != row.end {
+                        return Err(record_error(&row, "inconsistent function declaration"));
+                    }
+                } else {
+                    self.declaration = Some((row.start, row.end, row.ordinal));
+                }
+                let name = if row.family == Family::Legacy {
+                    row.name.clone()
+                } else {
+                    String::new()
+                };
+                Ok(Some(LinkedRow {
+                    source: row.source,
+                    testcase: row.testcase,
+                    start: row.start,
+                    end: row.end,
+                    hits: 0,
+                    name,
+                    label: row.label,
+                    line: row.line,
+                }))
             }
-            match row.kind {
-                Kind::Declaration => {
-                    if row.family == Family::Modern && self.declaration.is_some() {
-                        return Err(record_error(&row, "invalid or duplicate FNL index"));
-                    }
-                    if let Some((start, end, _)) = self.declaration {
-                        if start != row.start || end != row.end {
-                            return Err(record_error(&row, "inconsistent function declaration"));
-                        }
+            Kind::Hit => {
+                let Some((start, end, declaration_ordinal)) = self.declaration else {
+                    let message = if row.family == Family::Legacy {
+                        "FNDA references undeclared function"
                     } else {
-                        self.declaration = Some((row.start, row.end, row.ordinal));
-                    }
-                    let name = if row.family == Family::Legacy {
-                        row.name.clone()
+                        "FNA references unknown function index"
+                    };
+                    return Err(record_error(&row, message));
+                };
+                if row.ordinal < declaration_ordinal {
+                    let message = if row.family == Family::Legacy {
+                        "FNDA references undeclared function"
                     } else {
-                        String::new()
+                        "FNA references unknown function index"
                     };
-                    return Ok(Some(LinkedRow {
-                        source: row.source,
-                        testcase: row.testcase,
-                        input: row.input,
-                        section: row.section,
-                        ordinal: row.ordinal,
-                        start: row.start,
-                        end: row.end,
-                        hits: 0,
-                        name,
-                        label: row.label,
-                        line: row.line,
-                    }));
+                    return Err(record_error(&row, message));
                 }
-                Kind::Hit => {
-                    let Some((start, end, declaration_ordinal)) = self.declaration else {
-                        let message = if row.family == Family::Legacy {
-                            "FNDA references undeclared function"
-                        } else {
-                            "FNA references unknown function index"
-                        };
-                        return Err(record_error(&row, message));
-                    };
-                    if row.ordinal < declaration_ordinal {
-                        let message = if row.family == Family::Legacy {
-                            "FNDA references undeclared function"
-                        } else {
-                            "FNA references unknown function index"
-                        };
-                        return Err(record_error(&row, message));
-                    }
-                    return Ok(Some(LinkedRow {
-                        source: row.source,
-                        testcase: row.testcase,
-                        input: row.input,
-                        section: row.section,
-                        ordinal: row.ordinal,
-                        start,
-                        end,
-                        hits: row.hits,
-                        name: row.name,
-                        label: row.label,
-                        line: row.line,
-                    }));
-                }
+                Ok(Some(LinkedRow {
+                    source: row.source,
+                    testcase: row.testcase,
+                    start,
+                    end,
+                    hits: row.hits,
+                    name: row.name,
+                    label: row.label,
+                    line: row.line,
+                }))
             }
         }
     }
