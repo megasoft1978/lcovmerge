@@ -168,7 +168,7 @@ def main():
     }
     print(json.dumps(result, indent=2))
     if args.strict and (not result["source_tree_matches_pin"] or version["status"] != 0
-                        or "2.6-0" not in version["stdout"]
+                        or not re.search(r"\bLCOV version 2\.6(?:-0)?\s*$", version["stdout"])
                         or not result["backend_probes"]["verified"]):
         return 2
     return 0

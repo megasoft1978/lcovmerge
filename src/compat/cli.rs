@@ -95,6 +95,8 @@ fn apply_setting(req: &mut Request, key: &str, value: &str) -> Result<(), Error>
         "branch_coverage" => o.branch_coverage = rc_bool(value, key)?,
         "mcdc_coverage" => req.mcdc_coverage = rc_bool(value, key)?,
         "checksum" => req.checksum = rc_bool(value, key)?,
+        "check_data_consistency" => req.check_data_consistency = rc_bool(value, key)?,
+        "derive_function_end_line" => req.derive_function_end_line = rc_bool(value, key)?,
         "forget_testcase_names" => req.forget_test_names = rc_bool(value, key)?,
         "include" => o.includes.push(value.to_owned()),
         "exclude" => o.excludes.push(value.to_owned()),
@@ -272,6 +274,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
     let mut i = 1;
     let mut positional = false;
     let mut no_function = false;
+    let mut no_branch = false;
+    let mut no_checksum = false;
     let mut cli_include_seen = false;
     let mut cli_exclude_seen = false;
     let mut cli_ignore_seen = false;
@@ -384,7 +388,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
             continue;
         }
         if !positional && matches!(a, "--checksum" | "--no-checksum") {
-            req.checksum = a == "--checksum";
+            no_checksum |= a == "--no-checksum";
+            req.checksum = !no_checksum;
             i += 1;
             continue;
         }
@@ -395,7 +400,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
             continue;
         }
         if !positional && matches!(a, "--branch-coverage" | "--no-branch-coverage") {
-            req.resources.branch_coverage = a == "--branch-coverage";
+            no_branch |= a == "--no-branch-coverage";
+            req.resources.branch_coverage = !no_branch;
             i += 1;
             continue;
         }
@@ -534,7 +540,11 @@ mod tests {
     }
     #[test]
     fn selector_position_values() {
-        assert!(selected(&["x".into(), "-a".into(), "--lcov-compat=2.6".into()]) == false);
+        assert!(!selected(&[
+            "x".into(),
+            "-a".into(),
+            "--lcov-compat=2.6".into()
+        ]));
         assert!(parse_s(&["x", "-q", "--lcov-compat=2.6", "-a", "literal"])
             .unwrap()
             .is_some());
@@ -646,17 +656,14 @@ mod tests {
         let escaped = PathBuf::from(glob::Pattern::escape(
             dir.path().join("a*.info").to_str().unwrap(),
         ));
-        let r = parse(
-            [
-                "x".into(),
-                "--lcov-compat=2.6".into(),
-                "-a".into(),
-                bracket.into_os_string(),
-                "-a".into(),
-                escaped.into_os_string(),
-            ]
-            .into_iter(),
-        )
+        let r = parse([
+            "x".into(),
+            "--lcov-compat=2.6".into(),
+            "-a".into(),
+            bracket.into_os_string(),
+            "-a".into(),
+            escaped.into_os_string(),
+        ])
         .unwrap()
         .unwrap();
         assert_eq!(r.resources.inputs.len(), 3);

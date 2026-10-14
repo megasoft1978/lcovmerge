@@ -71,19 +71,26 @@ def child_run(command, stdout_path, stderr_path, timeout, temp_path):
         with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
             proc = subprocess.Popen(command, stdout=stdout, stderr=stderr)
             if hasattr(os, "wait4"):
-                deadline = start + timeout
-                while True:
-                    pid, status, usage = os.wait4(proc.pid, os.WNOHANG)
-                    if pid:
-                        returncode = os.waitstatus_to_exitcode(status)
-                        proc.returncode = returncode
-                        break
-                    if time.perf_counter() >= deadline:
+                timed_out = threading.Event()
+
+                def expire():
+                    timed_out.set()
+                    try:
                         proc.kill()
-                        _, status, usage = os.wait4(proc.pid, 0)
-                        proc.returncode = os.waitstatus_to_exitcode(status)
-                        raise TimeoutError(f"timed out after {timeout:g}s")
-                    time.sleep(0.01)
+                    except ProcessLookupError:
+                        pass
+
+                watchdog = threading.Timer(timeout, expire)
+                watchdog.daemon = True
+                watchdog.start()
+                try:
+                    _, status, usage = os.wait4(proc.pid, 0)
+                    returncode = os.waitstatus_to_exitcode(status)
+                    proc.returncode = returncode
+                finally:
+                    watchdog.cancel()
+                if timed_out.is_set():
+                    raise TimeoutError(f"timed out after {timeout:g}s")
             else:
                 try:
                     returncode = proc.wait(timeout=timeout)

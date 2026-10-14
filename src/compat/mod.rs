@@ -14,6 +14,8 @@ pub struct Request {
     pub mcdc_coverage: bool,
     pub ignore_errors: BTreeSet<String>,
     pub keep_going: bool,
+    pub check_data_consistency: bool,
+    pub derive_function_end_line: bool,
 }
 
 impl Default for Request {
@@ -30,6 +32,8 @@ impl Default for Request {
             mcdc_coverage: false,
             ignore_errors: BTreeSet::new(),
             keep_going: false,
+            check_data_consistency: true,
+            derive_function_end_line: true,
         }
     }
 }

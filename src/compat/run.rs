@@ -2,7 +2,6 @@ use self::merge::{merge_into, write_sections};
 use self::record::Section;
 use super::Request;
 use crate::common::{check_cancelled, stdin_reader, stdout_writer, Error, MAX_LINE};
-use base64::Engine;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -16,8 +15,14 @@ use std::path::Path;
 mod codec;
 #[path = "merge.rs"]
 mod merge;
+#[path = "policy.rs"]
+mod policy;
 #[path = "record.rs"]
 mod record;
+use policy::{
+    can_recover, num, parse_branch, parse_fn, parse_mcdc, parse_named_count,
+    validate_or_generate_checksum,
+};
 
 pub fn run(request: Request) -> Result<(), Error> {
     let opt = &request.resources;
@@ -153,6 +158,7 @@ pub fn run(request: Request) -> Result<(), Error> {
             sections[i].version = Some(v);
         }
     }
+    policy::derive_function_ends(&mut sections, &request)?;
     sections.sort_by(|a, b| {
         a.source
             .cmp(&b.source)
@@ -214,9 +220,7 @@ pub fn run(request: Request) -> Result<(), Error> {
                 .sync_all()
                 .map_err(|e| Error::new(3, format!("cannot sync staged output: {e}")))
         });
-        if let Err(e) = result {
-            return Err(e);
-        }
+        result?;
         check_cancelled()?;
         staged.persist(&opt.output).map_err(|e| {
             Error::new(
@@ -339,7 +343,11 @@ fn parse_input(
                 }
             };
             current = Some(Section {
-                testcase: testcase.clone(),
+                testcase: if req.forget_test_names {
+                    String::new()
+                } else {
+                    testcase.clone()
+                },
                 selected: crate::path::path_selected(&req.resources, &rewritten),
                 source: rewritten,
                 ..Section::default()
@@ -538,6 +546,7 @@ fn ensure_budget(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Replaced by the bounded executor in the next integration phase.
 fn finish_section(
     mut s: Section,
     sections: &mut Vec<Section>,
@@ -554,13 +563,13 @@ fn finish_section(
             let hits = blocks
                 .iter()
                 .flatten()
-                .filter_map(|b| b.hits)
+                .map(|b| u64::from(b.hits.is_some_and(|n| n > 0)))
                 .try_fold(0u64, |a, b| a.checked_add(b))
                 .ok_or_else(|| {
                     Error::at(2, label, branch_line, "branch-derived DA count overflow")
                 })?;
             if let Some((line_hits, _)) = s.lines.get(&branch_line) {
-                if (*line_hits > 0) != (hits > 0) {
+                if req.check_data_consistency && (*line_hits > 0) != (hits > 0) {
                     let e = Error::at(
                         2,
                         label,
@@ -578,7 +587,7 @@ fn finish_section(
                     branch_line,
                     "inconsistent branch coverage without line coverage data",
                 );
-                if !can_recover(req, &e) {
+                if req.check_data_consistency && !can_recover(req, &e) {
                     return Err(e);
                 }
                 s.lines.insert(branch_line, (hits, None));
@@ -665,261 +674,6 @@ fn finish_section(
     Ok(())
 }
 
-fn parse_fn(s: &str, file: &str, line: u64) -> Result<(u64, Option<u64>, String), Error> {
-    let mut f = s.splitn(3, ',');
-    let first = f.next().unwrap_or("");
-    let second = f.next();
-    let third = f.next();
-    match (second, third) {
-        (Some(name), None) => Ok((num(Some(first), file, line)?, None, name.to_owned())),
-        (Some(end), Some(name)) => Ok((
-            num(Some(first), file, line)?,
-            Some(num(Some(end), file, line)?),
-            name.to_owned(),
-        )),
-        _ => Err(Error::at(2, file, line, "malformed FN record")),
-    }
-}
-
-fn parse_branch(s: &mut Section, payload: &str, file: &str, line: u64) -> Result<(), Error> {
-    let mut f = payload.splitn(4, ',');
-    let ln = num(f.next(), file, line)?;
-    let block_field = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
-    let expr_first = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
-    let tail = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA record"))?;
-    if ln == 0 {
-        return Err(Error::at(2, file, line, "branch line must be positive"));
-    }
-    let kind = block_field
-        .chars()
-        .next()
-        .filter(|c| *c == 'e' || *c == 'f')
-        .unwrap_or('v');
-    let rest = if kind == 'v' {
-        block_field
-    } else {
-        &block_field[1..]
-    };
-    let unreachable = rest.starts_with('U');
-    let rest = rest.strip_prefix('U').unwrap_or(rest);
-    let block = num(Some(rest), file, line)?;
-    let combined = format!("{expr_first},{tail}");
-    let (expr, count) = combined
-        .rsplit_once(',')
-        .ok_or_else(|| Error::at(2, file, line, "malformed BRDA count"))?;
-    let expr = expr.to_owned();
-    if expr.is_empty() {
-        return Err(Error::at(2, file, line, "empty BRDA expression"));
-    }
-    let hits = if count == "-" {
-        None
-    } else {
-        Some(num(Some(count), file, line)?)
-    };
-    let blocks = s.branches.entry(ln).or_default();
-    let bi = usize::try_from(block)
-        .map_err(|_| Error::at(2, file, line, "branch block index overflow"))?;
-    if bi > 65535 {
-        return Err(Error::at(
-            2,
-            file,
-            line,
-            "branch block index exceeds supported range",
-        ));
-    }
-    while blocks.len() <= bi {
-        blocks.push(Vec::new());
-    }
-    blocks[bi].push(record::Branch {
-        expr,
-        hits,
-        kind,
-        unreachable,
-    });
-    s.saw_coverpoint = true;
-    Ok(())
-}
-
-fn parse_mcdc(s: &mut Section, payload: &str, file: &str, line: u64) -> Result<(), Error> {
-    let mut f = payload.splitn(6, ',');
-    let ln = num(f.next(), file, line)?;
-    let group = f
-        .next()
-        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC record"))?;
-    let sense = f.next().unwrap_or("");
-    let count = num(f.next(), file, line)?;
-    let index = num(f.next(), file, line)?;
-    let expr = f
-        .next()
-        .filter(|x| !x.is_empty())
-        .ok_or_else(|| Error::at(2, file, line, "malformed MCDC expression"))?;
-    if ln == 0 {
-        return Err(Error::at(2, file, line, "MC/DC line must be positive"));
-    }
-    let unreachable = group.starts_with('U');
-    let g = group.strip_prefix('U').unwrap_or(group);
-    let group = num(Some(g), file, line)?;
-    if group == 0 {
-        return Err(Error::at(
-            2,
-            file,
-            line,
-            "MC/DC group size must be positive",
-        ));
-    }
-    let sense = sense
-        .chars()
-        .next()
-        .filter(|c| *c == 't' || *c == 'f')
-        .ok_or_else(|| Error::at(2, file, line, "invalid MC/DC sense"))?;
-    let key = (group, index, sense);
-    let item = record::Mcdc {
-        hits: count,
-        expr: expr.to_owned(),
-        unreachable,
-    };
-    if let Some(old) = s.mcdc.entry(ln).or_default().get_mut(&key) {
-        if old.expr != item.expr {
-            return Err(Error::at(2, file, line, "inconsistent MC/DC expression"));
-        }
-        old.hits = old
-            .hits
-            .checked_add(item.hits)
-            .ok_or_else(|| Error::at(2, file, line, "MC/DC count overflow"))?;
-        old.unreachable |= item.unreachable;
-    } else {
-        s.mcdc.entry(ln).or_default().insert(key, item);
-    }
-    s.saw_coverpoint = true;
-    Ok(())
-}
-
-fn validate_or_generate_checksum(
-    s: &mut Section,
-    payload: &str,
-    req: &Request,
-    file: &str,
-    line: u64,
-) -> Result<(), Error> {
-    let line_no = num(payload.split(',').next(), file, line)?;
-    let existing = s.lines.get(&line_no).and_then(|x| x.1.clone());
-    let src = Path::new(&s.source);
-    let Ok(source) = File::open(src) else {
-        return Ok(());
-    };
-    let mut reader = BufReader::new(source);
-    let mut buf = Vec::new();
-    let mut found = true;
-    for n in 1..=line_no {
-        buf.clear();
-        let read = (&mut reader)
-            .take((MAX_LINE + 2) as u64)
-            .read_until(b'\n', &mut buf)
-            .map_err(|e| Error::at(3, file, line, format!("source read failed: {e}")))?;
-        if read == 0 {
-            found = false;
-            break;
-        }
-        if buf.len() > MAX_LINE + 1 {
-            return Err(Error::at(
-                2,
-                file,
-                line,
-                "source line exceeds 1 MiB while computing checksum",
-            ));
-        }
-        if n == line_no {
-            break;
-        }
-    }
-    if buf.last() == Some(&b'\n') {
-        buf.pop();
-    }
-    if buf.last() == Some(&b'\r') {
-        buf.pop();
-    }
-    if buf.len() > MAX_LINE {
-        return Err(Error::at(
-            2,
-            file,
-            line,
-            "source line exceeds 1 MiB while computing checksum",
-        ));
-    }
-    let sum = found
-        .then(|| base64::engine::general_purpose::STANDARD_NO_PAD.encode(md5::compute(&buf).0));
-    let mismatch = existing
-        .as_deref()
-        .is_some_and(|c| Some(c) != sum.as_deref());
-    let missing = existing.is_none();
-    if req.checksum || req.resources.strict_checksum {
-        if let Some(v) = s.lines.get_mut(&line_no) {
-            if v.1.is_none() {
-                v.1 = sum.clone();
-            }
-        }
-    }
-    if (req.resources.strict_checksum || req.checksum) && (mismatch || missing) {
-        let message = if mismatch {
-            format!("source checksum mismatch for {}:{}", s.source, line_no)
-        } else {
-            format!("no checksum for {}:{}", s.source, line_no)
-        };
-        let e = Error::at(2, file, line, message);
-        if !can_recover(req, &e) {
-            return Err(e);
-        }
-    }
-    Ok(())
-}
-fn can_recover(req: &Request, error: &Error) -> bool {
-    if error.code == 3 {
-        return false;
-    }
-    if req.keep_going {
-        return true;
-    }
-    let m = error.message.to_ascii_lowercase();
-    let category = if m.contains("path") {
-        "path"
-    } else if m.contains("overflow") {
-        "count"
-    } else if m.contains("checksum") || m.contains("source version") {
-        "version"
-    } else if m.contains("inconsistent") || m.contains("conflicting") {
-        "inconsistent"
-    } else if m.contains("branch") {
-        "branch"
-    } else {
-        "format"
-    };
-    req.ignore_errors
-        .iter()
-        .any(|x| x.eq_ignore_ascii_case(category))
-}
-fn parse_named_count(s: &str, file: &str, line: u64) -> Result<(u64, String), Error> {
-    let (n, name) = s
-        .split_once(',')
-        .ok_or_else(|| Error::at(2, file, line, "malformed FNDA record"))?;
-    if name.is_empty() {
-        return Err(Error::at(2, file, line, "empty function name"));
-    }
-    Ok((num(Some(n), file, line)?, name.to_owned()))
-}
-fn num(s: Option<&str>, file: &str, line: u64) -> Result<u64, Error> {
-    let s = s.unwrap_or("");
-    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(Error::at(2, file, line, "invalid numeric LCOV field"));
-    }
-    s.parse()
-        .map_err(|_| Error::at(2, file, line, "numeric LCOV field overflow"))
-}
 fn is_gzip_path(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gz"))
 }
@@ -1032,7 +786,7 @@ mod tests {
             1 << 20,
         )
         .unwrap();
-        assert_eq!(sections[0].lines.get(&4).unwrap().0, 7);
+        assert_eq!(sections[0].lines.get(&4).unwrap().0, 1);
     }
 
     #[test]

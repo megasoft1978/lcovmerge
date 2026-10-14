@@ -149,6 +149,8 @@ pub fn supported(key: &str) -> bool {
     matches!(
         key,
         "function_coverage"
+            | "check_data_consistency"
+            | "derive_function_end_line"
             | "branch_coverage"
             | "mcdc_coverage"
             | "checksum"

@@ -119,11 +119,7 @@ impl Section {
             + self.testcase.len()
             + self.source.len()
             + self.lines.len() * 64
-            + self
-                .functions
-                .iter()
-                .map(|(n, _)| n.len() + 96)
-                .sum::<usize>()
+            + self.functions.keys().map(|n| n.len() + 96).sum::<usize>()
             + self
                 .branches
                 .values()

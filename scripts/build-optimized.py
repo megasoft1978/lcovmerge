@@ -67,7 +67,7 @@ def main() -> int:
     flags = flags.split("\x1f") if flags else shlex.split(os.environ.get("RUSTFLAGS", ""))
     if target.endswith("windows-msvc"):
         flags += ["-C", "target-feature=+crt-static"]
-    sources = [ROOT / "Cargo.toml", ROOT / "Cargo.lock", ROOT / "build.rs", Path(__file__), ROOT / "tools/gen-lcov.py", *sorted((ROOT / "src").glob("*.rs")), *sorted((ROOT / ".cargo").glob("*"))]
+    sources = [ROOT / "Cargo.toml", ROOT / "Cargo.lock", ROOT / "build.rs", Path(__file__), ROOT / "tools/gen-lcov.py", *sorted((ROOT / "src").rglob("*.rs")), *sorted((ROOT / ".cargo").glob("*"))]
     commit = os.environ.get("LCOVMERGE_GIT_COMMIT")
     if not commit:
         try:

@@ -26,7 +26,7 @@ python3 bench/compare-builds.py --baseline /path/to/c-lcovmerge \
   --workdir .cache/comparison -- input1.info input2.info
 ```
 
-The gate interleaves runs, checks every output hash and temporary-run cleanup, saves raw results under `.cache/`, and fails if any candidate median exceeds the baseline. Run it on an idle machine; rerun close results to distinguish noise. `--max-ratio` can set an explicit tolerance, with strict parity as the default.
+The gate interleaves paired runs, checks every output hash and temporary-run cleanup, and saves raw samples, hashes, resource measurements, and seeded bootstrap uncertainty under `.cache/`. Its acceptance boundary is a candidate/baseline timing ratio of 1. An interval wholly below 1 is an observed pass; one wholly above 1 is a regression; one spanning 1 is inconclusive. Regression and inconclusive results return nonzero. Run on an idle machine and investigate close results; 3% is a diagnostic noise band, not a regression allowance. These intervals describe the measured binaries and workloads, and do not account for arbitrary code layouts or prove universal parity. The earlier `--max-ratio` tolerance switch is removed.
 
 The C lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.
 

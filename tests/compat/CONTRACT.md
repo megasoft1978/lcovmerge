@@ -1,7 +1,7 @@
 # LCOV 2.6 compatibility oracle
 
 The required oracle is the LCOV source release at commit
-`a17443e7dbb31b5b7bff6beac32e7b9b02ec3342` (`LCOV version 2.6-0`). The pinned
+`a17443e7dbb31b5b7bff6beac32e7b9b02ec3342` (source version `2.6`; the installed package reports `2.6-0`). The pinned
 source tree is read-only. `tools/lcov-oracle-identity.py --strict` checks its
 commit and every tracked file against the commit object, then records the
 selected launcher and implementation executable, library, package deviations, Perl runtime and
@@ -34,7 +34,8 @@ and coverage statistics. Outputs are removed before each command. Success
 cases require matching normalized trace semantics and successful genhtml
 consumption with matching coverage statistics. Failure cases assert the
 expected oracle status for both backends; candidate runs must match status,
-stdout, and whether the output destination was created.
+quiet stdout, and whether the output destination was created. Commands use
+`--quiet` so diagnostic wording is not mistaken for tracefile output.
 
 ## Required case matrix
 

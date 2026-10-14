@@ -24,6 +24,25 @@ Use `megasoft1978/lcovmerge@v1.1.0` to merge LCOV tracefiles in a workflow. The 
 
 See the [CLI usage reference](../docs/USAGE.md) for exact prefix rules, branch defaults, filter order, checksum handling, and exit statuses.
 
+## LCOV merge profile
+
+This action uses the native CLI, including its deduplicated input-list and
+summary contract. Its default published v1.1.0 binary predates the Rust profile.
+Do not pass `--lcov-compat=2.6` through `extra-args`. To test the opt-in profile,
+build the Rust checkout and invoke its CLI in a workflow step:
+
+```yaml
+- name: Build and merge with the LCOV profile
+  shell: bash
+  run: |
+    make
+    ./bin/lcovmerge --lcov-compat=2.6 -a 'coverage/*.info' -o coverage/merged.info
+```
+
+The profile's [supported command and validation contract](../docs/LCOV-PROFILE.md)
+applies. Compare the result with the current LCOV merge before changing a
+pipeline's report or coverage gate.
+
 The action selects binaries for GitHub-hosted Linux and macOS runners on x86_64/arm64, and Windows x86_64. For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. A Wine run is recorded separately. The merge summary comes from `lcovmerge --stats`.
 
 The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. It uses the repository action with the published v1.1.0 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. These checks cover action integration; the Windows CI jobs above verify Windows runtime behavior.

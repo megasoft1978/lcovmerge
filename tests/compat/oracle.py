@@ -281,7 +281,7 @@ def main():
             profile = case_dir / f"oracle-{backend}.profile.json"
             remove(oracle_out)
             remove(profile)
-            argv = [str(oracle_exe), "--config-file", str(config), "--profile", str(profile), *opts]
+            argv = [str(oracle_exe), "--quiet", "--config-file", str(config), "--profile", str(profile), *opts]
             if mode == "stdout":
                 argv += ["-o", "/dev/stdout"]
             else:
@@ -335,9 +335,9 @@ def main():
                 cand_out = case_dir / f"candidate-{backend}{ext}"
                 cand_log = case_dir / f"candidate-{backend}.log"
                 remove(cand_out)
-                cargv = [str(candidate), "--lcov-compat=2.6", "--config-file", str(config), *opts]
+                cargv = [str(candidate), "--lcov-compat=2.6", "--quiet", "--config-file", str(config), *opts]
                 if mode == "stdout":
-                    cargv += ["-o", "/dev/stdout"]
+                    pass  # Omitted output is the profile stdout contract.
                 else:
                     cargv += ["-o", str(cand_out)]
                 cr = run(cargv, case_dir, env, args.timeout)

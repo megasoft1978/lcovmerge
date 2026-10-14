@@ -30,6 +30,12 @@ read additional input paths, one per line. A single \fB-\fR input reads
 standard input; output \fB-\fR writes standard output.
 .SH OPTIONS
 .TP
+.B --lcov-compat=2.6
+Select the separate, opt-in LCOV 2.6 merge profile. Its arguments and defaults
+differ from native mode. Use this selector with --help for profile help;
+see docs/LCOV-PROFILE.md for the supported merge contract.
+The options below describe native mode.
+.TP
 .BI -o " FILE" ", " --output " FILE"
 Write the result to FILE. The destination is replaced only after a successful
 file merge. Use \fB-\fR for standard output. Bytes already written to stdout

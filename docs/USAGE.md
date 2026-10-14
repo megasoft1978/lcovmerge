@@ -21,6 +21,13 @@ Linux command sequence. For the published C v1.1.0 release, Windows is verified 
 
 ## Options
 
+### `--lcov-compat=2.6`
+
+Select the separate, opt-in LCOV 2.6 merge profile. Its arguments, defaults, configuration,
+testcase grouping, and error status differ from native mode. Use
+`lcovmerge --lcov-compat=2.6 --help` and read the [profile contract](LCOV-PROFILE.md).
+The options below describe native mode.
+
 ### `-o FILE`, `--output FILE`
 
 Write the merged tracefile to `FILE`. The output file is replaced only after a successful merge. Use `-` for

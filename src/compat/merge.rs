@@ -4,7 +4,11 @@ use crate::common::Error;
 use std::collections::HashMap;
 use std::io::Write;
 
-pub type Sections = Vec<Section>;
+type FunctionGroup<'a> = (
+    u64,
+    Option<u64>,
+    Vec<(&'a String, &'a super::record::Function)>,
+);
 
 fn branch_sig(block: &[Branch]) -> Vec<char> {
     block
@@ -129,8 +133,7 @@ pub fn write_sections(
             writeln!(out, "VER:{v}").map_err(io_error)?;
         }
         if functions {
-            let mut groups: Vec<(u64, Option<u64>, Vec<(&String, &super::record::Function)>)> =
-                Vec::new();
+            let mut groups: Vec<FunctionGroup<'_>> = Vec::new();
             for (n, f) in &s.functions {
                 if let Some(g) = groups
                     .iter_mut()
@@ -250,19 +253,6 @@ pub fn write_sections(
         writeln!(out, "LF:{found}\nLH:{hit}\nend_of_record").map_err(io_error)?;
     }
     out.flush().map_err(io_error)
-}
-#[allow(dead_code)]
-pub fn index(sections: Sections) -> (Vec<(String, String)>, HashMap<(String, String), Section>) {
-    let mut order = Vec::new();
-    let mut map = HashMap::new();
-    for section in sections {
-        let key = (section.testcase.clone(), section.source.clone());
-        if !map.contains_key(&key) {
-            order.push(key.clone());
-            map.insert(key, section);
-        }
-    }
-    (order, map)
 }
 fn io_error(e: std::io::Error) -> Error {
     Error::new(3, format!("output write failed: {e}"))
