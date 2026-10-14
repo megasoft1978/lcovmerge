@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Require merged source-master function coverpoints whenever LCOV-profile function coverage is enabled, including by default; emit zero function summaries for DA-only source/testcase output and honor `--no-function-coverage`. The requirement spans all inputs and retains ghost master functions.
+- Use stable heap merging for compatibility metadata runs, retain full serial batch budgets, and limit sort workers when component budgets are small. Remove the redundant function-source sort; performance measurements remain required before claiming a speed improvement.
 - Add the experimental opt-in `--lcov-compat=2.6` merge profile with quoted `-a` glob expansion and a documented, version-pinned command surface. Validation remains in progress; native defaults are unchanged and native benchmark data does not measure this profile.
 - Execute LCOV-profile branch sections containing DA with bounded signature/occurrence joins and input/merged consistency checks; retain negative-count recovery as zero, handle sparse block IDs, and honor explicit empty-family errors.
 - Execute source-version propagation with bounded sorting. Match automatic function-family empty errors and discard no-DA input sources and testcase output while retaining source master metadata.

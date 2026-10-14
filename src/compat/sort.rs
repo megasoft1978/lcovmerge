@@ -1,6 +1,7 @@
 //! Bounded external byte-key sorting for compatibility metadata.
 use crate::common::{check_cancelled, Error};
 use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ const MAX_VALUE: usize = 2 << 20;
 const MAX_FRAME: usize = 6 << 20;
 const HEADER: usize = 24;
 const IO: usize = 4096;
+const MIN_BATCH: usize = 4 << 20;
 const OVERHEAD: usize = std::mem::size_of::<Row>() + 32;
 
 pub(super) struct Row {
@@ -25,11 +27,35 @@ pub(super) struct Stats {
     pub bytes_read: u64,
     pub bytes_written: u64,
     pub workers: usize,
+    #[cfg(test)]
+    pub fanin: usize,
 }
 struct Item {
     row: Row,
     ordinal: u64,
 }
+// BinaryHeap is a max-heap; reverse the full stable merge ordering.
+struct Head {
+    item: Item,
+    run: usize,
+}
+impl Ord for Head {
+    fn cmp(&self, other: &Self) -> Ordering {
+        cmp(&other.item, &self.item).then_with(|| other.run.cmp(&self.run))
+    }
+}
+impl PartialOrd for Head {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl PartialEq for Head {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for Head {}
+
 pub(super) struct Sorter {
     dir: Arc<tempfile::TempDir>,
     budget: usize,
@@ -96,8 +122,12 @@ struct RunReader {
 }
 impl RunReader {
     fn open(p: &Path, max_frame: usize) -> Result<Self, Error> {
+        let file = File::open(p).map_err(err)?;
+        if file.metadata().map_err(err)?.len() < HEADER as u64 {
+            return Err(err("empty or truncated run header"));
+        }
         Ok(Self {
-            file: BufReader::with_capacity(IO, File::open(p).map_err(err)?),
+            file: BufReader::with_capacity(IO, file),
             bytes: 0,
             max_frame,
         })
@@ -155,14 +185,22 @@ impl Sorter {
             .prefix("lcov-meta-")
             .tempdir_in(tmpdir)
             .map_err(err)?;
-        let requested = jobs.max(1).min((budget / (IO + OVERHEAD + 1)).max(1));
+        // Parallel batches share the component budget with the producer. The
+        // division bounds requested + 1 without risking addition overflow.
+        let requested = jobs
+            .max(1)
+            .min((budget / MIN_BATCH).saturating_sub(1).max(1));
         Ok(Self {
             dir: Arc::new(dir),
             budget,
             held: 0,
             batch: Vec::new(),
             batch_cap: 0,
-            batch_budget: budget / (requested + 1),
+            batch_budget: if requested == 1 {
+                budget
+            } else {
+                budget / (requested + 1)
+            },
             requested,
             handles: Vec::with_capacity(requested),
             workers: 0,
@@ -341,8 +379,12 @@ impl Sorter {
         }
         let mut count = self.runs;
         let mut pass = 0u64;
-        // Reserve two complete maximum-sized row heads, their vector overhead, and I/O space.
-        let per_head = self.max_frame + OVERHEAD + IO;
+        #[cfg(test)]
+        let mut used_fanin = 0usize;
+        // Charge each reader, its input buffer, and its owned heap head,
+        // including a complete maximum-sized frame. Reserve output I/O too.
+        let per_head =
+            self.max_frame + std::mem::size_of::<RunReader>() + std::mem::size_of::<Head>() + IO;
         let fanin = descriptor_fanin((self.budget.saturating_sub(IO) / per_head).min(64));
         if count > 1 && fanin < 2 {
             return Err(err(format!(
@@ -357,34 +399,34 @@ impl Sorter {
             let mut start = 0;
             while start < count {
                 let n = (count - start).min(fanin as u64);
-                let mut readers = Vec::new();
+                #[cfg(test)]
+                {
+                    used_fanin = used_fanin.max(n as usize);
+                }
+                let mut readers = Vec::with_capacity(n as usize);
                 for id in start..start + n {
                     readers.push(RunReader::open(
                         &run_path(self.dir.path(), pass - 1, id),
                         self.max_frame,
                     )?);
                 }
-                let mut heads = Vec::new();
-                for r in &mut readers {
-                    heads.push(r.next()?);
+                let mut heads = BinaryHeap::with_capacity(n as usize);
+                for (run, reader) in readers.iter_mut().enumerate() {
+                    if let Some(item) = reader.next()? {
+                        heads.push(Head { item, run });
+                    }
                 }
                 let mut out = BufWriter::with_capacity(
                     IO,
                     File::create(run_path(self.dir.path(), pass, out_id)).map_err(err)?,
                 );
-                loop {
+                while let Some(Head { item, run }) = heads.pop() {
                     cancelled()?;
-                    let best = heads
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, x)| x.as_ref().map(|v| (i, v)))
-                        .min_by(|a, b| cmp(a.1, b.1))
-                        .map(|x| x.0);
-                    let Some(i) = best else { break };
-                    let item = heads[i].take().unwrap();
                     write_item(&mut out, &item, &mut self.written)?;
                     drop(item);
-                    heads[i] = readers[i].next()?;
+                    if let Some(item) = readers[run].next()? {
+                        heads.push(Head { item, run });
+                    }
                 }
                 for r in &readers {
                     self.read += r.bytes;
@@ -410,6 +452,8 @@ impl Sorter {
                 bytes_read: self.read,
                 bytes_written: self.written,
                 workers: self.max_workers.load(AtomicOrdering::Relaxed).max(1),
+                #[cfg(test)]
+                fanin: used_fanin,
             },
         })
     }
@@ -542,8 +586,7 @@ mod tests {
         let path = parent.path().join("bad");
         let mut f = File::create(&path).unwrap();
         f.write_all(b"LCS1").unwrap();
-        let mut r = RunReader::open(&path, MAX_FRAME).unwrap();
-        match r.next() {
+        match RunReader::open(&path, MAX_FRAME) {
             Err(e) => assert!(e.message.contains("truncated")),
             Ok(_) => panic!("truncated frame accepted"),
         }
@@ -554,11 +597,15 @@ mod tests {
         let parent = tempfile::tempdir().unwrap();
         let mut expected = None;
         for jobs in [1, 2, 4] {
-            let mut sorter = Sorter::new(parent.path(), 32768, jobs).unwrap();
+            let mut sorter = Sorter::new(parent.path(), 20 << 20, jobs).unwrap();
+            assert_eq!(sorter.requested, jobs);
             for i in (0..4096u32).rev() {
                 sorter
                     .push((i % 17).to_be_bytes().to_vec(), i.to_le_bytes().to_vec())
                     .unwrap();
+                if i % 128 == 0 {
+                    sorter.flush().unwrap();
+                }
             }
             let sorted = sorter.finish().unwrap();
             assert!(sorted.stats().runs > 3);
@@ -579,13 +626,159 @@ mod tests {
     }
 
     #[test]
+    fn small_budget_jobs_use_identical_serial_batches() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut expected = None;
+        for jobs in [1, 4] {
+            let mut sorter = Sorter::new(parent.path(), 32768, jobs).unwrap();
+            assert_eq!(sorter.requested, 1);
+            assert_eq!(sorter.batch_budget, sorter.budget);
+            for i in (0..4096u32).rev() {
+                sorter
+                    .push((i % 17).to_be_bytes().to_vec(), i.to_le_bytes().to_vec())
+                    .unwrap();
+            }
+            let sorted = sorter.finish().unwrap();
+            assert_eq!(sorted.stats().workers, 1);
+            assert!(sorted.stats().runs > 3);
+            let mut cursor = sorted.cursor().unwrap();
+            let mut rows = Vec::new();
+            while let Some(row) = cursor.next().unwrap() {
+                rows.push((row.key, row.value));
+            }
+            let result = (sorted.stats().runs, rows);
+            if let Some(ref prior) = expected {
+                assert_eq!(&result, prior);
+            }
+            expected = Some(result);
+        }
+        assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn interleaved_equal_keys_keep_global_ordinals_across_many_runs() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut sorter = Sorter::new(parent.path(), 32768, 4).unwrap();
+        for i in 0..384u32 {
+            sorter
+                .push(vec![(i % 3) as u8], i.to_le_bytes().to_vec())
+                .unwrap();
+            if i % 4 == 3 {
+                sorter.flush().unwrap();
+            }
+        }
+        let sorted = sorter.finish().unwrap();
+        assert_eq!(sorted.stats().runs, 96);
+        assert!(sorted.stats().passes > 1);
+        let mut cursor = sorted.cursor().unwrap();
+        for key in 0..3u8 {
+            for i in (0..384u32).filter(|i| i % 3 == u32::from(key)) {
+                let row = cursor.next().unwrap().unwrap();
+                assert_eq!(row.key, [key]);
+                assert_eq!(row.value, i.to_le_bytes());
+            }
+        }
+        assert!(cursor.next().unwrap().is_none());
+    }
+
+    #[test]
+    fn empty_internal_run_is_fatal_and_cleans_up() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut sorter = Sorter::new(parent.path(), 32768, 1).unwrap();
+        sorter.push(b"a".to_vec(), vec![]).unwrap();
+        sorter.flush().unwrap();
+        File::create(run_path(sorter.dir.path(), 0, 0)).unwrap();
+        let sorted = sorter.finish().unwrap();
+        match sorted.cursor() {
+            Err(e) => {
+                assert_eq!(e.code, 3);
+                assert!(e.message.contains("empty or truncated"));
+            }
+            Ok(_) => panic!("empty internal run accepted"),
+        }
+        drop(sorted);
+        assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+        let empty = Sorter::new(parent.path(), 32768, 4)
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert!(empty.cursor().unwrap().next().unwrap().is_none());
+        drop(empty);
+
+        // A missing head in a merge must also fail rather than lose that run.
+        let mut sorter = Sorter::new(parent.path(), 32768, 1).unwrap();
+        for key in [b"a", b"b"] {
+            sorter.push(key.to_vec(), vec![]).unwrap();
+            sorter.flush().unwrap();
+        }
+        File::create(run_path(sorter.dir.path(), 0, 0)).unwrap();
+        match sorter.finish() {
+            Err(e) => assert_eq!(e.code, 3),
+            Ok(_) => panic!("merge accepted empty internal run"),
+        }
+        assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+
+    #[test]
     fn worker_write_error_joins_and_cleans_tempdir() {
         let parent = tempfile::tempdir().unwrap();
-        let mut sorter = Sorter::new(parent.path(), 16384, 2).unwrap();
+        let mut sorter = Sorter::new(parent.path(), 12 << 20, 2).unwrap();
         sorter.push(b"a".to_vec(), b"b".to_vec()).unwrap();
         fs::create_dir(run_path(sorter.dir.path(), 0, 0)).unwrap();
         sorter.flush().unwrap();
         assert!(sorter.finish().is_err());
         assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+
+    /// Deterministic work/IO probe, deliberately excluded from routine tests.
+    /// Final cursor reads belong to the consumer, not sort merge IO counters.
+    #[test]
+    #[ignore]
+    fn metadata_single_source_io_probe() {
+        let parent = tempfile::tempdir().unwrap();
+        let rows = 100_000u64;
+        let budget = 1 << 20;
+        for jobs in [1, 4] {
+            let mut sorter = Sorter::new(parent.path(), budget, jobs).unwrap();
+            for line in (0..rows).rev() {
+                let mut key = b"single-source.c\0".to_vec();
+                key.extend_from_slice(&line.to_be_bytes());
+                let mut value = vec![b'x'; 256];
+                value[..8].copy_from_slice(&line.to_be_bytes());
+                sorter.push(key, value).unwrap();
+            }
+            let sorted = sorter.finish().unwrap();
+            let stats = sorted.stats();
+            assert!(stats.runs > 1 && stats.passes > 0 && stats.fanin >= 2);
+            assert!(stats.bytes_written > 24 << 20 && stats.bytes_read > 0);
+            println!(
+                concat!(
+                    "{{\"probe\":\"metadata-single-source\",\"rows\":{},",
+                    "\"value_bytes\":256,\"input_order\":\"descending\",",
+                    "\"budget_bytes\":{},\"jobs\":{},\"runs\":{},\"passes\":{},",
+                    "\"merge_bytes_read\":{},\"bytes_written\":{},\"fanin\":{},\"workers\":{}}}"
+                ),
+                rows,
+                budget,
+                jobs,
+                stats.runs,
+                stats.passes,
+                stats.bytes_read,
+                stats.bytes_written,
+                stats.fanin,
+                stats.workers
+            );
+            let mut cursor = sorted.cursor().unwrap();
+            for line in 0..rows {
+                let row = cursor.next().unwrap().unwrap();
+                assert_eq!(&row.key[16..], &line.to_be_bytes());
+                assert_eq!(&row.value[..8], &line.to_be_bytes());
+                assert!(row.value[8..].iter().all(|b| *b == b'x'));
+            }
+            assert!(cursor.next().unwrap().is_none());
+            drop(cursor);
+            drop(sorted);
+            assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+        }
     }
 }

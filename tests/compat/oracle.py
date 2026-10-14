@@ -154,6 +154,7 @@ def fixtures(directory):
         "branch-duplicate-numeric-ids.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,1\nBRDA:1,7,00,2\nend_of_record\n",
         "branch-missing-line-cross-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nBRDA:2,7,0,1\nend_of_record\n",
         "branch-missing-line-cross-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
+        "default-functions.info": f"TN:alpha\nSF:{srcname}\nFNL:0,1,1\nFNA:0,1,main\nDA:1,1\nend_of_record\n",
         "da-only.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nend_of_record\n",
         "branch-global-mismatch-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nend_of_record\n",
         "branch-global-mismatch-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nBRDA:1,7,0,0\nend_of_record\n",
@@ -283,6 +284,10 @@ CASES = [
     ("branch-line-cross-testcase-perl-exemption", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-line-hit.pl.info", "-a", "branch-line-zero.pl.info"], 0),
     ("branch-missing-line-cross-testcase", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-missing-line-cross-a.info", "-a", "branch-missing-line-cross-b.info"], 0),
     ("branch-missing-line-consistency-disabled", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=0", "-a", "branch-missing-line-cross-a.info"], 0),
+    ("function-default-empty", ["-a", "da-only.info"], 1),
+    ("function-default-empty-recovery", ["--ignore-errors", "empty", "-a", "da-only.info"], 0),
+    ("function-default-mixed-source", ["-a", "default-functions.info", "-a", "other.info"], 0),
+    ("function-default-mixed-source-reversed", ["-a", "other.info", "-a", "default-functions.info"], 0),
     ("function-explicit-empty", ["--function-coverage", "-a", "da-only.info"], 1),
     ("function-rc-empty", ["--rc", "function_coverage=1", "-a", "da-only.info"], 1),
     ("function-empty-recovery", ["--function-coverage", "--ignore-errors", "empty", "-a", "da-only.info"], 0),
@@ -590,6 +595,14 @@ def main():
                            "oracle_output": semantic_oracle.decode("utf-8", "surrogateescape") if oracle["status"] == 0 else None,
                            "oracle_input_hashes": input_hashes,
                            "oracle_expected_status_match": oracle["status"] == expected and not oracle["timed_out"]}
+            if name in {"function-default-empty-recovery", "function-default-mixed-source",
+                        "function-default-mixed-source-reversed"}:
+                zero_source = source_file if name == "function-default-empty-recovery" else case_dir / "other.c"
+                zero_summary = f"SF:{zero_source.resolve()}\nFNF:0\nFNH:0\n".encode()
+                backend_row["zero_function_summaries_match"] = zero_summary in semantic_oracle
+                if not backend_row["zero_function_summaries_match"]:
+                    failures += 1
+                    print(f"FAIL expected zero function summaries {backend}/{name}", file=sys.stderr)
             if name in EMPTY_TRACE_CASES and oracle["status"] == 0 and semantic_oracle != b"":
                 backend_row["empty_trace_match"] = False
                 failures += 1

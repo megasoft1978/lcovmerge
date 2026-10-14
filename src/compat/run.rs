@@ -75,7 +75,6 @@ impl<R: Read> Read for StopOnCancel<R> {
 
 fn check_family_coverpoints(
     req: &Request,
-    saw_function_data: bool,
     functions: bool,
     branches: bool,
     mcdc: bool,
@@ -89,11 +88,7 @@ fn check_family_coverpoints(
         return Ok(());
     }
     for (required, present, family) in [
-        (
-            req.require_function_coverpoints || saw_function_data,
-            functions,
-            "function",
-        ),
+        (req.resources.function_data, functions, "function"),
         (req.resources.branch_coverage, branches, "branch"),
         (req.mcdc_coverage, mcdc, "MC/DC"),
     ] {
@@ -337,7 +332,6 @@ fn run_inputs(request: Request) -> Result<(), Error> {
     policy::derive_function_ends(&mut sections, &request)?;
     check_family_coverpoints(
         &request,
-        sections.iter().any(|s| s.saw_function_data),
         sections.iter().any(|s| !s.functions.is_empty()),
         sections
             .iter()
@@ -362,7 +356,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             opt.function_data,
             opt.branch_coverage,
             request.mcdc_coverage,
-            request.require_function_coverpoints,
+            opt.function_data,
         )
     } else {
         let mut staged = tempfile::NamedTempFile::new_in(
@@ -388,7 +382,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
                     opt.function_data,
                     opt.branch_coverage,
                     request.mcdc_coverage,
-                    request.require_function_coverpoints,
+                    opt.function_data,
                 )
             };
             written.and_then(|_| {
@@ -405,7 +399,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
                 opt.function_data,
                 opt.branch_coverage,
                 request.mcdc_coverage,
-                request.require_function_coverpoints,
+                opt.function_data,
             )
         }
         .and_then(|_| {
@@ -1869,6 +1863,88 @@ mod tests {
     }
 
     #[test]
+    fn default_functions_require_global_coverpoints_and_emit_zero_summaries() {
+        let root = tempfile::tempdir().unwrap();
+        let da = root.path().join("da.info");
+        let functions = root.path().join("functions.info");
+        let output = root.path().join("out.info");
+        std::fs::write(&da, "TN:case\nSF:other.c\nDA:1,1\nend_of_record\n").unwrap();
+        std::fs::write(
+            &functions,
+            "TN:case\nSF:sample.c\nFNL:0,1,1\nFNA:0,1,main\nDA:1,1\nend_of_record\n",
+        )
+        .unwrap();
+        let request = |inputs| {
+            let mut req = Request::default();
+            req.resources.inputs = inputs;
+            req.resources.output = output.clone();
+            req.resources.tmpdir = root.path().to_path_buf();
+            req
+        };
+        assert!(request(vec![da.clone()]).resources.function_data);
+        let error = run(request(vec![da.clone()])).unwrap_err();
+        assert!(error.message.contains("empty function coverage"));
+        assert!(!output.exists());
+        let mut recovered = request(vec![da.clone()]);
+        recovered.ignore_errors.insert("empty".into());
+        run(recovered).unwrap();
+        assert!(std::fs::read_to_string(&output)
+            .unwrap()
+            .contains("FNF:0\nFNH:0\nDA:1,1"));
+        let mut disabled = request(vec![da.clone()]);
+        disabled.resources.function_data = false;
+        run(disabled).unwrap();
+        assert!(!std::fs::read_to_string(&output).unwrap().contains("FNF:"));
+        for inputs in [vec![da.clone(), functions.clone()], vec![functions, da]] {
+            run(request(inputs)).unwrap();
+            let trace = std::fs::read_to_string(&output).unwrap();
+            assert!(trace.contains("SF:other.c\nFNF:0\nFNH:0\nDA:1,1"));
+            assert!(trace.contains("FNF:1\nFNH:1\nDA:1,1"));
+        }
+    }
+
+    #[test]
+    fn collector_default_functions_use_global_master_and_zero_summaries() {
+        let req = Request::default();
+        let input = b"TN:ghost\nSF:sample.c\nFNL:0,1,1\nFNA:0,0,main\nend_of_record\nTN:kept\nSF:sample.c\nDA:1,0\nend_of_record\nTN:case\nSF:other.c\nDA:1,1\nend_of_record\n";
+        let mut sections = Vec::new();
+        parse_input(
+            Box::new(&input[..]),
+            "fixture",
+            &req,
+            &mut sections,
+            &mut HashMap::new(),
+            &mut 0,
+            1 << 20,
+        )
+        .unwrap();
+        assert!(sections
+            .iter()
+            .any(|s| s.discarded_testcase && !s.functions.is_empty()));
+        check_family_coverpoints(
+            &req,
+            sections.iter().any(|s| !s.functions.is_empty()),
+            false,
+            false,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        write_sections(
+            &mut output,
+            &sections,
+            false,
+            req.resources.function_data,
+            false,
+            false,
+            req.resources.function_data,
+        )
+        .unwrap();
+        let trace = String::from_utf8(output).unwrap();
+        assert!(trace.contains("SF:other.c\nFNF:0\nFNH:0\nDA:1,1"));
+        assert!(!trace.contains("TN:ghost"));
+    }
+
+    #[test]
     fn request_runs_end_to_end_and_stages_output() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/compat-engine");
         std::fs::create_dir_all(&root).unwrap();
@@ -1880,6 +1956,7 @@ mod tests {
         )
         .unwrap();
         let mut request = Request::default();
+        request.resources.function_data = false;
         request.resources.inputs = vec![input.clone()];
         request.resources.output = output.clone();
         run(request).unwrap();
@@ -2090,6 +2167,7 @@ mod tests {
         )
         .unwrap();
         let mut req = Request::default();
+        req.resources.function_data = false;
         req.resources.inputs = vec![input];
         req.resources.output = output.clone();
         req.ignore_errors.insert("negative".into());
@@ -2111,6 +2189,7 @@ mod tests {
         );
         std::fs::write(&input, &text).unwrap();
         let mut req = Request::default();
+        req.resources.function_data = false;
         req.resources.inputs = vec![input.clone()];
         req.resources.output = root.path().join("out.info");
         req.checksum = true;
@@ -2124,6 +2203,7 @@ mod tests {
         enc.write_all(text.as_bytes()).unwrap();
         enc.finish().unwrap();
         let mut req = Request::default();
+        req.resources.function_data = false;
         req.resources.inputs = vec![gz_input];
         req.resources.output = root.path().join("out.info.gz");
         run(req).unwrap();
@@ -2139,6 +2219,7 @@ mod tests {
         let bad = root.path().join("corrupt.info.gz");
         std::fs::write(&bad, corrupted).unwrap();
         let mut req = Request::default();
+        req.resources.function_data = false;
         req.resources.inputs = vec![bad];
         req.resources.output = root.path().join("bad-output.info");
         assert!(run(req).is_err());

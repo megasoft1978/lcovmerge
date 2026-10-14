@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Keep measured coverage locations inside real synthetic source lines."""
 import importlib.util
+import gzip
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +33,37 @@ class FixtureTests(unittest.TestCase):
                 elif row.startswith(("BRDA:", "MCDC:")):
                     line = int(row.split(":", 1)[1].split(",", 1)[0])
                     self.assertTrue(source[line - 1].strip().startswith("if ("))
+
+    def test_gzip_fixture_preserves_shards_metadata_hashes_and_is_deterministic(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            mixed = FIXTURES.generate_case(root, "mixed", 2, 2, 1000, "mixed")
+            compressed = FIXTURES.generate_gzip(root, mixed)
+
+            self.assertEqual(compressed["name"], "gzip")
+            for original_name in ("branch_coverage", "function_coverage", "mcdc_coverage", "sources"):
+                self.assertEqual(compressed[original_name], mixed[original_name])
+            self.assertEqual(len(compressed["inputs"]), len(mixed["inputs"]))
+            for original_path, compressed_path in zip(mixed["inputs"], compressed["inputs"]):
+                original_bytes = Path(original_path).read_bytes()
+                compressed_bytes = Path(compressed_path).read_bytes()
+                self.assertEqual(gzip.decompress(compressed_bytes), original_bytes)
+                self.assertEqual(
+                    compressed["input_sha256"][compressed_path],
+                    hashlib.sha256(compressed_bytes).hexdigest(),
+                )
+
+            repeated = FIXTURES.generate_gzip(root, mixed)
+            self.assertEqual(repeated["sources"], compressed["sources"])
+            self.assertEqual(repeated["branch_coverage"], compressed["branch_coverage"])
+            self.assertEqual(repeated["function_coverage"], compressed["function_coverage"])
+            self.assertEqual(repeated["mcdc_coverage"], compressed["mcdc_coverage"])
+            self.assertEqual(repeated["inputs"], compressed["inputs"])
+            self.assertEqual(repeated["input_sha256"], compressed["input_sha256"])
+            for path in compressed["inputs"]:
+                self.assertEqual(Path(path).read_bytes(), gzip.compress(
+                    Path(mixed["inputs"][compressed["inputs"].index(path)]).read_bytes(), mtime=0
+                ))
 
     def test_large_source_and_testcases_cover_their_declared_lines(self):
         with tempfile.TemporaryDirectory() as td:

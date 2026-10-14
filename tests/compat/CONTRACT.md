@@ -82,11 +82,14 @@ all zero. Function range consistency checks each input before MC/DC generates
 fake DA, then checks the merged source after generation; the targeted range
 case captures that order-dependent failure.
 
-Explicitly enabling a coverage family with no corresponding coverpoints raises
-`empty`; default automatic function handling does not. Ignoring that category
-retains valid DA data and emits zero function summaries for explicit function
-enablement. The required cases verify these controls separately from branch
-consistency. The old `branch-line-cross-testcase` fixture has balanced branch
+Every enabled coverage family with no merged source-master coverpoints raises
+`empty`, including default function coverage. Ignoring that category retains
+valid DA data and emits zero function summaries whenever functions are enabled.
+The check is global across all inputs and counts retained ghost master functions.
+DA-only source/testcase output also emits zero function summaries when another
+source has valid functions; either input order succeeds. Disabling functions
+disables their requirement and summaries. The required cases verify these controls
+separately from branch consistency. The old `branch-line-cross-testcase` fixture has balanced branch
 and line data and fails because it explicitly enables absent function data;
 its status is retained, without claiming that it proves a branch mismatch.
 
@@ -119,6 +122,9 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `branch-same-input-source-rescue` | Branch hit agrees with another testcase’s line hit within one input | success |
 | `branch-same-input-missing-summary` | Multiple testcases keep synthesized branch DA in the summary only | success |
 | `branch-global-line-hit-zero-branches` | Valid individual inputs become inconsistent after source-wide merging | error |
+| `function-default-empty` | Default function coverage on pure DA-only input | error |
+| `function-default-empty-recovery` | Default empty recovery emits `FNF:0`/`FNH:0` | success |
+| `function-default-mixed-source` / `function-default-mixed-source-reversed` | Global function requirement, both input orders; DA-only other source emits zero summaries | success |
 | `function-explicit-empty` / `function-rc-empty` | Explicit function coverage without function data | error |
 | `function-empty-recovery` | Empty-function recovery emits zero summaries while retaining DA | success |
 | `branch-explicit-empty` / `mcdc-explicit-empty` | Explicit branch/MC/DC coverage without those records | error |

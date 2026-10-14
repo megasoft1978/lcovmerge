@@ -10,6 +10,7 @@ on:
           - windows
           - native-macos
           - profile-linux
+          - profile-extra
           - all-performance
         default: windows
         required: true
@@ -74,7 +75,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     permissions:
-      contents: read
+      # Draft releases require push access. Checkout credentials are not retained.
+      contents: write
     steps:
       - name: Check out current source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +128,7 @@ jobs:
           retention-days: 90
 
   profile-linux:
-    if: ${{ inputs.mode == 'profile-linux' || inputs.mode == 'all-performance' }}
+    if: ${{ inputs.mode == 'profile-linux' || inputs.mode == 'profile-extra' || inputs.mode == 'all-performance' }}
     name: LCOV profile characterization
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -144,11 +146,17 @@ jobs:
           make
           scripts/setup-lcov-oracle.sh
       - name: Measure representative profile workloads
+        env:
+          PROFILE_MODE: ${{ inputs.mode }}
         run: |
+          cases=()
+          if [ "$PROFILE_MODE" = profile-extra ]; then
+            cases=(--case many-shards --case gzip)
+          fi
           python3 bench/remote-profile.py --binary bin/lcovmerge \
             --lcov .cache/lcov-oracle/source/bin/lcov \
             --source-root .cache/lcov-oracle/source \
-            --workdir .cache/remote-profile --runs 19
+            --workdir .cache/remote-profile --runs 19 "${cases[@]}"
       - name: Retain profile measurements and inputs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

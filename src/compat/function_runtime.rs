@@ -33,7 +33,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
     let reserve = 5 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
-    let slots = (5 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
+    // DA/checksum, function records, versions, and eligibility own parse buffers.
+    let slots = (4 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
         if req.check_data_consistency && o.function_data {
             4
         } else {
@@ -56,9 +57,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         None
     };
     let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
-    let mut function_sources = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut versions = version_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?;
-    let mut saw_function_data = false;
     let mut branches = if o.branch_coverage {
         Some(branch_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
     } else {
@@ -259,12 +258,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
             if function_record && !o.function_data {
                 continue;
-            }
-            if function_record && o.function_data {
-                saw_function_data = true;
-                let mut source_key = Vec::new();
-                push_str(&mut source_key, src)?;
-                function_sources.push(source_key, Vec::new())?;
             }
             ordinal += 1;
             if let Some(x) = s.strip_prefix("DA:") {
@@ -662,7 +655,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     drop(corrections);
     let functions = functions.finish()?;
     let function_profiles_sorted = function_profiles.finish()?;
-    let function_sources_sorted = function_sources.finish()?;
     let ghost_functions = ghost_functions.finish()?;
     if let Some(generated) = mcdc_generated.as_ref() {
         let mut cursor = generated.testcases.cursor()?;
@@ -832,9 +824,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut function_profiles = function_profiles_sorted.cursor()?;
     drop(function_profiles_sorted);
     let mut function_profile = function_profiles.next()?;
-    let mut function_sources = function_sources_sorted.cursor()?;
-    drop(function_sources_sorted);
-    let mut function_source = function_sources.next()?;
     let mut versions = version_rows.cursor()?;
     drop(version_rows);
     let mut version = versions.next()?;
@@ -862,16 +851,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             key.push(0);
             final_sort.push(key, v.value.clone())?;
         }
-        while function_source
-            .as_ref()
-            .is_some_and(|p| p.key < source_only)
-        {
-            function_source = function_sources.next()?;
-        }
-        let has_source_functions = req.require_function_coverpoints
-            || function_source
-                .as_ref()
-                .is_some_and(|p| p.key == source_only);
         let mut line = first.line;
         let mut checksum = first.value.clone();
         let mut count = first.count.min(i64::MAX as u64);
@@ -910,7 +889,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         let mut k = key_prefix(&src, &tc)?;
         k.push(8);
         final_sort.push(k, format!("{lf},{lh}").into_bytes())?;
-        if has_source_functions && !has_functions {
+        if o.function_data && !has_functions {
             let mut k = key_prefix(&src, &tc)?;
             k.push(2);
             final_sort.push(k, b"0,0".to_vec())?;
@@ -918,9 +897,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     drop(lr);
     drop(function_profiles);
-    drop(function_sources);
     drop(function_profile);
-    drop(function_source);
     drop(version);
     drop(versions);
     let normalized = normalized.finish()?;
@@ -1190,7 +1167,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     super::check_family_coverpoints(
         req,
-        saw_function_data,
         has_functions,
         has_branch_coverpoints,
         has_mcdc_coverpoints,

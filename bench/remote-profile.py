@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--workdir", required=True, type=Path)
     parser.add_argument("--runs", type=int, default=19)
+    parser.add_argument("--case", action="append")
     args = parser.parse_args()
     if platform.system() != "Linux" or args.runs < 19:
         parser.error("use a Linux runner and at least 19 measured runs")
@@ -36,6 +37,8 @@ def main():
     subprocess.run([sys.executable, str(ROOT / "bench/profile-fixtures.py"),
                     "--workdir", str(work / "fixtures")], check=True, timeout=120)
     manifest = json.loads((work / "fixtures/manifest.json").read_text())
+    if args.case and set(args.case) - {case["name"] for case in manifest["cases"]}:
+        parser.error("unknown requested workload")
     idle = []
     before = cpu_ticks()
     for _ in range(2):
@@ -48,6 +51,8 @@ def main():
         raise RuntimeError("runner is busy; no timing measurements were started")
     failures = []
     for case in manifest["cases"]:
+        if args.case and case["name"] not in args.case:
+            continue
         for jobs in [1, 4]:
             name = f"{case['name']}-jobs{jobs}"
             argv = [sys.executable, str(ROOT / "bench/profile-comparison.py"),

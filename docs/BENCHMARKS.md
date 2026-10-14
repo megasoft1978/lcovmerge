@@ -72,12 +72,13 @@ empty configuration and the requested worker count.
 
 Use `--no-function-coverage` for line-only datasets so LCOV does not require
 absent function coverpoints. The option is passed to both tools and recorded.
-The manual workflow's `profile-linux` mode generates line-only, mixed-record,
-testcase-heavy and large-single-source datasets, then characterizes each with
-19 paired runs at one and four workers against XS and pure Perl. The
-`all-performance` mode runs this Linux job alongside the native macOS job on
-separate runners. Fixture smoke checks with a single sample verify semantics
-only and are excluded from performance evidence.
+The manual workflow's `profile-linux` mode generates six cases: line-only,
+mixed records, testcase-heavy, large single source, 64-shard single source, and
+gzip-compressed mixed records. It characterizes all six with 19 paired runs at
+one and four workers against XS and pure Perl. `profile-extra` selects only the
+last two cases. `all-performance` runs all six Linux cases alongside the native
+macOS job on separate runners. Fixture smoke checks with a single sample verify
+semantics only and are excluded from performance evidence.
 
 Reports retain commands, input/binary hashes, output hashes, process RSS,
 temporary disk peaks, and bootstrap intervals for median log timing ratios.
@@ -85,6 +86,18 @@ Inputs and per-run outputs/logs remain under the supplied work directory.
 One-run functional smoke checks do not establish performance; the report marks
 sample counts below 19 accordingly. This comparison does not replace the
 native C1 and frozen-Rust gates or establish universal speed parity.
+
+For deterministic sort work and I/O counters, run the ignored Rust probe:
+
+```sh
+cargo test compat::run::sort::tests::metadata_single_source_io_probe -- --ignored --nocapture
+```
+
+It sorts 100,000 descending rows with a 16-byte source prefix plus 8-byte line
+key and 256-byte value, using a 1 MiB component budget and one and four jobs.
+The JSON output reports runs, passes, merge bytes read, bytes written, fan-in,
+and workers. Read counters cover sort I/O and exclude the consumer's final
+cursor reads. This deterministic probe is not timing evidence.
 
 ## Historical measurements
 

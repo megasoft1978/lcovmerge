@@ -93,7 +93,6 @@ fn apply_setting(req: &mut Request, key: &str, value: &str) -> Result<(), Error>
     match key {
         "function_coverage" => {
             o.function_data = rc_bool(value, key)?;
-            req.require_function_coverpoints = o.function_data;
         }
         "branch_coverage" => o.branch_coverage = rc_bool(value, key)?,
         "mcdc_coverage" => req.mcdc_coverage = rc_bool(value, key)?,
@@ -400,7 +399,6 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
         if !positional && matches!(a, "--function-coverage" | "--no-function-coverage") {
             no_function |= a == "--no-function-coverage";
             req.resources.function_data = !no_function;
-            req.require_function_coverpoints = !no_function;
             i += 1;
             continue;
         }
@@ -486,7 +484,6 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
     }
     if no_function {
         req.resources.function_data = false;
-        req.require_function_coverpoints = false;
     }
     if raw_inputs.is_empty() {
         return Err(err(

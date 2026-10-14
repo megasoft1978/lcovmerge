@@ -12,8 +12,13 @@ lcovmerge --lcov-compat=2.6 --help
 Quoted patterns expand inside the profile. Repeated inputs contribute repeatedly.
 Omitting the output writes to stdout; repeated output options select the last
 destination. Function coverage defaults on, branch coverage and MC/DC default
-off. Explicitly enabling a family requires corresponding coverpoints unless
-`empty` errors are ignored; automatic function handling accepts DA-only inputs.
+off. Every enabled family requires corresponding coverpoints in the merged
+source master unless `empty` errors are ignored. Default function coverage thus
+rejects pure DA-only inputs. With `--ignore-errors empty`, or when another source
+has valid functions, DA-only source/testcase output includes `FNF:0` and `FNH:0`.
+The function check is global across inputs, including retained master functions
+from removed testcases. `--no-function-coverage` disables both the requirement
+and function summaries.
 Testcase names are retained unless `--forget-test-names` is selected.
 
 Inputs are regular files or one `-` for stdin. Stdin is a lcovmerge extension:

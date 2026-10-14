@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -104,6 +105,17 @@ def generate_testcases(root: Path) -> dict:
     }
 
 
+def generate_gzip(root: Path, mixed: dict) -> dict:
+    inputs = []
+    for original in mixed["inputs"]:
+        path = root / "gzip" / Path(original).with_suffix(".info.gz").name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(gzip.compress(Path(original).read_bytes(), mtime=0))
+        inputs.append(path.resolve())
+    return {**mixed, "name": "gzip", "inputs": [str(p) for p in inputs],
+            "input_sha256": {str(p): sha256(p) for p in inputs}}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workdir", type=Path, required=True)
@@ -118,6 +130,8 @@ def main() -> None:
         generate_testcases(root),
         generate_case(root, "single-source", 4, 1, 100000, "lines"),
     ]
+    cases.extend((generate_case(root, "many-shards", 64, 1, 1000, "lines"),
+                  generate_gzip(root, cases[1])))
     manifest = {"generator": "profile-fixtures.py", "configuration": {
         "deterministic": True, "line_hit": 1, "mixed_functions_per_source": 10,
         "mixed_function_lines": 100, "mixed_branch_interval": 10,
