@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod common;
+pub mod compat;
 pub mod emit;
 pub mod engine;
 pub mod model;
