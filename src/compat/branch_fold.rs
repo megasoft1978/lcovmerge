@@ -330,6 +330,10 @@ fn fold_value(first: &mut Branch, next: Branch) {
     };
 }
 
+fn corrupt(message: &str) -> Error {
+    Error::new(3, format!("corrupt branch fold row: {message}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,8 +506,4 @@ mod tests {
         assert!(decode(b"bad", b"").is_err());
         assert!(decode(b"s\0t\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", b"").is_err());
     }
-}
-
-fn corrupt(message: &str) -> Error {
-    Error::new(3, format!("corrupt branch fold row: {message}"))
 }

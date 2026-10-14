@@ -83,7 +83,16 @@ impl Reducer {
         )))
     }
 
-    pub(super) fn finish(self, _req: &Request) -> Result<Sorted, Error> {
+    #[cfg(test)]
+    pub(super) fn finish(self, req: &Request) -> Result<Sorted, Error> {
+        self.finish_observed(req, |_, _, _, _, _, _, _, _| Ok(()))
+    }
+
+    pub(super) fn finish_observed(
+        self,
+        _req: &Request,
+        mut observe: impl FnMut(&str, &str, u64, u64, u64, u64, u64, bool) -> Result<(), Error>,
+    ) -> Result<Sorted, Error> {
         let Self {
             raw,
             mut store,
@@ -175,8 +184,7 @@ impl Reducer {
             let sig_length = read_u64(&r.value, 8)?;
             let mut expected_position = 0u64;
             let mut br = Some(first);
-            loop {
-                let Some(branch_row) = br.take() else { break };
+            while let Some(branch_row) = br.take() {
                 if branch_row.key.len() != 16 {
                     return Err(corrupt("invalid branch row key"));
                 }
@@ -261,6 +269,16 @@ impl Reducer {
                 }
                 block = Some(current_block);
             }
+            observe(
+                &tagged_row.source,
+                &tagged_row.tc,
+                tagged_row.input,
+                tagged_row.line,
+                tagged_row.sig_rank,
+                occurrence,
+                tagged_row.position,
+                tagged_row.hits.is_some_and(|hits| hits > 0),
+            )?;
             fold.push(
                 &tagged_row.source,
                 &tagged_row.tc,

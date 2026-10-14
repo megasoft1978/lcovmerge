@@ -123,6 +123,7 @@ pub fn write_sections(
     functions: bool,
     branches: bool,
     mcdc: bool,
+    empty_function_summaries: bool,
 ) -> Result<(), Error> {
     let sources_with_functions: std::collections::HashSet<&str> = sections
         .iter()
@@ -162,7 +163,10 @@ pub fn write_sections(
                     writeln!(out, "FNA:{idx},{},{}", f.hits, name).map_err(io_error)?;
                 }
             }
-            if !groups.is_empty() || sources_with_functions.contains(s.source.as_str()) {
+            if !groups.is_empty()
+                || empty_function_summaries
+                || sources_with_functions.contains(s.source.as_str())
+            {
                 let hit = groups
                     .iter()
                     .filter(|g| g.2.iter().any(|(_, f)| f.hits > 0))

@@ -12,7 +12,9 @@ lcovmerge --lcov-compat=2.6 --help
 Quoted patterns expand inside the profile. Repeated inputs contribute repeatedly.
 Omitting the output writes to stdout; repeated output options select the last
 destination. Function coverage defaults on, branch coverage and MC/DC default
-off. Testcase names are retained unless `--forget-test-names` is selected.
+off. Explicitly enabling a family requires corresponding coverpoints unless
+`empty` errors are ignored; automatic function handling accepts DA-only inputs.
+Testcase names are retained unless `--forget-test-names` is selected.
 
 ## Supported command surface
 
@@ -83,9 +85,10 @@ measurements do not establish this profile's speed. See the
 Development validation is still in progress. No stable drop-in or performance
 claim is made before the implementation's release gates pass.
 
-DA/function inputs and MC/DC sections containing DA records use external sort
-runs. A sole stdin input is staged to disk with fixed-size buffers and then uses the
-same eligible executors as a regular file. Branch-bearing inputs, checksums,
+DA/function inputs, branch sections containing DA, and MC/DC sections containing
+DA use external sort runs. Branch blocks use streamed, exact signature ranking
+and bounded joins; sparse block IDs do not allocate sparse arrays. A sole stdin input is staged to disk with fixed-size buffers and then uses the
+same eligible executors as a regular file. Branch sections without DA, checksums,
 version metadata, mixed stdin/file inputs, and MC/DC-only sections still use the
 collector; large working sets can exceed its record budget. Completing those
 bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be

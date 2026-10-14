@@ -1,6 +1,7 @@
 //! Bounded DA and function compatibility executor.
 use super::{
-    function_check, function_spill, line_spill, mcdc_spill, policy, sort, Request, StopOnCancel,
+    branch_check, branch_spill, function_check, function_spill, line_spill, mcdc_spill, policy,
+    sort, Request, StopOnCancel,
 };
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
@@ -46,6 +47,7 @@ fn scan(req: &Request) -> Result<bool, Error> {
         let mut open = false;
         let mut saw_da = false;
         let mut saw_mcdc = false;
+        let mut saw_branches = false;
         let mut line = 0u64;
         loop {
             check_cancelled()?;
@@ -85,13 +87,14 @@ fn scan(req: &Request) -> Result<bool, Error> {
                 open = true;
                 saw_da = false;
                 saw_mcdc = false;
+                saw_branches = false;
             } else if s == "end_of_record" {
                 if !open {
                     return Ok(false);
                 }
                 // Sections without DA currently require the collector's
                 // source/testcase metadata propagation path.
-                if saw_mcdc && !saw_da {
+                if (saw_mcdc || saw_branches) && !saw_da {
                     return Ok(false);
                 }
                 open = false;
@@ -99,17 +102,17 @@ fn scan(req: &Request) -> Result<bool, Error> {
                 return Ok(false);
             } else if [
                 "DA:", "FN:", "FNDA:", "FNL:", "FNA:", "LF:", "LH:", "FNF:", "FNH:", "MCDC:",
-                "MCF:", "MCH:",
+                "MCF:", "MCH:", "BRDA:", "BRF:", "BRH:",
             ]
             .iter()
             .any(|p| s.starts_with(p))
-                || (!req.resources.branch_coverage && s.starts_with("BRDA:"))
             {
                 if !open {
                     return Ok(false);
                 }
                 saw_da |= s.starts_with("DA:");
                 saw_mcdc |= req.mcdc_coverage && s.starts_with("MCDC:");
+                saw_branches |= req.resources.branch_coverage && s.starts_with("BRDA:");
             } else {
                 return Ok(false);
             }
@@ -125,11 +128,13 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
     let reserve = 3 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
-    let slots = if req.mcdc_coverage || (req.check_data_consistency && o.function_data) {
-        4
-    } else {
-        3
-    };
+    let slots = (3 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
+        if req.check_data_consistency && o.function_data {
+            4
+        } else {
+            3
+        },
+    );
     let shared = memory
         .saturating_sub(reserve)
         .max(slots * 2 * (crate::common::IO_BLOCK + 4096));
@@ -140,6 +145,11 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
     let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_sources = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut branches = if o.branch_coverage {
+        Some(branch_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
+    } else {
+        None
+    };
     let mut mcdc = if req.mcdc_coverage {
         Some(mcdc_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
     } else {
@@ -242,6 +252,23 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 continue;
             }
             if !selected {
+                continue;
+            }
+            if let Some(payload) = s.strip_prefix("BRDA:") {
+                if let Some(reducer) = &mut branches {
+                    ordinal += 1;
+                    reducer.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        ordinal,
+                        payload,
+                        &label,
+                        line_no,
+                        req,
+                    )?;
+                }
                 continue;
             }
             if let Some(payload) = s.strip_prefix("MCDC:") {
@@ -462,7 +489,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
-    let line_path = lines.finish()?;
+    let mut line_path = lines.finish()?;
     let mut input_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut linked = raw_functions.finish()?;
     loop {
@@ -618,7 +645,70 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     drop(correction);
     drop(corrections_cursor);
     drop(corrections);
-    let mut names = functions.finish()?.cursor()?;
+    let functions = functions.finish()?;
+    let function_profiles_sorted = function_profiles.finish()?;
+    let function_sources_sorted = function_sources.finish()?;
+    let mut generated_lines = None;
+    let branch_rows = if let Some(branches) = branches {
+        let mut checker = branch_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
+        let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(row) = line_spill::read_next_public(&mut reader)? {
+            checker.push_line(&row.source, &row.testcase, row.input, row.line, row.count)?;
+        }
+        drop(reader);
+        let rows = branches.finish_observed(
+            req,
+            |src, tc, input, line, signature, occurrence, position, hit| {
+                checker.push_branch(src, tc, input, line, signature, occurrence, position, hit)
+            },
+        )?;
+        let generated = checker.finish(req)?;
+        let mut cursor = generated.cursor()?;
+        let mut serialize = false;
+        while let Some(row) = cursor.next()? {
+            serialize |= branch_check::decode_generated(&row)?.3;
+        }
+        drop(cursor);
+        if serialize {
+            let mut replaced = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+            let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+            while let Some(row) = line_spill::read_next_public(&mut reader)? {
+                replaced.push(row)?;
+            }
+            drop(reader);
+            let mut cursor = generated.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, input, line, serialize, count, testcase) =
+                    branch_check::decode_generated(&row)?;
+                if serialize {
+                    replaced.push(line_spill::Entry {
+                        kind: 1,
+                        source,
+                        testcase,
+                        value: String::new(),
+                        line,
+                        count,
+                        input,
+                        section: 0,
+                        ordinal: 0,
+                        label: String::new(),
+                        line_no: 0,
+                    })?;
+                }
+            }
+            drop(cursor);
+            line_path = replaced.finish()?;
+            drop(lines);
+            lines = replaced;
+        }
+        generated_lines = Some(generated);
+        Some(rows)
+    } else {
+        None
+    };
+    let mut names = functions.cursor()?;
+    drop(functions);
+
     let mut normalized = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut pending = names.next()?;
     while let Some(first) = pending.take() {
@@ -653,15 +743,27 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     drop(names);
     let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
-    if let Some(rows) = mcdc_rows {
+    let mut has_branch_coverpoints = false;
+    let mut has_mcdc_coverpoints = false;
+    if let Some(rows) = branch_rows {
         let mut cursor = rows.cursor()?;
         while let Some(row) = cursor.next()? {
+            has_branch_coverpoints |= decode_output_key(&row.key)?.2 == 4;
             final_sort.push(row.key, row.value)?;
         }
     }
-    let mut function_profiles = function_profiles.finish()?.cursor()?;
+    if let Some(rows) = mcdc_rows {
+        let mut cursor = rows.cursor()?;
+        while let Some(row) = cursor.next()? {
+            has_mcdc_coverpoints |= decode_output_key(&row.key)?.2 == 6;
+            final_sort.push(row.key, row.value)?;
+        }
+    }
+    let mut function_profiles = function_profiles_sorted.cursor()?;
+    drop(function_profiles_sorted);
     let mut function_profile = function_profiles.next()?;
-    let mut function_sources = function_sources.finish()?.cursor()?;
+    let mut function_sources = function_sources_sorted.cursor()?;
+    drop(function_sources_sorted);
     let mut function_source = function_sources.next()?;
     let mut lr = BufReader::new(File::open(&line_path).map_err(|e| Error::new(3, e.to_string()))?);
     let mut row = line_spill::read_next_public(&mut lr)?;
@@ -685,9 +787,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         {
             function_source = function_sources.next()?;
         }
-        let has_source_functions = function_source
-            .as_ref()
-            .is_some_and(|p| p.key == source_only);
+        let has_source_functions = req.require_function_coverpoints
+            || function_source
+                .as_ref()
+                .is_some_and(|p| p.key == source_only);
         let mut line = first.line;
         let mut count = first.count.min(i64::MAX as u64);
         let mut lf = 0u64;
@@ -849,6 +952,18 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             global.push_line(&line.source, 0, line.line, line.count)?;
         }
     }
+    if has_functions {
+        if let Some(generated) = generated_lines.as_ref() {
+            let mut cursor = generated.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, _, line, serialize, count, _) = branch_check::decode_generated(&row)?;
+                if !serialize {
+                    global.push_line(&source, 0, line, count)?;
+                }
+            }
+        }
+    }
+    drop(generated_lines);
     let global_adjustments = global.finish(req)?;
     let mut global_cursor = global_adjustments.cursor()?;
     let mut global_adjustment = global_cursor.next()?;
@@ -958,6 +1073,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         k.push(2);
         final_sort.push(k, format!("{fnf},{fnh}").into_bytes())?;
     }
+    super::check_family_coverpoints(
+        req,
+        has_functions,
+        has_branch_coverpoints,
+        has_mcdc_coverpoints,
+    )?;
     drop(line_ends);
     drop(lines);
     drop(global_adjustment);
@@ -1052,7 +1173,7 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
         }
         match rank {
             0 => {}
-            1 | 5 => writeln!(
+            1 | 3 | 5 => writeln!(
                 out,
                 "{}",
                 String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid function row"))?
@@ -1065,6 +1186,14 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
                 let nf = p.next().unwrap_or("0");
                 let nh = p.next().unwrap_or("0");
                 writeln!(out, "FNF:{nf}\nFNH:{nh}").map_err(ioerr)?;
+            }
+            4 => {
+                let x = String::from_utf8(row.value)
+                    .map_err(|_| Error::new(3, "invalid branch summary"))?;
+                let mut p = x.split(',');
+                let found = p.next().unwrap_or("0");
+                let hit = p.next().unwrap_or("0");
+                writeln!(out, "BRF:{found}\nBRH:{hit}").map_err(ioerr)?;
             }
             6 => {
                 let x = String::from_utf8(row.value)

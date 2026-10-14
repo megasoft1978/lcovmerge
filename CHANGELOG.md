@@ -9,6 +9,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Add the experimental opt-in `--lcov-compat=2.6` merge profile with quoted `-a` glob expansion and a documented, version-pinned command surface. Validation remains in progress; native defaults are unchanged and native benchmark data does not measure this profile.
+- Execute LCOV-profile branch sections containing DA with bounded signature/occurrence joins and input/merged consistency checks; retain negative-count recovery as zero, handle sparse block IDs, and honor explicit empty-family errors.
 - Check LCOV-profile function/line consistency before and after input aggregation with bounded source-wide joins, infer ends before merging, and match the pinned default recovery count adjustments and lambda exception.
 - Stage a sole LCOV-profile stdin input with bounded buffers so eligible DA/function/MC/DC merges use the spill executors; remove staged input on success, errors, and catchable interruption. Mixed stdin/file input ordering is unchanged.
 

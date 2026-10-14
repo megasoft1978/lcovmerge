@@ -10,6 +10,12 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
+#[path = "branch_check.rs"]
+mod branch_check;
+#[path = "branch_fold.rs"]
+mod branch_fold;
+#[path = "branch_spill.rs"]
+mod branch_spill;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
@@ -31,7 +37,6 @@ mod merge;
 mod policy;
 #[path = "record.rs"]
 mod record;
-#[cfg(test)]
 #[path = "signature_store.rs"]
 mod signature_store;
 #[path = "sort.rs"]
@@ -54,6 +59,35 @@ impl<R: Read> Read for StopOnCancel<R> {
             result => result,
         }
     }
+}
+
+fn check_family_coverpoints(
+    req: &Request,
+    functions: bool,
+    branches: bool,
+    mcdc: bool,
+) -> Result<(), Error> {
+    if req.keep_going
+        || req
+            .ignore_errors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case("empty"))
+    {
+        return Ok(());
+    }
+    for (required, present, family) in [
+        (req.require_function_coverpoints, functions, "function"),
+        (req.resources.branch_coverage, branches, "branch"),
+        (req.mcdc_coverage, mcdc, "MC/DC"),
+    ] {
+        if required && !present {
+            return Err(Error::new(
+                2,
+                format!("empty {family} coverage: no corresponding coverpoints found"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_request(request: &Request) -> Result<(), Error> {
@@ -260,6 +294,17 @@ fn run_inputs(request: Request) -> Result<(), Error> {
         }
     }
     policy::derive_function_ends(&mut sections, &request)?;
+    check_family_coverpoints(
+        &request,
+        sections.iter().any(|s| !s.functions.is_empty()),
+        sections
+            .iter()
+            .flat_map(|s| s.branches.values())
+            .flatten()
+            .flatten()
+            .any(|b| !b.unreachable),
+        sections.iter().any(|s| !s.mcdc.is_empty()),
+    )?;
     sections.sort_by(|a, b| {
         a.source
             .cmp(&b.source)
@@ -275,6 +320,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
             opt.function_data,
             opt.branch_coverage,
             request.mcdc_coverage,
+            request.require_function_coverpoints,
         )
     } else {
         let mut staged = tempfile::NamedTempFile::new_in(
@@ -300,6 +346,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
                     opt.function_data,
                     opt.branch_coverage,
                     request.mcdc_coverage,
+                    request.require_function_coverpoints,
                 )
             };
             written.and_then(|_| {
@@ -316,6 +363,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
                 opt.function_data,
                 opt.branch_coverage,
                 request.mcdc_coverage,
+                request.require_function_coverpoints,
             )
         }
         .and_then(|_| {
@@ -1461,7 +1509,7 @@ mod tests {
         )
         .unwrap();
         let mut out = Vec::new();
-        write_sections(&mut out, &sections, false, true, false, false).unwrap();
+        write_sections(&mut out, &sections, false, true, false, false, false).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert!(out.contains("TN:a\nSF:x.c\nDA:1,2\nLF:1\nLH:1"));
         assert!(out.contains("TN:b\nSF:x.c\nDA:1,3\n"));
@@ -1497,7 +1545,7 @@ mod tests {
         )
         .unwrap();
         let mut out = Vec::new();
-        write_sections(&mut out, &sections, false, true, true, true).unwrap();
+        write_sections(&mut out, &sections, false, true, true, true, false).unwrap();
         let out = String::from_utf8(out).unwrap();
         assert_eq!(out,"TN:case\nSF:x.c\nFNL:0,5,10\nFNA:0,0,alpha\nFNA:0,3,zeta\nFNF:1\nFNH:1\nBRDA:5,0,0,2\nBRDA:5,0,1,0\nBRF:2\nBRH:1\nMCDC:5,2,t,1,0,A\nMCDC:5,2,f,0,0,A\nMCF:2\nMCH:1\nDA:5,2\nLF:1\nLH:1\nend_of_record\n");
     }
@@ -1569,7 +1617,7 @@ mod tests {
         )
         .unwrap();
         let mut out = Vec::new();
-        write_sections(&mut out, &sections, false, false, true, false).unwrap();
+        write_sections(&mut out, &sections, false, false, true, false, false).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(),"TN:dup\nSF:x.c\nBRDA:1,eU0,ex,0\nBRDA:1,1,a,3\nBRDA:1,1,b,1\nBRDA:1,2,c,1\nBRDA:1,2,d,0\nBRF:4\nBRH:3\nDA:1,4\nLF:1\nLH:1\nend_of_record\n");
     }
 

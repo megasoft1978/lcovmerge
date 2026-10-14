@@ -42,12 +42,22 @@ quiet stdout, and whether the output destination was created. Commands use
 All rows below are required in both backends. `success` and `error` are
 expected oracle exit classes, checked before candidate results are counted.
 
-For BRDA summaries, zero is an evaluated coverpoint with no hits; `-` is an
-unknown count excluded from evaluated branch totals. The source-wide recovery
-case records synthesized nonzero line coverage for missing branch lines. A
-`.pl` source accepts otherwise-mismatched line and branch counts in both
-verified backends. BRDA-only input with no DA record is rejected as empty and
-is not represented as a successful empty-output fixture.
+BRF counts reachable branch coverpoints, including unknown (`-`) counts;
+BRH counts positive hits. `U` coverpoints are excluded from those summaries but
+participate in line-consistency checks. Missing-DA recovery uses the number of
+positive canonical branch coverpoints, including `U`, rather than the sum of
+their taken counts. A single testcase receives the generated DA record;
+multiple testcases can retain it only in the source summary. Disabling
+consistency checks leaves missing DA records absent. Perl accepts a positive
+line with no positive branch hit; a positive branch with a zero line still fails.
+
+Explicitly enabling a coverage family with no corresponding coverpoints raises
+`empty`; default automatic function handling does not. Ignoring that category
+retains valid DA data and emits zero function summaries for explicit function
+enablement. The required cases verify these controls separately from branch
+consistency. The old `branch-line-cross-testcase` fixture has balanced branch
+and line data and fails because it explicitly enables absent function data;
+its status is retained, without claiming that it proves a branch mismatch.
 
 | Case | Behavior exercised | Oracle |
 | --- | --- | --- |
@@ -60,11 +70,17 @@ is not represented as a successful empty-output fixture.
 | `branch-negative-strict` / `branch-negative-recovery` | Negative BRDA hit count is rejected; recovery needs `negative,inconsistent` and normalizes the count to zero | error / success |
 | `branch-large-sparse-block` | Sparse branch block ID 70000 is canonicalized without materializing intervening IDs | success |
 | `branch-duplicate-numeric-ids` | Numerically equivalent branch IDs (`0` and `00`) remain separate records in one block | success |
-| `branch-line-cross-testcase` | A line hit in one testcase conflicts with a zero branch hit in another | error |
+| `branch-line-cross-testcase` | Explicit function enablement without function coverpoints | error |
 | `branch-line-cross-testcase-perl-exemption` | `.pl` source permits a line hit in one testcase and zero branch hit in another | success |
-| `branch-missing-line-cross-testcase` | Recover missing branch line; synthesized line coverage propagates source-wide | success |
+| `branch-missing-line-cross-testcase` | Missing branch line recovery in one input retains that testcase’s generated DA | success |
 | `branch-missing-line-consistency-disabled` | Missing branch line with consistency checks disabled | success |
-| `branch-no-da` | BRDA records with zero and unknown (`-`) counts beside a DA record retain their count forms | success |
+| `branch-same-input-source-rescue` | Branch hit agrees with another testcase’s line hit within one input | success |
+| `branch-same-input-missing-summary` | Multiple testcases keep synthesized branch DA in the summary only | success |
+| `branch-global-line-hit-zero-branches` | Valid individual inputs become inconsistent after source-wide merging | error |
+| `function-explicit-empty` / `function-rc-empty` | Explicit function coverage without function data | error |
+| `function-empty-recovery` | Empty-function recovery emits zero summaries while retaining DA | success |
+| `branch-explicit-empty` / `mcdc-explicit-empty` | Explicit branch/MC/DC coverage without those records | error |
+| `branch-zero-unknown` | BRDA records with zero and unknown (`-`) counts beside a DA record retain their count forms | success |
 | `branch-global-da-cross-testcase` | Source-wide branch aggregation for individually valid testcase inputs with different line and branch hit states | success |
 | `checksum-conflict-ignored-branch-collector` | Ignore conflicting DA checksums while branch coverage activates the collector | success |
 | `branch-duplicate-signature` | Duplicate branch signatures | success |
@@ -200,8 +216,10 @@ python3 tests/compat_bounded.py --binary /absolute/path/to/lcovmerge \
 The 8 MiB setting is a byte budget. Each generated input is at least 24 MiB
 (about 28 MiB by default), not 24 million records. The regular-file workloads
 separately stress DA line volume, many distinct sparse modern function IDs,
-legacy functions, one very large alias group, and a large MC/DC group. A sixth
-case reuses the DA fixture through stdin and verifies every output record again.
+legacy functions, one very large alias group, a large MC/DC group, and one huge
+branch block with sparse ID 70000 and mixed exception/unreachable records. A
+seventh case reuses the DA fixture through stdin and verifies every output record
+again.
 The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy

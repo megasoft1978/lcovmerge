@@ -12,6 +12,8 @@ pub struct Request {
     pub forget_test_names: bool,
     pub checksum: bool,
     pub mcdc_coverage: bool,
+    /// Explicit function enablement requires at least one function coverpoint.
+    pub require_function_coverpoints: bool,
     pub ignore_errors: BTreeSet<String>,
     pub keep_going: bool,
     pub check_data_consistency: bool,
@@ -30,6 +32,7 @@ impl Default for Request {
             forget_test_names: false,
             checksum: false,
             mcdc_coverage: false,
+            require_function_coverpoints: false,
             ignore_errors: BTreeSet::new(),
             keep_going: false,
             check_data_consistency: true,

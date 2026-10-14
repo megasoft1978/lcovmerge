@@ -154,7 +154,12 @@ def fixtures(directory):
         "branch-duplicate-numeric-ids.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,1\nBRDA:1,7,00,2\nend_of_record\n",
         "branch-missing-line-cross-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nBRDA:2,7,0,1\nend_of_record\n",
         "branch-missing-line-cross-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
-        "branch-no-da.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,0\nBRDA:1,7,1,-\nend_of_record\n",
+        "da-only.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "branch-global-mismatch-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "branch-global-mismatch-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nBRDA:1,7,0,0\nend_of_record\n",
+        "branch-same-input-rescue.info": f"TN:a\nSF:{srcname}\nDA:1,0\nBRDA:1,7,0,5\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "branch-same-input-missing.info": f"TN:a\nSF:{srcname}\nDA:1,1\nBRDA:2,7,0,9\nBRDA:2,U7,1,4\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
+        "branch-zero-unknown.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,0\nBRDA:1,7,1,-\nend_of_record\n",
         "fractional-fna.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,1.5,fractional\nDA:1,2\nend_of_record\n",
         "fractional-fna-collector.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,1.5,fractional\nBRDA:1,7,0,1\nDA:1,2\nend_of_record\n",
         "negative-fna.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,-1,negative\nDA:1,0\nend_of_record\n",
@@ -220,7 +225,15 @@ CASES = [
     ("branch-line-cross-testcase-perl-exemption", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-line-hit.pl.info", "-a", "branch-line-zero.pl.info"], 0),
     ("branch-missing-line-cross-testcase", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-missing-line-cross-a.info", "-a", "branch-missing-line-cross-b.info"], 0),
     ("branch-missing-line-consistency-disabled", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=0", "-a", "branch-missing-line-cross-a.info"], 0),
-    ("branch-no-da", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-no-da.info"], 0),
+    ("function-explicit-empty", ["--function-coverage", "-a", "da-only.info"], 1),
+    ("function-rc-empty", ["--rc", "function_coverage=1", "-a", "da-only.info"], 1),
+    ("function-empty-recovery", ["--function-coverage", "--ignore-errors", "empty", "-a", "da-only.info"], 0),
+    ("branch-explicit-empty", ["--branch-coverage", "--no-function-coverage", "-a", "da-only.info"], 1),
+    ("mcdc-explicit-empty", ["--mcdc-coverage", "--no-function-coverage", "-a", "da-only.info"], 1),
+    ("branch-global-line-hit-zero-branches", ["--branch-coverage", "--no-function-coverage", "-a", "branch-global-mismatch-a.info", "-a", "branch-global-mismatch-b.info"], 1),
+    ("branch-same-input-source-rescue", ["--branch-coverage", "--no-function-coverage", "-a", "branch-same-input-rescue.info"], 0),
+    ("branch-same-input-missing-summary", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-same-input-missing.info"], 0),
+    ("branch-zero-unknown", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-zero-unknown.info"], 0),
     ("branch-global-da-cross-testcase", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-global-da-a.info", "-a", "branch-global-da-b.info"], 0),
     ("branch-duplicate-signature", ["--branch-coverage", "--no-function-coverage", "-a", "branch-duplicate.info"], 0),
     ("branch-strict-inconsistent", ["--rc", "check_data_consistency=1", "--branch-coverage", "--no-function-coverage", "-a", "branch-inconsistent.info"], 1),
@@ -482,7 +495,7 @@ def main():
             if not backend_row["oracle_expected_status_match"] or not backend_row["backend_confirmed_for_invocation"]:
                 failures += 1
                 print(f"FAIL oracle {backend}/{name}: status={oracle['status']} xs={observed_xs} expected_xs={expected_xs}", file=sys.stderr)
-            if expected == 0 and name not in ("fn-explicit-no-da-empty", "branch-no-da"):
+            if expected == 0 and name != "fn-explicit-no-da-empty":
                 html_dir = case_dir / f"html-{backend}"
                 remove(html_dir)
                 html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
