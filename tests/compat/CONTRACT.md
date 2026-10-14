@@ -1,25 +1,101 @@
-# LCOV 2.6 oracle characterization
+# LCOV 2.6 compatibility oracle
 
-The executable contract is LCOV release commit `a17443e7dbb31b5b7bff6beac32e7b9b02ec3342`, version `2.6-0`. `tools/lcov-oracle-identity.py --strict` checks the pinned package executable and `lcovutil.pm` SHA-256 values from the verified probe bundle, and inspects the installed XS and pure-Perl backends. Run it before trusting results. A changed package hash is reported as an altered/unverified oracle and strict harness runs stop.
+The required oracle is the LCOV source release at commit
+`a17443e7dbb31b5b7bff6beac32e7b9b02ec3342` (`LCOV version 2.6-0`). The pinned
+source tree is read-only. `tools/lcov-oracle-identity.py --strict` checks its
+commit and every tracked file against the commit object, then records the
+selected launcher and implementation executable, library, package deviations, Perl runtime and
+environment, the LCOV Perl library and XS loader hashes, the XS binary hash,
+and real XS/pure-Perl import probes.
+The probe imports `lcovutil` normally so its XS loader executes. Strict mode
+requires the XS probe to report `1` and the forced `LCOV_PURE_PERL=1` probe to
+report `0`; unavailable backends stop the harness.
 
-`oracle.py --oracle-only` builds tiny tracefiles and an empty explicit `lcovrc` under `.cache/lcov-compat-oracle/`. With `--binary PATH`, it invokes that candidate with `--lcov-compat=2.6`, compares exact exit status, and on success compares normalized tracefiles. Normalization is limited to line endings and order of records within a section. It keeps section order, TN, SF, VER, all DA checksums, modern function leader/alias records, branch coordinates, MC/DC identity/expression, and summaries. It does not normalize diagnostics or conceal differing values. Each invocation writes input hashes, commands, status, outputs and hashes to its workdir manifest.
+Use `--source-root PATH` to select the pinned checkout. `--lcov PATH` selects
+the actual oracle executable used by every command; otherwise the runner uses
+`lcov` on `PATH`, then `source-root/bin/lcov`. `--genhtml PATH` selects the
+matching HTML consumer. Source-tree runs use `bin/lcov`, `bin/genhtml`, and
+`lib/` from that checkout. If the checkout does not have a built XS extension,
+strict identity fails instead of describing a pure-Perl-only run as complete.
 
-## Probed findings
+Run oracle characterization and differential checks with:
 
-- Different `TN` values for the same source remain two independent sections.
-- Duplicate identical input sections aggregate counts; this fixture's execution count doubles.
-- A source section containing only an uncovered line remains present, with `LF:1` and `LH:0`.
-- Branch block IDs are eligible for canonicalization across inputs, but the small case is sensitive to LCOV's branch/line consistency policy; its valid fixture contains a line row for each branch line.
-- Modern function encoding is `FNL:<index>,<start>[,<end>]` followed by one or more `FNA:<index>,<count>,<alias>` records. The parser also accepts legacy `FN`/`FNDA`; LCOV output can modernize function records.
-- MC/DC encoding is `MCDC:<line>,[U]<groupSize>,<sense>,<taken>,<index>,<expression>`. Its identity includes all fields, especially expression and index. MC/DC defaults off in LCOV; enable it explicitly for the MC/DC fixture.
-- With `--checksum`, deliberately incorrect source line checksums fail with a version/checksum diagnostic. Checksums are not disposable formatting.
-- A malformed enabled `DA` record fails. A record family disabled by option may be discarded without parsing its payload, per LCOV's tracefile documentation.
-- Quoted shell globs passed to `-a` are expanded by LCOV inside the process. The harness passes a quoted-pattern argument and uses valid matching shards.
-- Strict inconsistency failure and `--ignore-errors inconsistent` recovery were verified in the separate `root-probes/verified-results.json` bundle; local empty-config behavior is recorded separately by the harness.
-- Backend identity in the verified bundle is XS loaded `1` and forced pure Perl `0`; this harness records both in provenance. The pinned package hashes match that bundle on the characterization host.
+```sh
+python3 tests/compat/oracle.py --oracle-only
+python3 tests/compat/oracle.py --binary /absolute/path/to/lcovmerge
+```
 
-## Coverage limits and implementation gaps
+The default work directory is `.cache/lcov-compat-oracle/`. Every required
+fixture runs once with XS and once with forced pure Perl. LCOV's profile record
+confirms the backend used by each individual fixture. The manifest captures
+commands, timeout and status, full stdout/stderr and hashes, config contents,
+source and expanded input hashes, trace output and hashes, plus genhtml output
+and coverage statistics. Outputs are removed before each command. Success
+cases require matching normalized trace semantics and successful genhtml
+consumption with matching coverage statistics. Failure cases assert the
+expected oracle status for both backends; candidate runs must match status,
+stdout, and whether the output destination was created.
 
-This is an initial characterization harness, not a complete compatibility claim. The current matrix does not yet cover CLI defaults/flag precedence, repeated output destinations, stdout and gzip, config discovery/`--rc` precedence, include/exclude filters, testcase forgetting, checksum conflict recovery, all malformed record categories, invalid globs, Unicode/byte paths, stdin/list files, parallel/tempdir/memory semantics, keep-going, or genhtml consumer acceptance. The harness does not yet run both backends for every case; recorded backend identity is not a substitute for paired backend results. MC/DC has a valid grammar fixture but broader recovery/duplicate semantics remain unprobed. These remain explicit gaps for the integrating coordinator; no unsupported option should be mapped to a native behavior by assumption.
+## Required case matrix
 
-Run comparator tests with `python3 -m unittest discover -s tests/compat -p 'test_*.py'` and characterization with `python3 tests/compat/oracle.py --oracle-only`.
+All rows below are required in both backends. `success` and `error` are
+expected oracle exit classes, checked before candidate results are counted.
+
+| Case | Behavior exercised | Oracle |
+| --- | --- | --- |
+| `tn-split` | Keep distinct test names | success |
+| `duplicate-input` | Duplicate input aggregation | success |
+| `true-empty-source` | Empty source file with a data record | success |
+| `uncovered-line` | Uncovered line data | success |
+| `branch-canonical` | Canonicalize block IDs when merging | success |
+| `branch-duplicate-signature` | Duplicate branch signatures | success |
+| `branch-strict-inconsistent` | Strict line/branch consistency | error |
+| `branch-recovery-inconsistent` | Recover with `--ignore-errors inconsistent` | success |
+| `branch-absent-counts` | Absent branch counts | success |
+| `function-alias-group-endline` | Legacy and modern names, aliases, end lines | success |
+| `mcdc-enabled` | Enabled MC/DC records | success |
+| `mcdc-strict-malformed` | Strict malformed MC/DC record | error |
+| `mcdc-recovery-malformed` | Format and empty recovery | success |
+| `mcdc-disabled-malformed` | Malformed MC/DC while disabled | success |
+| `checksum-conflict` | Conflicting checksums | error |
+| `checksum-source-error` | Checksum verification with missing source | error |
+| `version-error` | Trace version mismatch | error |
+| `defaults` | LCOV coverage defaults | success |
+| `toggle-precedence` | Repeated coverage option ordering | success |
+| `forget-names` | Forget testcase names | success |
+| `include-source` | Include path filtering | success |
+| `exclude-source` | Exclude path filtering | success |
+| `rc-enable-branch` | `--rc` branch setting | success |
+| `explicit-config-precedence` | Explicit config versus command-line RC/flag | success |
+| `glob-flat` | Flat wildcard expansion | success |
+| `glob-bracket` | Bracket wildcard expansion | success |
+| `glob-nested` | Nested wildcard expansion | success |
+| `stdout-output` | Trace output directed to stdout | success |
+| `gzip-output` | Gzip trace output | success |
+| `truncated-gzip-input` | Truncated gzip input | error |
+| `malformed-da` | Malformed line record | error |
+| `malformed-branch` | Malformed branch record | error |
+| `malformed-function` | Malformed function record | error |
+
+## Comparison rules and limits
+
+Normalization changes line endings and sorts unordered records within a
+section. It preserves section order, TN, SF, VER, all coverage values and
+checksums, summaries, function records and alias order, branch signatures, and
+all MC/DC identity fields. The unit suite includes deliberately altered
+identity, line, branch, function alias, summary, checksum, and MC/DC records;
+each must compare unequal.
+
+This matrix is an initial required set, not a complete LCOV implementation
+claim. Optional or unimplemented operations remain separate from required
+rows and are never counted as skipped passes. Gaps include stdin/list-file
+inputs, Unicode and byte paths, parallel/tempdir/memory behavior, keep-going,
+output collisions, and broader checksum version/format combinations. Add
+required rows with an explicit expected oracle status before relying on them
+for conformance.
+
+Run comparator tests with:
+
+```sh
+python3 -m unittest discover -s tests/compat -p 'test_*.py'
+```
