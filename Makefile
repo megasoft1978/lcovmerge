@@ -28,6 +28,9 @@ ptest: $(PTEST_BIN)
 test: $(BIN) $(PTEST_BIN)
 	$(CARGO) test --locked
 	$(PYTHON) tests/run_tests.py --binary $(BIN) --partition-binary $(PTEST_BIN)
+	$(PYTHON) -m unittest discover -s tests/compat -p 'test_*.py'
+	$(PYTHON) tests/test_compare_builds.py
+	$(PYTHON) tests/compat_operations.py --binary $(BIN)
 	sh tests/doc-consistency.sh $(BIN)
 
 unit:
@@ -41,6 +44,8 @@ asan:
 	ASAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py \
 		--binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge --no-lcov \
 		--partition-binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
+	ASAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/compat_operations.py \
+		--binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
 
 tsan:
 	$(RUSTUP) component add rust-src
@@ -53,12 +58,15 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py --no-lcov \
 		--binary target/tsan/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge \
 		--partition-binary target/tsan/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
+	TSAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/compat_operations.py \
+		--binary target/tsan/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
 
 FUZZ_SECONDS ?= 300
 FUZZ_RUNS ?= 250000
 fuzz: $(BIN)
 	FUZZ_RUNS=$(FUZZ_RUNS) $(CARGO) test --locked --release --test rust_properties fuzz_corpus_mutations -- --ignored --nocapture
-	$(PYTHON) scripts/fuzz-smoke.py $(BIN) --seconds $(FUZZ_SECONDS)
+	$(PYTHON) scripts/fuzz-smoke.py $(BIN) --seconds $(shell expr $(FUZZ_SECONDS) / 2) --profile native
+	$(PYTHON) scripts/fuzz-smoke.py $(BIN) --seconds $(shell expr $(FUZZ_SECONDS) - $(shell expr $(FUZZ_SECONDS) / 2)) --profile compat
 
 bench: $(BIN)
 	sh bench/run.sh
