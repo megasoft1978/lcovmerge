@@ -1,6 +1,0 @@
-#ifndef LCOVMERGE_VERSION_H
-#define LCOVMERGE_VERSION_H
-
-#define LCOVMERGE_VERSION "1.1.0"
-
-#endif

@@ -41,13 +41,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up MSYS2 and MinGW toolchain
+      - name: Set up MSYS2 shell and Python
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
+          path-type: inherit
           update: true
-          install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
+          install: make mingw-w64-ucrt-x86_64-python
 
       - name: Build and test (Unix)
         if: runner.os != 'Windows'
@@ -69,38 +70,71 @@ jobs:
         run: ./tests/run-windows-smoke.ps1 -Binary bin/lcovmerge.exe
 
   release-size:
-    name: Release target size budgets
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    name: Release target (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+            rust_target: x86_64-unknown-linux-musl
+            suffix: linux-x86_64
+            executable: lcovmerge
+          - runner: ubuntu-24.04-arm
+            target: linux-aarch64
+            rust_target: aarch64-unknown-linux-musl
+            suffix: linux-aarch64
+            executable: lcovmerge
+          - runner: macos-15
+            target: macos-arm64
+            rust_target: aarch64-apple-darwin
+            suffix: macos-arm64
+            executable: lcovmerge
+          - runner: macos-15-intel
+            target: macos-x86_64
+            rust_target: x86_64-apple-darwin
+            suffix: macos-x86_64
+            executable: lcovmerge
+          - runner: windows-latest
+            target: windows-x86_64
+            rust_target: x86_64-pc-windows-msvc
+            suffix: windows-x86_64.exe
+            executable: lcovmerge.exe
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Zig 0.17.0 (checksum verified)
+      - name: Install musl linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - name: Build optimized Rust release target
+        shell: bash
         run: |
           set -eu
-          archive="$RUNNER_TEMP/zig.tar.xz"
-          curl -fsSL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$archive"
-          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $archive" | sha256sum -c -
-          mkdir "$RUNNER_TEMP/zig"
-          tar -xJf "$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
-          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          rustup target add '${{ matrix.rust_target }}'
+          case '${{ matrix.rust_target }}' in
+            x86_64-unknown-linux-musl) export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
+            aarch64-unknown-linux-musl) export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
+          esac
+          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
+          scripts/check-binary-size.sh 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
 
-      - name: Build all release targets and enforce size budgets
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: scripts/build-all.sh
-
-      - name: Upload the Zig-built Windows executable
+      - name: Upload Windows executable for native verification
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-release-exe
-          path: dist/lcovmerge-*-windows-x86_64.exe
+          path: dist/lcovmerge-1.1.0-windows-x86_64.exe
           if-no-files-found: error
           retention-days: 3
 
   windows-release-binary:
-    name: Windows release binary (Zig build)
+    name: Windows release binary (native Rust target)
     needs: release-size
     runs-on: windows-latest
     timeout-minutes: 20
@@ -108,13 +142,13 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Download the Zig-built Windows executable
+      - name: Download the Windows executable
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows-release-exe
           path: windows-exe
 
-      - name: Run the test suite and smoke test against the shipped binary
+      - name: Run the test suite and smoke test against the release binary
         shell: pwsh
         run: |
           $exe = (Get-ChildItem windows-exe -Filter 'lcovmerge-*-windows-x86_64.exe').FullName
@@ -124,24 +158,34 @@ jobs:
           ./tests/run-windows-smoke.ps1 -Binary $exe
 
   sanitizers:
-    name: ASan and UBSan
+    name: Rust AddressSanitizer tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build and test with sanitizers
+      - name: Run Rust unit tests with AddressSanitizer
         run: make asan
 
+  thread-sanitizer:
+    name: Rust ThreadSanitizer tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run Rust and CLI partition tests with ThreadSanitizer
+        run: make tsan
+
   fuzz-smoke:
-    name: Five-minute fuzz smoke
+    name: Rust parser mutation fuzz smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and run fuzz smoke
-        run: make fuzz FUZZ_RUNS=100000
+        run: make fuzz FUZZ_SECONDS=300
 
   differential-lcov:
     name: Differential check against lcov

@@ -22,11 +22,11 @@ concurrency:
 
 env:
   LCOVMERGE_VERSION: ${{ github.event.inputs.release_version || '1.1.0' }}
-  TMPDIR: ${{ github.workspace }}/.luna-tmp
-  TMP: ${{ github.workspace }}/.luna-tmp
-  TEMP: ${{ github.workspace }}/.luna-tmp
-  SCOOP: ${{ github.workspace }}/.luna-tmp/scoop
-  SCOOP_CACHE: ${{ github.workspace }}/.luna-tmp/scoop-cache
+  TMPDIR: ${{ github.workspace }}/.cache/ci
+  TMP: ${{ github.workspace }}/.cache/ci
+  TEMP: ${{ github.workspace }}/.cache/ci
+  SCOOP: ${{ github.workspace }}/.cache/ci/scoop
+  SCOOP_CACHE: ${{ github.workspace }}/.cache/ci/scoop-cache
   SCOOP_INSTALL_COMMIT: 1e2f334083d609986d8c8bc9e31ae8e87c39fab4
   SCOOP_INSTALL_SHA256: 94f983b190438311e006b957db7c8422709e0ba62a6c2ac04e278164108f2512
   SCOOP_CORE_TAG: v0.6.0
@@ -45,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $bootstrapDir = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp/scoop-bootstrap'
+          $bootstrapDir = Join-Path $env:GITHUB_WORKSPACE '.cache/ci/scoop-bootstrap'
           New-Item -ItemType Directory -Force -Path $bootstrapDir | Out-Null
           $installerPath = Join-Path $bootstrapDir 'install.ps1'
           $installerUrl = "https://raw.githubusercontent.com/ScoopInstaller/Install/$env:SCOOP_INSTALL_COMMIT/install.ps1"
@@ -91,8 +91,8 @@ jobs:
               ;;
           esac
 
-          checksum_dir="$GITHUB_WORKSPACE/.luna-tmp/release-checksums"
-          archive_dir="$GITHUB_WORKSPACE/.luna-tmp/release-archive"
+          checksum_dir="$GITHUB_WORKSPACE/.cache/ci/release-checksums"
+          archive_dir="$GITHUB_WORKSPACE/.cache/ci/release-archive"
           mkdir -p "$checksum_dir" "$archive_dir"
           checksum_file="$checksum_dir/SHA256SUMS"
           archive_name="lcovmerge-$version-windows-x86_64.zip"
@@ -160,7 +160,7 @@ jobs:
           & $checkverScript -App $manifestPath -ThrowError
           if (-not $?) { throw 'Scoop checkver did not complete successfully.' }
 
-          $autoupdateDir = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp/autoupdate-check'
+          $autoupdateDir = Join-Path $env:GITHUB_WORKSPACE '.cache/ci/autoupdate-check'
           New-Item -ItemType Directory -Force -Path $autoupdateDir | Out-Null
           $autoupdateManifestPath = Join-Path $autoupdateDir 'lcovmerge.json'
           Copy-Item -LiteralPath $manifestPath -Destination $autoupdateManifestPath
@@ -178,7 +178,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $bucketPath = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp/lcovmerge-local-bucket'
+          $bucketPath = Join-Path $env:GITHUB_WORKSPACE '.cache/ci/lcovmerge-local-bucket'
           $manifestDir = Join-Path $bucketPath 'bucket'
           New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
           Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'packaging/scoop/lcovmerge.json') -Destination (Join-Path $manifestDir 'lcovmerge.json')
@@ -211,7 +211,7 @@ jobs:
             throw "lcovmerge --version did not report $version"
           }
 
-          $smokeDir = Join-Path $env:GITHUB_WORKSPACE '.luna-tmp/merge-input'
+          $smokeDir = Join-Path $env:GITHUB_WORKSPACE '.cache/ci/merge-input'
           New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
           $firstTrace = Join-Path $smokeDir 'first.info'
           $secondTrace = Join-Path $smokeDir 'second.info'

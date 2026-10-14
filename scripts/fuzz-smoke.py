@@ -44,15 +44,40 @@ def make_input(rng: random.Random) -> bytes:
     return b"\n".join(lines) + b"\n"
 
 
+def mutate_seed(rng: random.Random, seeds: list[bytes]) -> bytes:
+    """Apply bounded edits to an actual parser regression seed."""
+    data = bytearray(rng.choice(seeds))
+    for _ in range(rng.randrange(1, 9)):
+        operation = rng.randrange(4)
+        if operation == 0 and data:
+            offset = rng.randrange(len(data))
+            del data[offset : offset + 1]
+        elif operation == 1:
+            offset = rng.randrange(len(data) + 1)
+            data[offset:offset] = rng.randbytes(rng.randrange(1, 16))
+        elif operation == 2 and data:
+            data[rng.randrange(len(data))] = rng.randrange(256)
+        else:
+            data.extend(rng.choice(RECORDS))
+            data.append(10)
+    return bytes(data[: 1 << 20])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("--seconds", type=int, default=300)
+    parser.add_argument(
+        "--corpus", type=Path, default=Path(__file__).resolve().parents[1] / "tests" / "fuzz-corpus"
+    )
     args = parser.parse_args()
     if args.seconds < 1:
         parser.error("--seconds must be positive")
 
     rng = random.Random(0x1C0A6)
+    seeds = [path.read_bytes() for path in sorted(args.corpus.glob("*.info"))]
+    if not seeds:
+        parser.error(f"no .info seed files found in {args.corpus}")
     deadline = time.monotonic() + args.seconds
     cases = 0
     last_report = time.monotonic()
@@ -62,7 +87,9 @@ def main() -> int:
             inputs: list[Path] = []
             for index in range(rng.randrange(1, 5)):
                 input_path = temp_dir / f"case-{cases}-{index}.info"
-                input_path.write_bytes(make_input(rng))
+                input_path.write_bytes(
+                    mutate_seed(rng, seeds) if rng.randrange(2) else make_input(rng)
+                )
                 inputs.append(input_path)
 
             output_path = temp_dir / f"out-{cases}.info"

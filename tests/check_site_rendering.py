@@ -150,7 +150,7 @@ def check_featured_rendering(root, renderer):
     selected_without_comparison.pop("comparison", None)
     selected_without_comparison.pop("semantic_comparison", None)
     default_note = render_selected(selected_without_comparison)
-    if "Generated; <span class=\"generated-prefix\">outputs not compared</span>." not in default_note:
+    if "Historical C measurements; <span class=\"generated-prefix\">outputs not compared</span>." not in default_note:
         raise AssertionError("featured benchmark without semantic status lost its fallback note")
 
     matched = dict(selected)
@@ -160,7 +160,7 @@ def check_featured_rendering(root, renderer):
             "details": "PASS normalized SF/DA/FN/FNDA/BRDA keys and counts",
         },
     }
-    if "Generated; <span class=\"generated-prefix\">normalized outputs matched</span>." not in render_selected(matched):
+    if "Historical C measurements; <span class=\"generated-prefix\">normalized outputs matched</span>." not in render_selected(matched):
         raise AssertionError("semantic PASS was not rendered as matched normalized outputs")
 
     different = dict(selected)
@@ -171,7 +171,7 @@ def check_featured_rendering(root, renderer):
             "SF:/src/example.c: left-only=2 right-only=3 value-differences=4"
         ),
     }
-    if "Generated; <span class=\"generated-prefix\">9 differences</span>." not in render_selected(different):
+    if "Historical C measurements; <span class=\"generated-prefix\">9 differences</span>." not in render_selected(different):
         raise AssertionError("semantic differences were not rendered with their exact count")
 
     synthetic = {
@@ -208,10 +208,8 @@ def check_benchmark_data(root, renderer):
     )
     if mirror != renderer.site_benchmarks():
         raise AssertionError("site benchmark JSON is stale against the canonical renderer and data")
-    version_header = (root / "include" / "version.h").read_text(encoding="utf-8")
-    version = re.search(r'#define LCOVMERGE_VERSION "([^"]+)"', version_header)
-    if version is None or data.get("version") != version.group(1):
-        raise AssertionError("benchmark record version differs from include/version.h")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", str(data.get("version", ""))):
+        raise AssertionError("historical benchmark record has no valid measured version")
     names = [dataset.get("name") for dataset in data.get("datasets", [])]
     if len(names) != len(set(names)) or not names:
         raise AssertionError("canonical benchmark dataset names are empty or duplicated")
@@ -358,6 +356,21 @@ def check_stale_windows_verification_copy(root):
 
 def main():
     root = Path(sys.argv[1]).resolve()
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    architecture = (root / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    if ("This Rust CLI and library" not in readme or
+            "Published v1.1.0 binaries and benchmarks are from the former C implementation" not in readme):
+        raise AssertionError("README must identify the Rust source and historical C benchmark scope")
+    if "There is no C foreign-function interface" not in architecture:
+        raise AssertionError("architecture page must describe the native Rust implementation")
+    for page_name, required in (
+        ("index.html", "native Rust CLI"),
+        ("docs.html", "Published v1.1.0 downloads still contain the earlier C build"),
+        ("benchmarks.html", "The original tables record the C implementation"),
+    ):
+        page_text = (root / "docs" / "site" / page_name).read_text(encoding="utf-8")
+        if required not in page_text:
+            raise AssertionError(f"{page_name} is missing the Rust port note: {required}")
     check_stale_windows_verification_copy(root)
     renderer = load_renderer(root)
     check_benchmark_data(root, renderer)

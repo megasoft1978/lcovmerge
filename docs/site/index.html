@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f2e9">
-  <meta name="description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a C11 CLI, GitHub Action, and measured workload results.">
+  <meta name="description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a native Rust CLI, GitHub Action, and measured workload results.">
   <meta name="robots" content="index,follow">
   <title>LCOV file merger for parallel CI tests | lcovmerge</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/">
@@ -14,7 +14,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
   <meta property="og:title" content="LCOV file merger for parallel CI tests | lcovmerge">
-  <meta property="og:description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a C11 CLI, GitHub Action, and measured workload results.">
+  <meta property="og:description" content="Merge exported LCOV .info coverage shards into one file for a local CI report or upload step. Includes a native Rust CLI, GitHub Action, and measured workload results.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png">
   <meta property="og:image:alt" content="lcovmerge combines exported LCOV files">
@@ -116,7 +116,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
 <p class="bar-caption">Time · peak resident memory</p>
 <ul class="home-bars" aria-label="Elapsed time; peak resident memory values are shown"><li class="home-bar lcovmerge"><div class="home-bar-label"><span>lcovmerge 1.1.0 (PGO)</span><strong>1m 8.3s · 6.33 MiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:8.249%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov"><div class="home-bar-label"><span>lcov 2.6</span><strong>13m 47.6s · 2.69 GiB</strong></div><div class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:100.000%"></span></div><span class="home-bar-status"></span></li><li class="home-bar lcov-result-merger"><div class="home-bar-label"><span>lcov-result-merger 6.0.0</span><strong>TIMEOUT · stopped after 1h 15.8s · 2.34 GiB sampled</strong></div><div class="bar-track" aria-hidden="true"></div><span class="home-bar-status">TIMEOUT</span></li></ul>
 <div class="bar-axis" role="img" aria-label="Elapsed-time scale from 0 to 13m 47.6s"><span>0 s</span><span>6m 53.8s</span><span>13m 47.6s</span></div>
-<p class="generated-note">Generated; <span class="generated-prefix">normalized outputs matched</span>. One host. Dataset M-trained PGO; portable release binaries. v1.1.0.</p>
+<p class="generated-note">Historical C measurements; <span class="generated-prefix">normalized outputs matched</span>. One host. Dataset M-trained PGO; portable release binaries. v1.1.0.</p>
 <p class="project-check-note">8 public projects · 15 shards · 11.2 MB; one host, not a forecast. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">Full project results ↗</a></p>
 <a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>
 <!-- HOME-BENCHMARK:END -->

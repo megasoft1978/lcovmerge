@@ -3,7 +3,32 @@
 [`data/benchmarks.json`](../data/benchmarks.json) is the published measurement record. The generated tables in
 this file, the README, and the site data are rendered from it.
 
-The lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.
+The original benchmark tables are historical measurements of the C implementation (versions 1.0.0–1.1.0), collected before the Rust port. They do not describe Rust performance. The separate Rust comparison below preserves those records.
+
+## Rust port comparison
+
+On 2026-10-14, the actual default `make` binary was compared on an Apple M5 Max running macOS 27.0.1. Rust 1.99 used portable profile-guided optimization (PGO), trained on seed 42; the timed fixtures used seed 1. The primary baseline was the retained C v1.1.0 PGO binary at commit `33ced0b26adeffe47ed2d2041c8558a667566a51`, built with Apple Clang 21, `-O2 -mcpu=native`, and its historical dataset-M profile. A second baseline rebuilt C commit `035e35a595edf50d7de6737188f417667dfb4f1a` with `-O3` and no PGO. The raw report includes both baselines. These fixtures and builds are separate from the historical tables.
+
+| Workload | C 1.1 PGO, 1 job | Rust PGO, 1 job | C 1.1 PGO, 4 jobs | Rust PGO, 4 jobs |
+| --- | ---: | ---: | ---: | ---: |
+| Sorted, 104,570,468 bytes / 8 shards | 210 ms | 207 ms | 210 ms | 145 ms |
+| Unsorted, 11,719,548 bytes / 1 shard | 71 ms | 65 ms | 71 ms | 64 ms |
+
+Values are medians of 19 measured runs per variant after one warm-up, interleaved in seeded order with warm filesystem caches, `--mem-limit 64M`, and named output files. Every output was byte-identical across implementations and job counts; temporary directories were empty after each run. Maximum measured resident memory for sorted input was 2.47/2.94 MiB (C PGO/Rust, one job) and 2.47/4.86 MiB (four jobs). For unsorted input it was 18.81/38.75 MiB (one job) and 18.53/38.73 MiB (four jobs). Child CPU and peak memory came from `wait4`; wall time used Python's monotonic clock.
+
+Rust matched C's single-job sorted performance within normal timing variation, reduced four-job sorted elapsed time by 31%, and reduced unsorted elapsed time by 9%. It also beat the rebuilt `-O3` baseline's medians on both fixtures. Unsorted Rust uses more resident memory. Initial unprofiled `cargo build --release` measurements were slower; use `make` for the optimized build. This comparison does not establish a universal speed or memory improvement. [Raw measurements, hashes, fixture parameters, and validation scope](../data/rust-port-validation.json) identify the measured build and its limits.
+
+To repeat the performance gate with two binaries and your own inputs, run:
+
+```sh
+python3 bench/compare-builds.py --baseline /path/to/c-lcovmerge \
+  --candidate bin/lcovmerge --jobs 1 4 --runs 19 \
+  --workdir .cache/comparison -- input1.info input2.info
+```
+
+The gate interleaves runs, checks every output hash and temporary-run cleanup, saves raw results under `.cache/`, and fails if any candidate median exceeds the baseline. Run it on an idle machine; rerun close results to distinguish noise. `--max-ratio` can set an explicit tolerance, with strict parity as the default.
+
+The C lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.
 
 For a local rerun of the deterministic S and M fixtures, see the [reproduction instructions](REPRODUCE.md).
 

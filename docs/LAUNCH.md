@@ -7,7 +7,7 @@ would have fixed a reported incident.
 
 ## Bazel issue #26383 comment
 
-> I came across this issue while working on lcovmerge, a C11 command-line tool for merging LCOV `.info` files
+> I came across this issue while working on lcovmerge, a Rust command-line tool for merging LCOV `.info` files
 > after coverage collection. Its memory setting limits storage for coverage records while sorting; total process
 > memory can be higher, and sorting also uses temporary disk. It may be useful as an optional post-processing
 > step when separate LCOV files need to be combined.
@@ -30,7 +30,7 @@ would have fixed a reported incident.
 **Text:**
 
 I built lcovmerge for the final merge step in coverage pipelines: test shards already produce `.info` files,
-and a later job may need one merged file. It's a small C11 CLI that reads the files, writes sorted batches to
+and a later job may need one merged file. It's a small Rust CLI that reads the files, writes sorted batches to
 temporary files when needed, then merges them. Its memory setting limits storage for coverage records while
 sorting; total process memory can be higher, and temporary disk use is separate. With the same inputs, options,
 and build, output bytes do not depend on input order or job count.
@@ -45,7 +45,7 @@ Source, install options, and benchmark methodology: [lcovmerge on GitHub](https:
 
 ## Short post
 
-lcovmerge is a C11 CLI for merging already-generated LCOV `.info` files in sharded CI. Its memory setting limits
+lcovmerge is a Rust CLI for merging already-generated LCOV `.info` files in sharded CI. Its memory setting limits
 storage for coverage records while sorting; total process memory can be higher, and temporary disk use is separate.
 For the same inputs, options, and build, output bytes do not depend on input order or job count. It does not
 collect raw coverage or replace lcov's broader workflow. The benchmark page documents the generated

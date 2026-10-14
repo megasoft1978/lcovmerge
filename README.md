@@ -1,10 +1,12 @@
 # lcovmerge
 
-Merge exported LCOV `.info` shards into one file for your report or upload step. This utility does not collect raw coverage or render reports.
+Merge LCOV `.info` shards for a local report or upload.
+
+This Rust CLI and library target lcovmerge's established command-line and output behavior. Published v1.1.0 binaries and benchmarks are from the former C implementation.
 
 ## Is it a fit?
 
-Use it when separate test jobs leave LCOV shards, a local consumer needs one file, and the current merge is costly. Keep your path if the service accepts shards, native profile merging fits, or `lcov -a` is fast enough. See the [decision guide](docs/DECISION.md).
+Use when CI leaves shards and a local consumer needs one file. See the [decision guide](docs/DECISION.md).
 
 ## Try it
 
@@ -24,11 +26,13 @@ lcovmerge coverage/shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html
 ```
 
-For CI, use the [GitHub Action](action/README.md) or [matrix workflow recipe](docs/RECIPES.md#github-actions).
-
 ## Performance evidence
 
+See the [Rust port comparison](docs/BENCHMARKS.md#rust-port-comparison) for measured speed and memory trade-offs.
+
 <!-- README-BENCHMARK:START -->
+Historical C implementation measurements; Rust results are reported separately.
+
 **Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-12. Builds: lcovmerge 1.1.0 (PGO) / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger timeout at 1h 15.8s.**
 
 lcovmerge 1.1.0 (PGO): 1m 8.3s / 6.33 MiB peak resident memory (3 measured runs; median time); lcov 2.6: 13m 47.6s / 2.69 GiB peak resident memory (1 measured run).
@@ -45,7 +49,11 @@ See [all results and methods](docs/BENCHMARKS.md) or [measure private inputs](do
 
 ## Before switching
 
-lcovmerge is not a drop-in replacement for `lcov -a`; record policies can differ. Compare both outputs and downstream reports first. See the [migration checklist](docs/MIGRATING-FROM-LCOV.md) and [limits](docs/LIMITATIONS.md).
+Not a drop-in replacement for `lcov -a`; compare output and reports before switching. See the [migration checklist](docs/MIGRATING-FROM-LCOV.md) and [limits](docs/LIMITATIONS.md).
+
+## Build from source
+
+Install stable Rust and Python 3.11+. `make` builds a portable PGO CLI and installs `llvm-tools` when needed; `make test` verifies it. See [release requirements](docs/RELEASING.md#rust-cross-build-requirements).
 
 ## Documentation
 

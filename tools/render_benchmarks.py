@@ -11,13 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "data/benchmarks.json").read_text())
 REAL_PROJECTS = json.loads((ROOT / "data/real-projects.json").read_text())
-VERSION_MATCH = re.search(
-    r'^#define LCOVMERGE_VERSION "([^"]+)"$',
-    (ROOT / "include/version.h").read_text(),
-    re.MULTILINE,
-)
-if VERSION_MATCH is None:
-    raise SystemExit("LCOVMERGE_VERSION is missing from include/version.h")
+BENCHMARK_VERSION = str(DATA["version"])
 START = "<!-- BENCHMARKS:START -->"
 END = "<!-- BENCHMARKS:END -->"
 SITE_CHARTS_START = "<!-- SITE-BENCHMARK-CHARTS:START -->"
@@ -37,7 +31,7 @@ README_BENCHMARK_END = "<!-- README-BENCHMARK:END -->"
 HOME_BENCHMARK_START = "<!-- HOME-BENCHMARK:START -->"
 HOME_BENCHMARK_END = "<!-- HOME-BENCHMARK:END -->"
 WINDOWS_VERIFICATION_SENTENCE = (
-    "Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
+    "For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
     "and shipped Zig binary pass the full suite and smoke tests, and separate generated-input "
     "benchmark runs are recorded; physical desktops, other Windows versions and real-user reports "
     "remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are "
@@ -432,7 +426,7 @@ def featured_readme():
     merge = results.get("lcovmerge", {})
     lcov = results.get("lcov", {})
     merger = results.get("lcov-result-merger", {})
-    rows = [f'**{featured_metadata(source)}**', ""]
+    rows = ["Historical C implementation measurements; Rust results are reported separately.", "", f'**{featured_metadata(source)}**', ""]
     rows.append(
         f'{labels["lcovmerge"]}: {result_elapsed(merge)} / '
         f'{featured_memory("lcovmerge", merge)} peak resident memory '
@@ -546,9 +540,9 @@ def featured_site():
         '<p class="bar-caption">Time · peak resident memory</p>',
         f'<ul class="home-bars" aria-label="Elapsed time; peak resident memory values are shown">{"".join(chart_items)}</ul>',
         axis,
-        f'<p class="generated-note">Generated; '
+        f'<p class="generated-note">Historical C measurements; '
         f'<span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
-        f'One host. {html.escape(default_build_note())} v{html.escape(VERSION_MATCH.group(1))}.</p>',
+        f'One host. {html.escape(default_build_note())} v{html.escape(BENCHMARK_VERSION)}.</p>',
         f'<p class="project-check-note">{html.escape(project_derived_site_copy())} '
         '<a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">'
         'Full project results ↗</a></p>',
@@ -829,7 +823,7 @@ def site_benchmark_scope():
         f'<strong>{html.escape(labels["lcovmerge"])}</strong>. Comparators: '
         f'{html.escape(labels["lcov"])} and '
         f'{html.escape(labels["lcov-result-merger"])}. '
-        f'The release is v{html.escape(VERSION_MATCH.group(1))}. Generated measurements do not establish a universal speedup '
+        f'The measured C release is v{html.escape(BENCHMARK_VERSION)}. Generated measurements do not establish a universal speedup '
         'or output compatibility. The generated benchmark matrix REAL row remains unmeasured; '
         'separate public-project results are summarized on the <a href="https://github.com/'
         'megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">validation page</a>.'

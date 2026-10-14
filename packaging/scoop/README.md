@@ -31,7 +31,7 @@ its SHA-256 (`94f983b190438311e006b957db7c8422709e0ba62a6c2ac04e278164108f2512`)
 commit `e6aa3b366bdee8ed138c1e0f7b85192ebdd35d0f`. The lcovmerge archive is verified separately against the
 release's published `SHA256SUMS`.
 
-Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary
+For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary
 pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops,
 other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and
 large-dataset timings are disk-bound CI numbers.

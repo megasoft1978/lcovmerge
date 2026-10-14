@@ -1,0 +1,34 @@
+[package]
+name = "lcovmerge"
+version = "1.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Streaming LCOV tracefile merger"
+license = "MIT"
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "lcovmerge"
+path = "src/main.rs"
+
+[features]
+default = []
+test-partition = []
+
+[dependencies]
+libc = "0.2"
+tempfile = "3"
+itoa = "1"
+memchr = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

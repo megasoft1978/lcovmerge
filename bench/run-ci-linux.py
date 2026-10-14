@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / ".luna-tmp" / "linux-benchmark-artifact"
+DEFAULT_OUTPUT = ROOT / ".cache" / "linux-benchmark-artifact"
 
 
 def command_output(argv: list[str]) -> str:
@@ -54,7 +54,7 @@ def memory_bytes() -> int | None:
 
 def host_metadata() -> dict[str, object]:
     lcov_version = command_output(["lcov", "--version"])
-    compiler_version = command_output(["cc", "--version"])
+    compiler_version = command_output(["rustc", "--version"])
     hyperfine_version = command_output(["hyperfine", "--version"])
     return {
         "runner_label": os.environ.get("BENCH_RUNNER_LABEL", "ubuntu-24.04"),
@@ -96,7 +96,7 @@ def main() -> int:
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
-    scratch = ROOT / ".luna-tmp"
+    scratch = ROOT / ".cache" / "linux-benchmark"
     scratch.mkdir(parents=True, exist_ok=True)
     os.environ["TMPDIR"] = str(scratch)
     os.environ.setdefault("LC_ALL", "C")
@@ -116,7 +116,7 @@ def main() -> int:
         f"source={json.dumps(source_metadata(), sort_keys=True)}",
         "method=one hyperfine warmup; listed measured repeats; median wall time; max measured RSS from /usr/bin/time -v",
         "generator=tools/gen-lcov.py --benchmark-compatible; PATH-HEAVY uses tools/gen-path-heavy.py",
-        "temporary_data=under .luna-tmp and removed by bench/run.py",
+        "temporary_data=under .cache/linux-benchmark and removed by bench/run.py",
         "",
     ]
     status = 0
@@ -172,7 +172,7 @@ def main() -> int:
             "cache_state": "no explicit cache flush; one warmup per command; runner load uncontrolled",
         },
         "tool_labels": {
-            "lcovmerge": "lcovmerge 1.1.0 built from checkout",
+            "lcovmerge": f"lcovmerge {command_output(['cargo', 'pkgid']).rsplit('#', 1)[-1]} Rust release ({host_metadata()['compiler']})",
             "lcov": host_metadata()["lcov"],
         },
         "datasets": datasets,

@@ -13,7 +13,93 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-targets:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-musl
+            asset: linux-x86_64
+            executable: lcovmerge
+            linker: musl-gcc
+          - runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            asset: linux-aarch64
+            executable: lcovmerge
+            linker: musl-gcc
+          - runner: macos-15
+            rust_target: aarch64-apple-darwin
+            asset: macos-arm64
+            executable: lcovmerge
+          - runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            asset: macos-x86_64
+            executable: lcovmerge
+          - runner: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            asset: windows-x86_64.exe
+            executable: lcovmerge.exe
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install musl linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - name: Build Rust release target (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -eu
+          rustup target add '${{ matrix.rust_target }}'
+          case '${{ matrix.rust_target }}' in
+            x86_64-unknown-linux-musl) export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER='${{ matrix.linker }}' ;;
+            aarch64-unknown-linux-musl) export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER='${{ matrix.linker }}' ;;
+          esac
+          version="${GITHUB_REF_NAME#v}"
+          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output "dist/lcovmerge-$version-${{ matrix.asset }}"
+
+      - name: Build Rust release target (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup target add '${{ matrix.rust_target }}'
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output "dist/lcovmerge-$version-${{ matrix.asset }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Enforce release size budget
+        shell: bash
+        run: scripts/check-binary-size.sh "dist/lcovmerge-${GITHUB_REF_NAME#v}-${{ matrix.asset }}"
+
+      - name: Verify Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "dist/lcovmerge-$($env:GITHUB_REF_NAME -replace '^v', '')-${{ matrix.asset }}"
+          & $exe --version
+          python tests/run_tests.py --binary $exe --no-lcov
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/run-windows-smoke.ps1 -Binary $exe
+
+      - name: Upload release target
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-target-${{ matrix.asset }}
+          path: dist/lcovmerge-*
+          if-no-files-found: error
+          retention-days: 3
+
   release:
+    needs: build-targets
     name: Build, attest, and publish release
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -26,21 +112,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Download native Rust release targets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-target-*
+          path: dist
+          merge-multiple: true
+
       - name: Run host tests
         run: make test
-
-      - name: Install Zig 0.17.0 (checksum verified)
-        run: |
-          set -eu
-          archive="$RUNNER_TEMP/zig.tar.xz"
-          curl -fsSL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$archive"
-          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $archive" | sha256sum -c -
-          mkdir "$RUNNER_TEMP/zig"
-          tar -xJf "$archive" -C "$RUNNER_TEMP/zig" --strip-components=1
-          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
-
-      - name: Build all release targets with Zig
-        run: scripts/build-all.sh
 
       - name: Package release assets and manifests
         run: scripts/package-release.sh "${GITHUB_REF_NAME#v}"

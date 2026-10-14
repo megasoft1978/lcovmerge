@@ -1,57 +1,28 @@
-# CLAUDE.md
+# Repository notes for Claude Code
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project
-
-`lcovmerge`: C11 CLI that merges LCOV `.info` tracefiles with bounded memory (streaming parse, external sort spilled to temp files, k-way merge). Output must be byte-deterministic regardless of input order or worker count.
+`lcovmerge` is a native Rust CLI and library for bounded-memory merging of LCOV `.info` tracefiles. Output must remain deterministic across input order and worker count, and the Rust port targets the established C 1.1.0 CLI behavior.
 
 ## Commands
 
-- `make` → `bin/lcovmerge` (strict warnings, `-Werror`; `-Wconversion -Wshadow` included)
-- `make test` → `tests/run_tests.py --binary bin/lcovmerge` (golden, malformed, differential, determinism) + `tests/doc-consistency.sh`
-- `make asan` → ASan/UBSan build, runs core suite (`--no-lcov`)
-- `make ptest` → builds the test-only binary with `LM_TEST_PARTITION` (forces partitions on tiny inputs; `make test`/`make asan` run its cases); `make tsan` → suite on that build under ThreadSanitizer
-- `make fuzz` → needs `clang`; `FUZZ_RUNS=N` to adjust
-- `make check-format` → `git diff --check` + `clang-format` if installed
-- `make dist` → cross builds via `scripts/build-all.sh`
-- No single-test selector: `run_tests.py` only takes `--binary` and `--no-lcov`. Cases are functions in that file.
-- Optional `lcov` comparison runs only if `lcov` is installed.
+- `make` builds portable PGO `bin/lcovmerge`, caching profiles and target outputs under `.cache/optimized/`. Python 3.11+ and Rust `llvm-tools` are required.
+- `make test` runs Rust tests, the Python CLI regression suite, doc consistency, and site checks.
+- `make ptest` builds with the test-only `test-partition` feature; release binaries must not enable it.
+- `make asan`, `make tsan`, and `make fuzz` run sanitizer or parser mutation checks; see `AGENTS.md` for toolchain requirements.
+- `make check-format` runs `git diff --check`, `cargo fmt`, and Clippy.
+- `make dist` cross-builds the five release targets with rustup, cargo-zigbuild, and Zig; macOS cross-linking needs an Apple SDK.
 
 ## Architecture
 
-- Core logic is split by responsibility; shared declarations live in `src/lm_internal.h` (see `docs/ARCHITECTURE.md` for the module map). Shared behavior goes in the core modules:
-  - `lcovmerge.c` CLI/options/main; `lm_util.c` helpers and signals; `lm_io.c` writer/line reader; `lm_record.c` comparators; `lm_path.c` path rewrite/filter; `lm_chunk.c` chunk arena and spill; `lm_parse.c` parser; `lm_direct.c` direct merge; `lm_partition.c` splitter/range finder and `lm_direct_par.c` threaded direct driver; `lm_emit.c` summaries/output; `lm_merge.c` workers and k-way merge.
-  - New core files go in `CORE_SRC` (`Makefile`), `core_src` (`scripts/build-all.sh`), and `.github/workflows/bench-windows.yml`. Keep each file under 800 lines.
-- `src/platform_posix.c` / `src/platform_win32.c` + `include/platform.h`: file I/O, temp files, rename/remove, CPU count, threads. Platform APIs stay in these layers. `platform_entry.c` is the POSIX `main` shim; Windows uses `wmain` + UTF-8 conversion.
-- Pipeline (details in `docs/ARCHITECTURE.md`):
-  1. Streaming parse with 1 MiB line cap, NUL/UTF-8 validation, SF path rewrite/filter.
-  2. Direct path: regular files already in canonical order (no fixed file-count cap; falls back on stdin, `-o -`, non-regular input, fd limit, or the direct memory budget) → tournament-tree merge, output staged in destination dir. On out-of-order input or budget overflow, staged output is discarded and the fallback runs. Explicit `-j N` (N>=2) and >=64 MiB total input: partitioned by SF path range (`lm_partition.c`), one thread per range (`lm_direct_par.c`), staged files joined in path order; any diagnostic/anomaly discards them and reruns the serial direct path (default, no `-j`, stays serial).
-  3. Fallback: bounded external sort (chunks → sorted temp runs; `--mem-limit` shared across workers, ≥8 MiB each, 24 MiB reserved overhead).
-  4. K-way merge; summaries (function/branch/MC/DC/line) recomputed; output renamed atomically only after all I/O succeeds.
-- Determinism rules live in the comparator (SF path → record class → typed keys → text → values). Count merge is commutative and saturating (UINT64_MAX). Changes to ordering/merge semantics need regression cases.
-- Temp run files are named (not unlink-on-open) because later merge passes reopen them by path; they must be removed explicitly on success and handled failure.
-- Limits: 32 workers, listfile nesting 8, whole-file worker distribution in the external-sort fallback (one huge file can't be parallel-parsed there).
-
-## Other components
-
-- `tools/`: trace generators (`gen-lcov.py`, `gen-path-heavy.py`), `oracle.py`, docs/site helpers (`check_links.py`, `render_benchmarks.py`).
-- `scripts/`: CI, packaging, release, differential-vs-lcov, SBOM. `packaging/`: Docker, Homebrew, Scoop, install scripts.
-- `action/` + root `action.yml`: GitHub Action (`action/scripts/entrypoint.py`).
-- `bench/`, `data/benchmarks.json`, `docs/site/`: benchmarks and published site (`data/benchmarks.json` is mirrored in `docs/site/data/`).
-- `docs/validation/`: recorded release validation outputs.
+See `docs/ARCHITECTURE.md`. The core public modules are shared options/errors (`common`), record ordering (`model`), streaming parser (`parser`), path rewriting (`path`), output/summaries (`emit`), merge orchestration (`engine`), and CLI parsing (`cli`). Keep parsing streamed and bounded, preserve cancellation and temporary-run cleanup, and avoid unsafe Rust unless a reviewed platform need requires it.
 
 ## Conventions
 
-- `.editorconfig`: UTF-8, LF, final newline, 4-space indent (tabs in Makefile).
-- Commits: Conventional Commits (`fix(docker): …`, `docs: …`, `test: …`).
-- User-visible changes: update `CHANGELOG.md`; keep CLI docs (`docs/USAGE.md`) and `man/lcovmerge.1` consistent — `tests/doc-consistency.sh` enforces part of this.
-- Tests: fixtures synthetic and small; never commit real coverage data (leaks paths/code). Use `make asan`/`make fuzz` for parser memory-safety work.
-- Markdown lint config: `.markdownlint-cli2.jsonc`.
+- Use Rust 2021 and `cargo fmt`; keep synthetic fixtures small and private coverage data out of the repository.
+- Add Rust unit/property tests and CLI regression cases for parser, merge, boundary, malformed-input, and determinism changes.
+- Update `CHANGELOG.md` for user-visible changes and keep the CLI reference, usage docs, and man page aligned.
+- Existing benchmark results and validation reports describe the C implementation; do not present them as Rust performance results.
+- Keep retained logs, generated inputs, and scratch work under ignored `.cache/<run>/` directories.
 
-## Agent Workflow & Workspace Boundaries
+## Agent model override for the port
 
-- Read `AGENTS.md` before making changes; it is the shared policy for project structure, commands, coding, tests, and safe output locations.
-- Anthropic models only (no OpenAI/Codex models). Route by risk: Opus plans, reviews, and owns ordering/merge/determinism changes; Sonnet implements bounded changes; Haiku runs builds/tests/benchmarks and mechanical doc edits. Escalate Haiku→Sonnet after one failure, Sonnet→Opus after two.
-- Keep retained prompts, terminal logs, session markers, scratch files, generated inputs, and benchmark results under ignored repo-local `.cache/<run>/` directories. Never leave them beside the repository in its parent folder or on the Desktop.
-- Keep temporary benchmark data self-cleaning unless the user needs it for comparison; retain requested data under `.cache/` with its input and report.
+This repository historically requested Anthropic models only. For the Rust port integration task, the user explicitly authorized Codex Luna, which overrides that restriction for this task. Continue to follow any later explicit user model instruction.

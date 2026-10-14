@@ -28,21 +28,22 @@ jobs:
           - os: windows-latest
             python: python
     env:
-      TMPDIR: ${{ github.workspace }}/.luna-tmp
-      TMP: ${{ github.workspace }}/.luna-tmp
-      TEMP: ${{ github.workspace }}/.luna-tmp
+      TMPDIR: ${{ github.workspace }}/.cache/ci
+      TMP: ${{ github.workspace }}/.cache/ci
+      TEMP: ${{ github.workspace }}/.cache/ci
       LCOVMERGE_PYTHON: ${{ matrix.python }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up MSYS2 and MinGW toolchain
+      - name: Set up MSYS2 shell and Python
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
+          path-type: inherit
           update: true
-          install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
+          install: make mingw-w64-ucrt-x86_64-python
 
       - name: Prepare synthetic shards
         run: ${{ env.LCOVMERGE_PYTHON }} action/tests/prepare_smoke.py

@@ -1,6 +1,7 @@
 /bin/
 /dist/
 /build/
+/target/
 /tests/tmp/
 /tests/fuzz-artifacts/
 /bench/data/

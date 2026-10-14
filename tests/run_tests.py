@@ -8,6 +8,7 @@ import importlib.util
 import os
 import random
 import re
+import tomllib
 import signal
 import shutil
 import subprocess
@@ -325,11 +326,8 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
         raise AssertionError("path rewriting accepted an empty SF path")
     version = run([str(binary), "--version"])
     help_result = run([str(binary), "--help"])
-    version_header = (ROOT / "include" / "version.h").read_text(encoding="utf-8")
-    version_match = re.search(r'#define LCOVMERGE_VERSION "([^"]+)"', version_header)
-    if version_match is None:
-        raise AssertionError("could not determine expected version from include/version.h")
-    expected_version = version_match.group(1).encode("ascii")
+    package_version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+    expected_version = package_version.encode("ascii")
     if version.returncode != 0 or not re.search(
         rb"^lcovmerge " + re.escape(expected_version) + rb" \(git [^)]+\)\r?\n?$", version.stdout
     ):
@@ -945,7 +943,29 @@ def closed_stdout_pipe_cleanup_test(binary: Path, temporary: Path) -> int:
         )
     if stderr is not None:
         stderr.close()
-    return 1
+    # A reader that remains open but stops consuming must also permit handled cancellation.
+    blocked = subprocess.Popen(
+        [str(binary), "--mem-limit", "8M", "--jobs", "1", "--tmpdir", str(run_dir), str(source), "-o", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        import select
+        ready, _, _ = select.select([blocked.stdout], [], [], 30)
+        if not ready or not blocked.stdout.read(1):
+            raise AssertionError("blocked-pipe cancellation never reached output")
+        time.sleep(0.1)
+        blocked.send_signal(signal.SIGTERM)
+        status = blocked.wait(timeout=5)
+        error = blocked.stderr.read()
+        if status != 3 or b"interrupted" not in error or list(run_dir.iterdir()):
+            raise AssertionError(f"blocked stdout was not cancelled and cleaned: {status}, {error!r}")
+    finally:
+        if blocked.poll() is None:
+            blocked.kill()
+            blocked.wait()
+        blocked.stdout.close()
+        blocked.stderr.close()
+    return 2
 
 
 def generator_lcov_valid_test(binary: Path, temporary: Path, *, check_lcov: bool) -> int:
@@ -1305,7 +1325,7 @@ def main() -> int:
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--no-lcov", action="store_true")
     parser.add_argument("--partition-binary", type=Path,
-                        help="test-hook build (-DLM_TEST_PARTITION) for the threaded direct path")
+                        help="test-hook build (Cargo test-partition feature) for the threaded direct path")
     args = parser.parse_args()
     binary = args.binary.resolve()
     if not binary.exists():

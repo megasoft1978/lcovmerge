@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -20,15 +21,16 @@ from ctypes import wintypes
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / ".luna-tmp" / "windows-benchmark-artifact"
+DEFAULT_OUTPUT = ROOT / ".cache" / "windows-benchmark" / "artifact"
+DEFAULT_CACHE = ROOT / ".cache" / "windows-benchmark"
 WORKLOADS = {
     "S": (8, 56, 23000, 5),
     "M": (32, 220, 16000, 3),
     "L": (64, 480, 16000, 2),
 }
 TOOLS = (
-    ("lcovmerge", "Zig -O2"),
-    ("lcovmerge_ucrt64_gcc", "MSYS2 UCRT64 GCC -O2"),
+    ("lcovmerge", "Rust release (jobs=4)"),
+    ("lcovmerge_serial", "Rust release (jobs=1)"),
 )
 
 
@@ -138,9 +140,8 @@ class PeakWorkingSet:
             self.handle = None
 
 
-def host_metadata(zig_compiler: str, gcc_compiler: str) -> dict[str, object]:
-    zig_version = command_output([zig_compiler, "version"])
-    gcc_version = command_output([gcc_compiler, "--version"])
+def host_metadata(rustc: str) -> dict[str, object]:
+    rustc_version = command_output([rustc, "-Vv"])
     cpu = powershell_value(
         "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)")
     os_build = powershell_value(
@@ -154,9 +155,10 @@ def host_metadata(zig_compiler: str, gcc_compiler: str) -> dict[str, object]:
         "cpu_model": cpu,
         "logical_cores": os.cpu_count(),
         "memory_bytes": memory_bytes(),
-        "compiler": f"Zig {zig_version}; {first_line(gcc_version)}",
-        "zig": zig_version,
-        "gcc": first_line(gcc_version),
+        "compiler": first_line(rustc_version),
+        "rustc": rustc_version,
+        "rust_profile": "release",
+        "rust_profile_options": "opt-level=3, lto=thin, codegen-units=1 (Cargo.toml)",
         "lcov": "not measured (this run compares lcovmerge builds only)",
         "rss_tool": "Windows GetProcessMemoryInfo PeakWorkingSetSize",
     }
@@ -165,6 +167,7 @@ def host_metadata(zig_compiler: str, gcc_compiler: str) -> dict[str, object]:
 def source_metadata() -> dict[str, object]:
     revision = command_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
     return {
+        "implementation": "Rust",
         "repository": os.environ.get("GITHUB_REPOSITORY", "local"),
         "revision": revision,
         "workflow": os.environ.get("GITHUB_WORKFLOW", "manual local run"),
@@ -245,14 +248,15 @@ def result_status(exit_codes: list[int]) -> tuple[str, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=pathlib.Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--zig-binary", type=pathlib.Path,
-                        default=ROOT / "dist" / "lcovmerge-1.1.0-windows-x86_64.exe")
-    parser.add_argument("--gcc-binary", type=pathlib.Path,
-                        default=ROOT / "bin" / "lcovmerge-ucrt64-gcc.exe")
-    parser.add_argument("--zig-compiler", default="zig.exe",
-                        help="Zig executable used to build the release binary")
-    parser.add_argument("--gcc-compiler", default="gcc.exe",
-                        help="UCRT64 GCC executable used to build the comparison binary")
+    parser.add_argument("--binary", type=pathlib.Path,
+                        default=ROOT / "target" / "release" / "lcovmerge.exe",
+                        help="optimized Rust release binary to benchmark")
+    parser.add_argument("--baseline-binary", type=pathlib.Path,
+                        help="optional second Rust binary; defaults to --binary")
+    parser.add_argument("--rustc", default="rustc.exe",
+                        help="Rust compiler used to build the binary")
+    parser.add_argument("--zig-binary", type=pathlib.Path, help=argparse.SUPPRESS)
+    parser.add_argument("--gcc-binary", type=pathlib.Path, help=argparse.SUPPRESS)
     parser.add_argument("--timeout", type=int, default=1800,
                         help="timeout in seconds for each individual invocation")
     args = parser.parse_args()
@@ -260,13 +264,15 @@ def main() -> int:
         parser.error("Windows CI measurements require a Windows host")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    zig_binary = args.zig_binary.resolve()
-    gcc_binary = args.gcc_binary.resolve()
-    for binary in (zig_binary, gcc_binary):
+    binary_arg = args.binary if args.zig_binary is None else args.zig_binary
+    baseline_arg = args.baseline_binary or args.gcc_binary or binary_arg
+    binaries = {"lcovmerge": binary_arg.resolve(),
+                "lcovmerge_serial": baseline_arg.resolve()}
+    for binary in binaries.values():
         if not binary.is_file():
             parser.error(f"benchmark binary not found: {binary}")
 
-    scratch = ROOT / ".luna-tmp"
+    scratch = DEFAULT_CACHE
     scratch.mkdir(parents=True, exist_ok=True)
     os.environ["TMPDIR"] = str(scratch)
     os.environ["TMP"] = str(scratch)
@@ -279,8 +285,8 @@ def main() -> int:
         parser.error(f"refusing to overwrite non-empty artifact directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    host = host_metadata(args.zig_compiler, args.gcc_compiler)
-    required_host = ("cpu_model", "logical_cores", "memory_bytes", "os_build", "zig", "gcc")
+    host = host_metadata(args.rustc)
+    required_host = ("cpu_model", "logical_cores", "memory_bytes", "os_build", "rustc")
     if any(host.get(key) in (None, "", "unavailable") for key in required_host):
         parser.error("Windows host metadata is incomplete: " + ", ".join(
             key for key in required_host if host.get(key) in (None, "", "unavailable")))
@@ -294,7 +300,9 @@ def main() -> int:
         "generator=tools/gen-lcov.py --benchmark-compatible --checksums (native Windows Python)",
         "method=one warmup per binary; measured order alternates; median and minimum wall time of listed repeats",
         "rss=Windows GetProcessMemoryInfo PeakWorkingSetSize; max across measured runs; unknown unless every measured run is sampled",
-        "temporary_data=generated inputs, outputs, sort runs, and logs are under .luna-tmp and removed after each dataset",
+        "implementation=Rust; profile=release (opt-level=3, thin LTO, codegen-units=1)",
+        "options=optimized release binary with --jobs 4 compared with the same binary and --jobs 1",
+        "temporary_data=generated inputs, outputs, sort runs, and logs are under .cache/windows-benchmark and removed after each dataset",
         "cache_state=no explicit cache flush; both binaries receive a warmup; runner load is uncontrolled",
         "",
     ]
@@ -315,6 +323,7 @@ def main() -> int:
             }
             result_map = dataset["results"]
             rows_by_tool: dict[str, list[str]] = {}
+            output_hashes: dict[str, str] = {}
 
             # Warm both binaries before recording samples. The measured order then
             # alternates so neither build always runs first on a warm input cache.
@@ -324,10 +333,13 @@ def main() -> int:
                 tmpdir = work / "sort" / f"{workload}-{key}"
                 tmpdir.mkdir(parents=True, exist_ok=True)
                 output.parent.mkdir(parents=True, exist_ok=True)
-                command = [str(zig_binary if key == "lcovmerge" else gcc_binary),
+                jobs = "4" if key == "lcovmerge" else "1"
+                command = [str(binaries[key]), "--jobs", jobs,
                            "--tmpdir", str(tmpdir), "-o", str(output), *map(str, paths)]
                 warmups[key] = timed_run(command, ROOT, env,
                                          work / "logs" / f"{workload}-{key}-warmup.txt", args.timeout)
+                if warmups[key]["exit_code"] == 0 and output.is_file():
+                    output_hashes[f"{key}_warmup"] = hashlib.sha256(output.read_bytes()).hexdigest()
                 try:
                     output.unlink()
                 except FileNotFoundError:
@@ -337,15 +349,19 @@ def main() -> int:
             for sample_index in range(repeat_count):
                 iteration = TOOLS if sample_index % 2 == 0 else tuple(reversed(TOOLS))
                 for key, label in iteration:
-                    binary = zig_binary if key == "lcovmerge" else gcc_binary
+                    binary = binaries[key]
+                    jobs = "4" if key == "lcovmerge" else "1"
                     output = work / "output" / f"{workload}-{key}.info"
                     tmpdir = work / "sort" / f"{workload}-{key}"
-                    command = [str(binary), "--tmpdir", str(tmpdir), "-o", str(output),
+                    command = [str(binary), "--jobs", jobs, "--tmpdir", str(tmpdir), "-o", str(output),
                                *map(str, paths)]
                     sample = timed_run(command, ROOT, env,
                                        work / "logs" / f"{workload}-{key}-run-{sample_index + 1}.txt",
                                        args.timeout)
                     samples[key].append(sample)
+                    if sample["exit_code"] == 0 and output.is_file():
+                        output_hashes[f"{key}_run_{sample_index + 1}"] = hashlib.sha256(
+                            output.read_bytes()).hexdigest()
                     try:
                         output.unlink()
                     except FileNotFoundError:
@@ -358,6 +374,14 @@ def main() -> int:
                         log_text = sample["log"].read_text(encoding="utf-8", errors="replace").strip()
                         rows_by_tool[key].append(f"{label} run {sample_index + 1} output: {log_text}")
 
+            expected_hashes = [value for name, value in output_hashes.items()
+                               if name.startswith("lcovmerge_")
+                               and not name.startswith("lcovmerge_serial_")]
+            reference_hashes = [value for name, value in output_hashes.items()
+                                if name.startswith("lcovmerge_serial_")]
+            outputs_match = (len(expected_hashes) == repeat_count + 1
+                             and len(reference_hashes) == repeat_count + 1
+                             and len(set(expected_hashes + reference_hashes)) == 1)
             for key, label in TOOLS:
                 measured_samples = samples[key]
                 times = [float(sample["time_s"]) for sample in measured_samples]
@@ -367,6 +391,8 @@ def main() -> int:
                 codes = [int(warmups[key]["exit_code"]),
                          *(int(sample["exit_code"]) for sample in measured_samples)]
                 result_status_value, exit_code = result_status(codes)
+                if result_status_value == "OK" and not outputs_match:
+                    result_status_value, exit_code = "OUTPUT_MISMATCH", 1
                 median_seconds = statistics.median(times)
                 minimum_seconds = min(times)
                 result_map[key] = {
@@ -383,11 +409,13 @@ def main() -> int:
                     "exit_code": exit_code,
                     "run_count": repeat_count,
                     "warmup_count": 1,
+                    "outputs_match": outputs_match,
                 }
                 report.append(f"## {workload} · {label}")
                 report.append(f"input_bytes={total_bytes} shards={len(paths)}")
                 report.append(f"warmup_wall_seconds={warmups[key]['time_s']:.6f} "
                               f"exit_code={warmups[key]['exit_code']}")
+                report.append(f"output_hashes_match={outputs_match}")
                 report.extend(rows_by_tool.get(key, []))
                 report.append(
                     f"summary=median_seconds={median_seconds:.6f} min_seconds={minimum_seconds:.6f} "
@@ -416,11 +444,16 @@ def main() -> int:
             "timeout_seconds_per_run": args.timeout,
             "cache_state": "no explicit cache flush; one warmup per binary; measured order alternates; runner load uncontrolled",
             "generator": "tools/gen-lcov.py --benchmark-compatible --checksums using native Windows Python",
-            "temporary_data": "under .luna-tmp; generated dataset is removed after measurement",
+            "temporary_data": "under .cache/windows-benchmark; generated dataset is removed after measurement",
+            "implementation": "Rust",
+            "rust_profile": "release",
+            "rust_profile_options": "opt-level=3, lto=thin, codegen-units=1",
+            "jobs_by_tool": {"lcovmerge": 4, "lcovmerge_serial": 1},
+            "output_verification": "SHA-256 of exact output bytes; all successful warmups and measured runs must match",
         },
         "tool_labels": {
-            "lcovmerge": "lcovmerge 1.1.0 Zig 0.17.0 -O2 Windows x86_64",
-            "lcovmerge_ucrt64_gcc": "lcovmerge 1.1.0 MSYS2 UCRT64 GCC -O2",
+            "lcovmerge": "lcovmerge 1.1.0 Rust release Windows x86_64, --jobs 4",
+            "lcovmerge_serial": "lcovmerge 1.1.0 Rust release Windows x86_64, --jobs 1",
         },
         "datasets": datasets,
         "text_report": "benchmark.txt",

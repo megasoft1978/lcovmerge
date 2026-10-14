@@ -40,7 +40,7 @@ jobs:
       - name: Run repeatable Linux benchmarks
         env:
           BENCH_RUNNER_LABEL: ubuntu-24.04
-          TMPDIR: ${{ github.workspace }}/.luna-tmp
+          TMPDIR: ${{ github.workspace }}/.cache/ci
           INCLUDE_PATH_HEAVY: ${{ inputs.include_path_heavy }}
         run: |
           set -eu
@@ -50,7 +50,7 @@ jobs:
             set -- --include-path-heavy
           fi
           python3 -I bench/run-ci-linux.py \
-            --output-dir .luna-tmp/linux-benchmark-artifact \
+            --output-dir .cache/ci/linux-benchmark-artifact \
             "$@"
 
       - name: Upload JSON and text results
@@ -59,7 +59,7 @@ jobs:
         with:
           name: linux-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            .luna-tmp/linux-benchmark-artifact/benchmark.json
-            .luna-tmp/linux-benchmark-artifact/benchmark.txt
+            .cache/ci/linux-benchmark-artifact/benchmark.json
+            .cache/ci/linux-benchmark-artifact/benchmark.txt
           if-no-files-found: error
           retention-days: 90

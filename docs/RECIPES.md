@@ -351,7 +351,7 @@ The audit verified the XML plus `xml2lcov` path and the wrapper with `--jar`. Se
 
 ## Build from source
 
-From a checkout of the repository, the standard build command creates `bin/lcovmerge` with the project's strict compiler warnings:
+From a checkout of the repository, install stable Rust with rustup and run the standard Cargo-backed build:
 
 ```sh
 make
@@ -359,9 +359,11 @@ make
 
 Run `make test` when validating a local change.
 
+The release cross-build additionally needs `cargo-zigbuild` (`cargo install cargo-zigbuild`) and Zig. `rustup target add` installs the Linux musl, macOS, and Windows GNU Rust standard libraries used by `scripts/build-all.sh`. Cross-linking macOS binaries may require an Apple SDK; see [release build requirements](RELEASING.md#rust-cross-build-requirements).
+
 ## Release archives and provenance
 
-Release archives and `SHA256SUMS` are published on the [release page](https://github.com/megasoft1978/lcovmerge/releases). For Linux and macOS installation commands, see the [Usage guide](USAGE.md#install). The [Homebrew tap](https://github.com/megasoft1978/homebrew-tap) also has a formula; Homebrew installation could not be verified in the local audit because `brew` stopped before formula lookup while trying to create a protected lock. The Scoop package was not installed on Windows in that audit. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [limitations](LIMITATIONS.md#verification-status).
+Release archives and `SHA256SUMS` are published on the [release page](https://github.com/megasoft1978/lcovmerge/releases). For Linux and macOS installation commands, see the [Usage guide](USAGE.md#install). The [Homebrew tap](https://github.com/megasoft1978/homebrew-tap) also has a formula; Homebrew installation could not be verified in the local audit because `brew` stopped before formula lookup while trying to create a protected lock. The Scoop package was not installed on Windows in that audit. For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [limitations](LIMITATIONS.md#verification-status).
 
 To verify build provenance manually, use a GitHub CLI version with `gh attestation verify` support. Cosign needs a writable Sigstore trust-root cache or a supplied trust-root file. See the [GitHub CLI attestation guide](https://cli.github.com/manual/gh_attestation_verify) and [Cosign verification guide](https://docs.sigstore.dev/cosign/verifying/verify/).
 

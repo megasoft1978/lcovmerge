@@ -2,6 +2,24 @@
 
 Use this checklist for a lcovmerge release. Complete a step only after its output is reviewed.
 
+The current CLI and library are Rust. v1.1.0 release files, the matching source history, and all benchmark reports currently in `data/benchmarks.json` are from the former C implementation. Do not reuse those figures as Rust performance evidence.
+
+## Rust cross-build requirements
+
+`scripts/build-all.sh` builds these Rust targets with the optimized Cargo profile and keeps the established archive names:
+
+| Release asset | Rust target |
+| --- | --- |
+| Linux x86-64 | `x86_64-unknown-linux-musl` |
+| Linux aarch64 | `aarch64-unknown-linux-musl` |
+| macOS arm64 | `aarch64-apple-darwin` |
+| macOS x86-64 | `x86_64-apple-darwin` |
+| Windows x86-64 | `x86_64-pc-windows-msvc` |
+
+Install stable Rust through rustup. For Linux/macOS cross builds, install `cargo-zigbuild` with `cargo install cargo-zigbuild --locked` and install Zig. macOS cross-linking needs an Apple SDK; use a macOS host or configure an SDK on Linux. Release CI builds each target on a matching native runner, with static CRT linking for the Windows MSVC executable. On Unix, supply `WINDOWS_BINARY` from that Windows build when assembling all five local release targets. Set `BUILD_TARGETS` to select only Linux/macOS targets.
+
+The Homebrew formula installs a macOS binary from the published release archive. The checked-in formula still points to v1.1.0, whose archive predates the Rust port; regenerate its URLs and checksums after publishing the first Rust release. Native optimized builds use `python3 scripts/build-optimized.py --output bin/lcovmerge` (also invoked by Make), with Python 3.11+ and Rust `llvm-tools`. Synthetic PGO inputs, feedback, build logs, and binary hashes remain in `.cache/optimized/`; unchanged sources reuse the profile. Plain `cargo build --release` builds without PGO. Cross builds do not train PGO because target binaries must run on a matching host. Ordinary development and tests do not need Zig or cross-target components.
+
 ## Before tagging
 
 - [ ] Confirm the release version in the binary, README, man page, changelog, and artifact names.
@@ -13,7 +31,7 @@ tables with `python3 tools/render_benchmarks.py`.
 - [ ] Review benchmark caveats and ensure no values outside the JSON were copied into documentation without a
 `<!-- BENCH -->` marker.
 - [ ] Run parser tests, sanitizer/fuzz checks, and the documented regression suite in the code repository.
-- [ ] Verify runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
+- [ ] Verify Rust runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
   confirm the release-target size budget job and the Windows release-binary job pass on the final commit.
 - [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the published v1.1.0 download and checks byte-for-byte output against the CLI.
 - [ ] Run `actionlint` and confirm the action references remain SHA-pinned and match `docs/validation/action-pins.txt`.
@@ -71,3 +89,5 @@ installs the manifest from a temporary local bucket. The CI trust boundary is th
 verified against the release checksum file.
 
 For the exact release-note install and provenance commands, see the generated `RELEASE_NOTES.md`. Repository-level branch protection, Dependabot, Discussions, homepage, social-preview, CODEOWNERS, and `TAP_TOKEN` settings are documented in [REPO-SETTINGS.md](REPO-SETTINGS.md).
+
+For local Linux/macOS cross builds, set `BUILD_TARGETS` to the desired Rust target triples. The default five-target build requires `WINDOWS_BINARY` from native Windows CI when run on Unix. Cross builds compare two clean compilations at the same canonical build path before packaging; `scripts/reproducible-build.sh` compares two clean host PGO compilations using the same frozen training feedback. `cargo-zigbuild` is used only for Linux/macOS cross linking.

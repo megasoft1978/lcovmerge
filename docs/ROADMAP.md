@@ -6,7 +6,7 @@ Make lcovmerge a dependable, easy-to-evaluate option for the final merge of expo
 
 ## What is established
 
-- The C11 CLI and platform layers have broad parser, merge, determinism, sanitizer, and fuzz validation recorded in the repository.
+- The Rust CLI and library target behavioral compatibility with the former C 1.1.0 implementation. Existing validation records and benchmark results are historical C evidence; Rust coverage comes from the Rust tests and CLI suite added with the port.
 - Release artifacts, checksums, attestations, a GitHub Action, and container packaging are implemented.
 - Generated large-input benchmarks and project-derived compatibility checks are documented with their methods and limits.
 - Synthetic exporter handoffs have been exercised for Coverage.py, Go via `gcov2lcov`, and c8.

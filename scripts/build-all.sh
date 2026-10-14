@@ -2,76 +2,79 @@
 set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
-zig_bin=${ZIG_CC:-zig}
-command -v "$zig_bin" >/dev/null 2>&1 || { echo "zig cc is required (install with brew install zig)" >&2; exit 1; }
-version=$(sed -n 's/^#define LCOVMERGE_VERSION "\([^"]*\)"/\1/p' include/version.h)
-commit=$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
-epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD 2>/dev/null || printf 0)}
-export SOURCE_DATE_EPOCH="$epoch"
-dist="$root/dist"
-if [ -n "${DIST_DIR:-}" ]; then
-    case "$DIST_DIR" in
-        /*) dist=$DIST_DIR ;;
-        *) dist="$root/$DIST_DIR" ;;
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+[ -n "$version" ] || { echo 'Cannot determine Cargo package version.' >&2; exit 1; }
+host=$(rustc -vV | sed -n 's/^host: //p')
+targets=${BUILD_TARGETS:-'x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc'}
+# Windows release binaries are built natively in CI. Cross builds can supply that artifact.
+for target in $targets; do
+    case "$target" in
+        *windows*)
+            case "$host" in *windows*) ;; *)
+                [ -n "${WINDOWS_BINARY:-}" ] && [ -f "$WINDOWS_BINARY" ] || {
+                    echo 'Supply WINDOWS_BINARY from native Windows CI, or select Linux/macOS with BUILD_TARGETS.' >&2
+                    exit 1
+                }
+            ;; esac
+        ;;
     esac
-fi
-work=$(mktemp -d "${TMPDIR:-/tmp}/lcovmerge-dist.XXXXXX")
-cleanup() { python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' "$work"; }
-trap cleanup EXIT HUP INT TERM
-
-core_src="src/lcovmerge.c src/lm_util.c src/lm_io.c src/lm_record.c src/lm_path.c src/lm_chunk.c src/lm_emit.c src/lm_parse.c src/lm_direct.c src/lm_partition.c src/lm_direct_par.c src/lm_merge.c"
-
-# core_src is a fixed list of space-free repository paths and is split into arguments on purpose.
-# shellcheck disable=SC2086
-build_set() {
-    python3 tools/package-dist.py --clean "$dist"
-    # Keep the flags as positional arguments so paths containing spaces remain one argument.
-    set --
-    for flag in -Iinclude -O2 -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections -fdata-sections "-ffile-prefix-map=$root=." "-DLCOVMERGE_GIT_COMMIT=\"$commit\""; do
-        set -- "$@" "$flag"
-    done
-
-    "$zig_bin" cc -target x86_64-linux-musl "$@" -static $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-x86_64"
-    "$zig_bin" cc -target aarch64-linux-musl "$@" -static $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-linux-aarch64"
-    "$zig_bin" cc -target aarch64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-arm64"
-    "$zig_bin" cc -target x86_64-macos "$@" $core_src src/platform_posix.c src/platform_entry.c -pthread -Wl,-dead_strip -Wl,-x -o "$dist/lcovmerge-$version-macos-x86_64"
-    # The Windows executable is built with -Os (the later flag overrides -O2) to stay within the release size budget.
-    if [ -n "${MINGW_CC:-}" ]; then
-        command -v "$MINGW_CC" >/dev/null 2>&1 || {
-            printf 'MINGW_CC not found: %s\n' "$MINGW_CC" >&2
-            exit 1
-        }
-        "$MINGW_CC" "$@" -Os -static $core_src src/platform_win32.c -municode \
-            -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+done
+export ZERO_AR_DATE=1
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct HEAD 2>/dev/null || printf 0)}"
+export LCOVMERGE_GIT_COMMIT="${LCOVMERGE_GIT_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+dist=${DIST_DIR:-dist}
+case "$dist" in /*) ;; *) dist="$root/$dist" ;; esac
+mkdir -p .cache
+work=$(mktemp -d "$root/.cache/dist-build.XXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+export CARGO_ENCODED_RUSTFLAGS="$(python3 - "$root" "$work" <<'PYFLAGS'
+import os, sys
+flags = os.environ.get("CARGO_ENCODED_RUSTFLAGS")
+flags = flags.split("\x1f") if flags else os.environ.get("RUSTFLAGS", "").split()
+flags.extend([f"--remap-path-prefix={sys.argv[1]}=.", f"--remap-path-prefix={sys.argv[2]}=build"])
+print("\x1f".join(flags), end="")
+PYFLAGS
+)"
+python3 tools/package-dist.py --clean "$dist"
+for target in $targets; do
+    executable=lcovmerge
+    prebuilt=
+    case "$target" in
+        x86_64-unknown-linux-musl) suffix=linux-x86_64 ;;
+        aarch64-unknown-linux-musl) suffix=linux-aarch64 ;;
+        aarch64-apple-darwin) suffix=macos-arm64 ;;
+        x86_64-apple-darwin) suffix=macos-x86_64 ;;
+        x86_64-pc-windows-msvc|x86_64-pc-windows-gnu)
+            suffix=windows-x86_64.exe; executable=lcovmerge.exe
+            case "$host" in *windows*) ;; *) prebuilt=$WINDOWS_BINARY ;; esac
+        ;;
+        *) printf 'Unsupported release target: %s\n' "$target" >&2; exit 1 ;;
+    esac
+    if [ -n "$prebuilt" ]; then
+        cp "$prebuilt" "$dist/lcovmerge-$version-$suffix"
     else
-        "$zig_bin" cc -target x86_64-windows-gnu "$@" -Os -static $core_src src/platform_win32.c -municode -Wl,--gc-sections -Wl,-s -o "$dist/lcovmerge-$version-windows-x86_64.exe"
+        rustup target add "$target"
+        for build in first second; do
+            rm -rf "$work/target"
+            native=0
+            [ "$target" != "$host" ] || native=1
+            case "$host:$target" in *apple-darwin:*apple-darwin) native=1 ;; esac
+            if [ "$native" -eq 1 ]; then
+                cargo build --locked --release --target "$target" --target-dir "$work/target"
+            else
+                cargo zigbuild --locked --release --target "$target" --target-dir "$work/target"
+            fi
+            cp "$work/target/$target/release/$executable" "$work/binary-$build"
+        done
+        cmp "$work/binary-first" "$work/binary-second"
+        cp "$work/binary-first" "$dist/lcovmerge-$version-$suffix"
     fi
-    python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$epoch"
-}
-
-mkdir -p "$dist"
-build_set
-cp "$dist/SHA256SUMS" "$work/SHA256SUMS.first"
-build_set
-scripts/check-binary-size.sh \
-    "$dist/lcovmerge-$version-linux-x86_64" \
-    "$dist/lcovmerge-$version-linux-aarch64" \
-    "$dist/lcovmerge-$version-macos-arm64" \
-    "$dist/lcovmerge-$version-macos-x86_64" \
-    "$dist/lcovmerge-$version-windows-x86_64.exe"
-cmp "$work/SHA256SUMS.first" "$dist/SHA256SUMS"
-(cd "$dist" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi)
-if command -v file >/dev/null 2>&1; then file "$dist"/lcovmerge-"$version"-*; fi
-python3 - "$dist/lcovmerge-$version-windows-x86_64.exe" <<'PY'
-import pathlib
-import struct
-import sys
-image = pathlib.Path(sys.argv[1]).read_bytes()
-assert image[:2] == b"MZ", "missing DOS/PE header"
-pe_offset = struct.unpack_from("<I", image, 0x3c)[0]
-assert image[pe_offset:pe_offset + 4] == b"PE\0\0", "missing PE signature"
-machine = struct.unpack_from("<H", image, pe_offset + 4)[0]
-assert machine == 0x8664, f"unexpected PE machine 0x{machine:04x}"
-print("windows_pe=x86_64 PASS")
-PY
-printf 'reproducible=PASS source_date_epoch=%s git=%s version=%s\n' "$epoch" "$commit" "$version"
+    scripts/check-binary-size.sh "$dist/lcovmerge-$version-$suffix"
+done
+# The archive tool accepts the complete five-target set; a selected-target build retains binaries.
+count=$(printf '%s\n' "$targets" | wc -w | tr -d '[:space:]')
+if [ "$count" -eq 5 ]; then
+    python3 tools/package-dist.py --archive "$dist" --version "$version" --epoch "$SOURCE_DATE_EPOCH"
+    (cd "$dist" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi)
+fi
+printf 'Built and independently compared Rust release targets: %s\n' "$targets"

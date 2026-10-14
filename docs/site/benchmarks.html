@@ -44,12 +44,25 @@
       <p class="eyebrow">Recorded measurements</p>
       <h1>LCOV merge benchmarks</h1>
       <p>Input sizes and durations use rounded, readable units. Results are grouped by dataset and host; failed, timed-out, and not-measured rows stay visible. <a href="data/benchmarks.json">Open exact measurements</a>. These records do not predict every workload or system.</p>
+      <p class="small-note">The original tables record the C implementation (versions 1.0.0–1.1.0). The separate Rust comparison below measures the current port.</p>
     </header>
     <div class="page-body">
+      <section id="rust-port-comparison" aria-labelledby="rust-port-title">
+        <h2 id="rust-port-title">Rust port comparison</h2>
+        <p>Apple M5 Max, macOS 27.0.1, 2026-10-14. Default make Rust PGO build with a portable CPU baseline versus the retained C 1.1 PGO binary built with Clang and native CPU tuning. Training uses seed 42; timed fixtures use seed 1. Nineteen interleaved measured runs after one warm-up, warm caches, a 64 MiB record budget, and named output files. Output bytes matched in every run.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Median elapsed time on separate synthetic fixtures</caption>
+            <thead><tr><th scope="col">Workload</th><th scope="col">C 1.1 PGO, 1 job</th><th scope="col">Rust PGO, 1 job</th><th scope="col">C 1.1 PGO, 4 jobs</th><th scope="col">Rust PGO, 4 jobs</th></tr></thead>
+            <tbody><tr><th scope="row">Sorted · 104.6 MB · 8 shards</th><td>210 ms</td><td>207 ms</td><td>210 ms</td><td>145 ms</td></tr><tr><th scope="row">Unsorted · 11.7 MB · 1 shard</th><td>71 ms</td><td>65 ms</td><td>71 ms</td><td>64 ms</td></tr></tbody>
+          </table>
+        </div>
+        <p>Rust matched single-job sorted performance within timing variation, was 31% faster with four jobs, and 9% faster on unsorted input. Unsorted peak memory was about 38.8 MiB versus C's 18.8 MiB. Unprofiled cargo release builds were slower in initial tests; use make for the optimized build. These results do not predict every workload. <a href="data/rust-port-validation.json">Read raw runs, hashes, methods, and validation limits</a>.</p>
+      </section>
       <section id="primary-results" aria-labelledby="results-title">
         <h2 id="results-title">Primary host results</h2>
         <div class="benchmark-scope"><!-- SITE-BENCHMARK-SCOPE:START -->
-<p>Generated inputs: XXL, S, M, L, XL-single, PATH-HEAVY. Measured lcovmerge build: <strong>lcovmerge 1.1.0 (PGO)</strong>. Comparators: lcov 2.6 and lcov-result-merger 6.0.0. The release is v1.1.0. Generated measurements do not establish a universal speedup or output compatibility. The generated benchmark matrix REAL row remains unmeasured; separate public-project results are summarized on the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">validation page</a>. Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.</p>
+<p>Generated inputs: XXL, S, M, L, XL-single, PATH-HEAVY. Measured lcovmerge build: <strong>lcovmerge 1.1.0 (PGO)</strong>. Comparators: lcov 2.6 and lcov-result-merger 6.0.0. The measured C release is v1.1.0. Generated measurements do not establish a universal speedup or output compatibility. The generated benchmark matrix REAL row remains unmeasured; separate public-project results are summarized on the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">validation page</a>. For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.</p>
 <!-- SITE-BENCHMARK-SCOPE:END --></div>
 <section class="public-compatibility-note" id="public-compatibility" aria-labelledby="public-compatibility-title">
           <h2 id="public-compatibility-title">Real public CI compatibility notes</h2>

@@ -618,7 +618,7 @@ def main() -> int:
                 memory_bytes = 0
         else:
             memory_bytes = 0
-        compiler = command_version([*shlex.split(os.environ.get("CC", "cc")), "--version"])
+        compiler = command_version(["rustc", "--version"])
         lcov_version = command_version([lcov, "--version"]) if lcov else "not installed"
         revision = command_version(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
         worktree = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"],
@@ -670,7 +670,7 @@ def main() -> int:
         }
         build_environment = {
             name: os.environ.get(name, "project default")
-            for name in ("CC", "CFLAGS", "CPPFLAGS", "LDFLAGS")
+            for name in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_TARGET", "LCOVMERGE_GIT_COMMIT")
         }
         args.json_report.parent.mkdir(parents=True, exist_ok=True)
         args.json_report.write_text(json.dumps({

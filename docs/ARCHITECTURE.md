@@ -1,55 +1,32 @@
 # Architecture
 
+lcovmerge is implemented in native Rust. `Cargo.toml` defines the library and CLI, the release optimization profile, and the test-only `test-partition` feature. There is no C foreign-function interface to the former merger; small audited OS bindings handle signals, polling, and descriptor limits.
+
 ## Data flow
 
-1. **Read LCOV files.** Inputs are checked before choosing the direct path. Each stream uses a 16 KiB I/O block and a line buffer that starts at 4 KiB and grows as needed. Lines are limited to 1 MiB and checked for NUL bytes and valid UTF-8. Recognized rows are validated, and `SF:` paths are rewritten or filtered before records enter the merge.
-2. **Merge already-sorted inputs.** For regular files whose rewritten rows are already in stable order, the parser feeds a tournament-tree merge directly while its reader and comparison state fit the bounded storage budget. DA and BRDA rows use dedicated parsers; other rows use the common parser. Queue rows refer to the current input buffer until consumed. If a stream is out of order or the direct path exceeds its storage budget, staged output and buffered diagnostics are discarded before the fallback begins.
+1. **Parse inputs as streams.** The parser reads through buffered I/O, checks cancellation, rejects NUL and invalid UTF-8, and caps each input line at 1 MiB. It validates recognized records and rewrites or filters `SF:` paths before records enter the merge. A section's path is shared through an interned `Arc<str>`; the parser does not buffer a whole section.
+2. **Use the sorted-input path when possible.** Already ordered regular-file inputs can merge directly with bounded reader and queue state. If the input order or memory budget prevents that path, lcovmerge falls back to external sorting. With an explicit `-j N`, the testable partition path can divide sorted input by source-path range and join staged output in order; anomalies trigger the serial path so diagnostics and output retain the same rules.
+3. **Sort through temporary files when needed.** The fallback holds records up to the configured record-memory budget, sorts each batch, and spills sorted runs to the selected temporary directory. Bounded-fan-in merge passes combine those runs without holding all input records in memory.
+4. **Aggregate and write output.** Counts are combined as records stream through the merge, and summary rows are recalculated. File output is staged beside the destination and renamed only after successful completion. Output to stdout (`-o -`) streams directly and cannot be rolled back after a later failure.
 
-   With an explicit `-j N` (`N` of 2 or more), `lm_partition.c` first samples source paths with positional reads and picks splitters, so every input is cut at the same path boundaries. `lm_direct_par.c` then runs one tournament merge per path range on its own thread, each writing a staged file in the destination directory, and appends the staged files in path order into the first one, which is renamed once. Because ranges are path-disjoint and each file's summary is emitted with its own section, the bytes equal the single-threaded output. Planning declines, and the unchanged single-threaded merge runs, when inputs total under 64 MiB, when fewer than two distinct splitters are found within the scan budget, or when descriptor or memory limits leave fewer than two partitions. Any error, warning, out-of-order row, or budget overflow in any partition sets an abort flag, discards all staged files and buffered diagnostics, and reruns the single-threaded merge, which then reports exactly what it would have reported without threads.
-3. **Sort through temporary files.** The fallback keeps coverage records in memory up to the configured limit. When a batch is full, it orders the records and writes a temporary sorted file (called a sort run in the implementation). Later merge passes reopen these files by name. The sizing rule reserves up to 24 MiB of `--mem-limit` from worker storage for anticipated non-record overhead; the minimum 8 MiB per active worker takes precedence for smaller settings.
-4. **Merge and write output.** Tournament or heap merges combine sorted files in bounded-fan-in passes, writing intermediate files as needed. External-merge fan-in is capped by both the memory setting and the process file-descriptor limit. Counts are combined while rows stream through the merge. Function, branch, line, and MC/DC coverage records feed recalculated summary rows. File output is staged in the destination directory and renamed only after all reads, writes, closes, and summary emission succeed. Output to stdout (`-o -`) streams directly and cannot be rolled back after a later failure.
+## Rust modules
 
-## Core modules
+`src/lib.rs` exposes the reusable modules and API; `src/main.rs` is the executable entry point. The modules are organized around shared options and errors (`common`), record representation and ordering (`model`), path rewriting/filtering (`path`), streaming input (`parser`), summary and output formatting (`emit`), merge orchestration and temporary runs (`engine`), source-path partition planning (`partition`), and command-line parsing (`cli`). Keep the parser and merge state bounded and preserve the public behavior described in [the CLI reference](../man/lcovmerge.1) and [usage guide](USAGE.md).
 
-The core lives in `src/` and shares one internal header, `src/lm_internal.h`, which holds constants, types, and cross-file prototypes.
+## Memory and cancellation
 
-| File | Responsibility |
-| --- | --- |
-| `src/lcovmerge.c` | CLI: usage text, option and `@listfile` parsing, `lcovmerge_main` |
-| `src/lm_util.c` | Cancellation flag and signal handlers, string, list, and number helpers, run list |
-| `src/lm_io.c` | Buffered writer, UTF-8 validation, bounded line reader |
-| `src/lm_record.c` | Record comparators and the deterministic ordering rules |
-| `src/lm_path.c` | `SF:` rewrite, include/exclude glob matching |
-| `src/lm_chunk.c` | In-memory chunk arena and spilling sorted runs to temporary files |
-| `src/lm_parse.c` | Streaming LCOV parser, including the DA/BRDA fast paths |
-| `src/lm_direct.c` | Direct tournament-tree merge for already-sorted inputs |
-| `src/lm_partition.c` | Splitter selection and per-input byte-range lookup for the threaded sorted-input merge |
-| `src/lm_direct_par.c` | Threaded driver: per-partition merges, staged-file join, serial rerun on any anomaly |
-| `src/lm_emit.c` | Aggregate merge, summary recomputation, and output emission |
-| `src/lm_merge.c` | Worker driver, run reduction, k-way merge, and `run_merge` |
+The default `--mem-limit` bounds record storage, not total process memory. Parser and writer buffers, merge bookkeeping, thread stacks, and runtime state add overhead. The 1 MiB line cap and minimum worker budget are defined in `common`; temporary disk use is separate and grows with parsed input and merge passes. Tests should cover behavior at these boundaries. On POSIX, `SIGINT`, `SIGTERM`, and `SIGHUP` are caught and set the shared cancellation state; the engine removes temporary sort runs on success, handled errors, and caught interruption. `SIGPIPE` is ignored so `EPIPE` follows normal I/O-failure cleanup. Windows uses blocking `ReadFile`/`WriteFile` operations and blocking worker joins, which can delay cancellation; these signal-cleanup guarantees are POSIX-only. A forced kill or machine failure cannot run cleanup. Output to stdout cannot be rolled back after bytes have been written.
 
-New core files must be added to `CORE_SRC` in `Makefile`, `core_src` in `scripts/build-all.sh`, and `core_src` in `.github/workflows/bench-windows.yml`.
+## Determinism and compatibility
 
-## Memory model
+The record ordering and key comparison rules live in the model layer. Keep output bytes, diagnostics, exit statuses, path handling, and overflow behavior deterministic across input ordering and worker count. The CLI regression suite compares golden output, malformed input handling, differential cases, determinism, and forced partitions. The Rust unit/property tests exercise the parser and merge primitives directly.
 
-The default `--mem-limit` value of 64 MiB limits memory reserved for coverage records while sorting; it is not a limit on total process memory. The implementation can hold back up to 24 MiB from worker storage for parser/writer buffers, merge bookkeeping, thread stacks, and runtime state. The 8 MiB minimum per active worker takes precedence for smaller settings. Actual resident memory also includes merge readers and allocator state. Temporary disk use is separate and grows with parsed input and intermediate merge passes. On the sorted-input path the budget is the lesser of half of `--mem-limit` and 16 MiB. A threaded merge shares it: the combined buffer growth of all partitions is charged against it, planning declines when per-partition fixed state would not fit, and a post-merge check discards the attempt if the whole-file need exceeds it. Each partition still has its own fixed reader state, so memory grows with `-j`; it remains a budget, not a cap on process memory.
+The Rust port targets behavioral compatibility with C lcovmerge 1.1.0. It does not change the documented differences from `lcov -a`; see [compatibility notes](COMPATIBILITY.md). Existing benchmark data and reports are measurements of the former C 1.1.0 implementation, not Rust.
 
-Rows are limited by the 1 MiB input-line cap. Inputs with many unique records create more temporary sorted files and I/O, not an input-sized heap. Counts saturate at `UINT64_MAX`. `--mem-limit` accepts 8 MiB or greater and binary K/M/G suffixes.
+## Release builds
 
-## Platform layer
+Cargo release builds use optimization level 3, thin LTO, and one codegen unit. `make` and native release CI use `scripts/build-optimized.py` to train portable PGO on synthetic seed 42 fixtures. Training profiles are cached by source, compiler, target, build flags, and commit; frozen profile hashes force Cargo to rebuild when feedback changes. `cargo build --release` remains an ordinary unprofiled build. Cross builds use `scripts/build-all.sh` with Zig for Linux musl linking and the native Apple SDK for both Apple targets on macOS. Cross artifacts are unprofiled; native release runners train each target. See [the release guide](RELEASING.md).
 
-`include/platform.h` defines file handles, reads and writes, temporary-file creation, rename/removal, CPU count, and worker-thread calls. `src/platform_posix.c` uses POSIX file descriptors and pthreads. `src/platform_win32.c` uses UTF-8-to-wide conversion and Win32 `CreateFileW`, `ReadFile`, `WriteFile`, `MoveFileExW`, `DeleteFileW`, and `CreateThread`; it does not use `mmap`. Windows arguments enter through `wmain` and are converted to UTF-8 before core parsing.
+Sorted merges use a tournament tree, source-path ranks, and shared paths among active inputs. Complete input lines are borrowed from the reader buffer; split and long lines use bounded storage. Reader buffers are 64 KiB for up to 32 inputs and 16 KiB for larger fan-in, with their full capacity included in merge budgets.
 
-Temporary sorted files must be reopened across merge passes, so their names remain until each pass finishes. POSIX `mkstemp` creates mode-0600 files. On POSIX, files are removed explicitly on success, handled failure, and caught interruption (SIGINT, SIGTERM, and SIGHUP); lcovmerge ignores SIGPIPE so EPIPE follows the ordinary I/O-failure cleanup path. A forced kill or machine failure cannot run cleanup. Windows uses synchronous reads/writes and blocking worker joins without cancellation, so a blocked operation can prevent interruption from completing; the signal-cleanup guarantee is POSIX-only.
-
-## Determinism
-
-The comparator orders records by rewritten `SF:` path, then record class and typed keys, then text, values, and origin tie-breakers. DA, BRDA, and MC/DC rows are sorted in separate families by line and remaining numeric/textual keys. Numeric keys compare numerically; textual branch identifiers and unknown rows compare by UTF-8 byte order. Nonzero path IDs replace a string comparison only when they identify the same exact path; zero always falls back to bytewise path comparison. Active-reader path ranks are assigned from lexicographically sorted current `SF:` paths, so the merge sees the same path order as the full comparator. Count operations are commutative and saturating. Checksum and MC/DC expression disagreements choose the lexicographically smallest spelling. Testcase labels are retained only when every merged section for a source has the same non-empty label; mixed labels are omitted because their coverage is combined. Unknown records retain multiplicity. With the same inputs, options, and build, the resulting bytes do not depend on input order or worker count.
-
-## Fuzzing
-
-`make fuzz` runs the deterministic sanitizer mutation smoke test. `make fuzz-guided` builds the Clang libFuzzer target, accepts `FUZZ_TIME` to set its run duration, and saves crashing inputs under `.cache/fuzz-artifacts/`. The corpus and regression tests remain synthetic.
-
-## Limits
-
-The CLI supports at most 32 parser workers, at least 8 MiB per worker, and `@listfile` nesting depth 8. One input line is limited to 1 MiB. Named inputs and list files must be regular files; use standard input for streams. Shell wildcard expansion is delegated to the caller's shell. In the external-sort fallback workers process whole input files, so a single very large file cannot use multiple parser workers. See [LIMITATIONS.md](LIMITATIONS.md) for record differences and [MIGRATING-FROM-LCOV.md](MIGRATING-FROM-LCOV.md) for migration checks.
+ThreadSanitizer builds also instrument the standard library with `-Z build-std` and require the `rust-src` component, following the [Rust sanitizer guidance](https://doc.rust-lang.org/stable/unstable-book/compiler-flags/sanitizer.html#threadsanitizer). `make tsan` runs the unit/property and CLI/forced-partition suites.

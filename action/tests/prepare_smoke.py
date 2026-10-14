@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 workspace = Path.cwd()
-(workspace / ".luna-tmp").mkdir(parents=True, exist_ok=True)
+(workspace / ".cache" / "ci").mkdir(parents=True, exist_ok=True)
 shards = workspace / "coverage" / "shards"
 shards.mkdir(parents=True, exist_ok=True)
 (shards / "unit.info").write_text(

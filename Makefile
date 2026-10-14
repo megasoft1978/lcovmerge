@@ -1,126 +1,77 @@
 PREFIX ?= /usr/local
 DESTDIR ?=
-CC ?= cc
-AR ?= ar
+CARGO ?= cargo
+RUSTUP ?= rustup
 PYTHON ?= python3
 GIT_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
-CFLAGS ?= -O2
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror
-CFLAGS += -fstack-protector-strong -D_FORTIFY_SOURCE=2
-CPPFLAGS += -Iinclude -DLCOVMERGE_GIT_COMMIT=\"$(GIT_COMMIT)\"
-LDFLAGS ?=
+export LCOVMERGE_GIT_COMMIT := $(GIT_COMMIT)
+BIN ?= $(if $(filter Windows_NT,$(OS)),bin/lcovmerge.exe,bin/lcovmerge)
+PTEST_BIN ?= $(if $(filter Windows_NT,$(OS)),bin/lcovmerge-ptest.exe,bin/lcovmerge-ptest)
 
-ifeq ($(OS),Windows_NT)
-PLATFORM_SRC = src/platform_win32.c
-ENTRY_SRC =
-LDFLAGS += -municode
-BIN ?= bin/lcovmerge.exe
-UNIT_BIN ?= bin/lcovmerge-unit.exe
-PTEST_BIN ?= bin/lcovmerge-ptest.exe
-UNIT_LDFLAGS =
-else
-PLATFORM_SRC = src/platform_posix.c
-ENTRY_SRC = src/platform_entry.c
-LDFLAGS += -pthread
-BIN ?= bin/lcovmerge
-UNIT_BIN ?= bin/lcovmerge-unit
-PTEST_BIN ?= bin/lcovmerge-ptest
-UNIT_LDFLAGS = -pthread
-endif
-
-CORE_SRC = src/lcovmerge.c \
-	src/lm_util.c \
-	src/lm_io.c \
-	src/lm_record.c \
-	src/lm_path.c \
-	src/lm_chunk.c \
-	src/lm_emit.c \
-	src/lm_parse.c \
-	src/lm_direct.c \
-	src/lm_partition.c \
-	src/lm_direct_par.c \
-	src/lm_merge.c
-SOURCES = $(CORE_SRC) $(PLATFORM_SRC) $(ENTRY_SRC)
-HEADERS = include/platform.h include/version.h src/lm_internal.h
-UNIT_SOURCE = tests/unit/helpers.c
-UNIT_CPPFLAGS = -Dlcovmerge_main=lcovmerge_unit_unused_main -Dwmain=lcovmerge_unit_unused_wmain
-PTEST_CPPFLAGS = -DLM_TEST_PARTITION
-TSAN_CFLAGS = -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-	-fsanitize=thread -fno-omit-frame-pointer
-ASAN_CFLAGS = -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-	-fsanitize=address,undefined -fno-omit-frame-pointer
-.PHONY: all test unit ptest tsan test-docker asan fuzz fuzz-guided bench dist clean install uninstall check-format
+.PHONY: all build test unit ptest asan tsan fuzz bench dist clean install uninstall check-format test-docker force
 
 all: $(BIN)
 
-$(BIN): $(SOURCES) $(HEADERS) | bin
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o $@
+build: $(BIN)
 
-bin:
-	mkdir -p $@
+$(BIN): Cargo.toml Cargo.lock build.rs $(wildcard src/*.rs) force
+	$(PYTHON) scripts/build-optimized.py --cargo "$(CARGO)" --output "$(BIN)"
 
-# Test-only build: LCOVMERGE_TEST_PARTITION=P forces P partitions of the threaded direct path on tiny
-# inputs. The hook is compiled in only here; the shipped binary has no such switch.
-$(PTEST_BIN): $(SOURCES) $(HEADERS) | bin
-	$(CC) $(CPPFLAGS) $(PTEST_CPPFLAGS) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o $@
+$(PTEST_BIN): Cargo.toml Cargo.lock build.rs $(wildcard src/*.rs) force
+	$(CARGO) build --locked --release --features test-partition --target-dir target/partition
+	mkdir -p bin
+	@binary_stage="$(PTEST_BIN).$$$$"; trap 'rm -f "$$binary_stage"' EXIT HUP INT TERM; \
+		cp target/partition/release/lcovmerge$(if $(filter Windows_NT,$(OS)),.exe,) "$$binary_stage" && mv "$$binary_stage" "$(PTEST_BIN)"
 
 ptest: $(PTEST_BIN)
 
-test: $(BIN) $(UNIT_BIN) $(PTEST_BIN)
-	./$(UNIT_BIN)
+test: $(BIN) $(PTEST_BIN)
+	$(CARGO) test --locked
 	$(PYTHON) tests/run_tests.py --binary $(BIN) --partition-binary $(PTEST_BIN)
 	sh tests/doc-consistency.sh $(BIN)
 
-unit: $(UNIT_BIN)
-	./$(UNIT_BIN)
+unit:
+	$(CARGO) test --locked
 
-$(UNIT_BIN): $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(HEADERS) | bin
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o $@
+asan:
+	RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
+		$(CARGO) test --locked --target $$(rustc -vV | sed -n 's/^host: //p')
+	RUSTFLAGS="-C debuginfo=1 -C force-frame-pointers=yes -Z sanitizer=address" RUSTC_BOOTSTRAP=1 \
+		$(CARGO) build --locked --features test-partition --target $$(rustc -vV | sed -n 's/^host: //p')
+	ASAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py \
+		--binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge --no-lcov \
+		--partition-binary target/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
 
-test-docker: dist
-	sh scripts/test-docker.sh
+tsan:
+	$(RUSTUP) component add rust-src
+	RUSTFLAGS="-C opt-level=1 -C debuginfo=1 -Z sanitizer=thread" RUSTDOCFLAGS="-Z sanitizer=thread" RUSTC_BOOTSTRAP=1 \
+		$(CARGO) test --locked -Z build-std --target-dir target/tsan \
+		--target $$(rustc -vV | sed -n 's/^host: //p') --features test-partition
+	RUSTFLAGS="-C opt-level=1 -C debuginfo=1 -Z sanitizer=thread" RUSTC_BOOTSTRAP=1 \
+		$(CARGO) build --locked -Z build-std --target-dir target/tsan \
+		--target $$(rustc -vV | sed -n 's/^host: //p') --features test-partition
+	TSAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py --no-lcov \
+		--binary target/tsan/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge \
+		--partition-binary target/tsan/$$(rustc -vV | sed -n 's/^host: //p')/debug/lcovmerge
 
-asan: | bin
-	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-asan
-	$(CC) $(CPPFLAGS) $(PTEST_CPPFLAGS) $(ASAN_CFLAGS) $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-ptest-asan
-	$(CC) $(CPPFLAGS) $(ASAN_CFLAGS) $(UNIT_CPPFLAGS) $(UNIT_SOURCE) $(CORE_SRC) $(PLATFORM_SRC) $(UNIT_LDFLAGS) -o bin/lcovmerge-unit-asan
-	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-		bin/lcovmerge-unit-asan
-	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-		$(PYTHON) tests/run_tests.py --binary bin/lcovmerge-asan --no-lcov --partition-binary bin/lcovmerge-ptest-asan
+FUZZ_SECONDS ?= 300
+FUZZ_RUNS ?= 250000
+fuzz: $(BIN)
+	FUZZ_RUNS=$(FUZZ_RUNS) $(CARGO) test --locked --release --test rust_properties fuzz_corpus_mutations -- --ignored --nocapture
+	$(PYTHON) scripts/fuzz-smoke.py $(BIN) --seconds $(FUZZ_SECONDS)
 
-# ThreadSanitizer: unit tests plus the core suite (forced partitions on the test build, -j explicit).
-tsan: | bin
-	$(CC) $(CPPFLAGS) $(PTEST_CPPFLAGS) $(TSAN_CFLAGS) $(SOURCES) $(LDFLAGS) -o bin/lcovmerge-ptest-tsan
-	TSAN_OPTIONS=halt_on_error=1 $(PYTHON) tests/run_tests.py --binary bin/lcovmerge-ptest-tsan --no-lcov \
-		--partition-binary bin/lcovmerge-ptest-tsan
-
-fuzz: | bin
-	clang $(CPPFLAGS) $(PTEST_CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-		-fsanitize=address,undefined -fno-omit-frame-pointer \
-		$(CORE_SRC) src/platform_posix.c tests/fuzz/fuzz.c tests/fuzz/mutate.c -pthread -o bin/lcovmerge-fuzz
-	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-		bin/lcovmerge-fuzz tests/fuzz-corpus $${FUZZ_RUNS:-2000000}
-
-FUZZ_TIME ?= 10
-fuzz-guided: | bin
-	mkdir -p .cache/fuzz-artifacts
-	clang $(CPPFLAGS) -DLCOVMERGE_LIBFUZZER -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes -Werror \
-		-fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer \
-		$(CORE_SRC) src/platform_posix.c tests/fuzz/fuzz.c -pthread -o bin/lcovmerge-libfuzz
-	ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
-		bin/lcovmerge-libfuzz tests/fuzz-corpus -max_len=1048576 -max_total_time=$(FUZZ_TIME) \
-		-artifact_prefix=.cache/fuzz-artifacts/
-
-bench: bin/lcovmerge
+bench: $(BIN)
 	sh bench/run.sh
 
 dist:
 	sh scripts/build-all.sh
 
-install: bin/lcovmerge
+test-docker: dist
+	sh scripts/test-docker.sh
+
+install: $(BIN)
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
-	install -m 0755 bin/lcovmerge $(DESTDIR)$(PREFIX)/bin/lcovmerge
+	install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/bin/lcovmerge
 	install -m 0644 man/lcovmerge.1 $(DESTDIR)$(PREFIX)/share/man/man1/lcovmerge.1
 
 uninstall:
@@ -128,8 +79,10 @@ uninstall:
 
 check-format:
 	git diff --check
-	@if command -v clang-format >/dev/null 2>&1; then clang-format --dry-run --Werror $(SOURCES) $(HEADERS) $(UNIT_SOURCE); \
-	else echo 'clang-format unavailable; checked whitespace with git diff --check'; fi
+	$(CARGO) fmt --all -- --check
+	$(CARGO) clippy --locked --all-targets --all-features -- -D warnings
 
 clean:
-	rm -rf bin dist
+	rm -rf bin dist target
+
+force:

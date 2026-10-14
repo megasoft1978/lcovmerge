@@ -1,21 +1,24 @@
 #!/bin/sh
 set -eu
 
-limit_bytes=160000
+# Rust standard-library builds are larger than the former C binaries; retain a
+# 1 MiB ceiling to catch accidental debug or unstripped release artifacts.
+limit_bytes=1048576
 
-if [ "$#" -gt 0 ]; then
-  binaries=$*
-else
-  binaries=$(find . -type f \( -name lcovmerge -o -name lcovmerge.exe \) -not -path './.git/*' -print | LC_ALL=C sort)
+if [ "$#" -eq 0 ]; then
+  # Inspect installed release outputs, never Cargo's debug/test executables.
+  for binary in bin/lcovmerge bin/lcovmerge.exe; do
+    if [ -f "$binary" ]; then set -- "$@" "$binary"; fi
+  done
 fi
 
-if [ -z "$binaries" ]; then
+if [ "$#" -eq 0 ]; then
   printf 'No lcovmerge binaries found for the size-budget check.\n' >&2
   exit 1
 fi
 
 status=0
-for binary in $binaries; do
+for binary do
   if [ ! -f "$binary" ]; then
     printf 'Binary not found: %s\n' "$binary" >&2
     status=1
