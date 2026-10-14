@@ -38,7 +38,10 @@ PGO and a recorded seed-42 training set. This is a reconstructed C1 baseline;
 the historical executable was tuned for the original host and is not assumed
 portable to another CPU.
 
-The job checks an idle-runner preflight after compilation, then runs 99 seeded
+The job checks an idle-runner preflight after compilation. It allows up to 30
+preflight attempts for build activity to settle, retaining every diagnostic log;
+the last two CPU samples must both show at least 90% idle before any timing starts.
+It then runs 99 seeded
 paired measurements for each baseline, sorted/unsorted workload and worker count
 (1 and 4). This higher sample count is selected before measurement to improve
 precision after earlier inconclusive comparisons. The acceptance rule is unchanged.

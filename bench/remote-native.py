@@ -35,6 +35,25 @@ def command(argv, *, cwd=ROOT, env=None, log=None):
     return result.stdout.strip()
 
 
+def wait_for_idle(work: Path, attempts=30):
+    samples = []
+    for attempt in range(1, attempts + 1):
+        logfile = f"idle-preflight-{attempt:02d}.log"
+        preflight = command(["top", "-l", "3", "-s", "2", "-n", "10", "-o", "cpu"],
+                            log=work / logfile)
+        try:
+            idle = [float(n) for n in re.findall(r"([0-9.]+)% idle", preflight)]
+        except ValueError:
+            idle = []
+        accepted = len(idle) >= 3 and all(n >= 90 for n in idle[-2:])
+        samples.append({"attempt": attempt, "idle_percent": idle,
+                        "logfile": logfile, "accepted": accepted})
+        (work / "idle-preflight.json").write_text(json.dumps(samples, indent=2) + "\n")
+        if accepted:
+            return
+    raise RuntimeError("runner is busy; no timing measurements were started")
+
+
 def unpack(bundle: Path, expected: str, destination: Path) -> dict:
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or digest(bundle) != expected:
         raise ValueError("bundle SHA-256 does not match the dispatch input")
@@ -152,10 +171,7 @@ def main():
                 "platform": platform.platform(), "cpu": command(["sysctl", "-n", "machdep.cpu.brand_string"]),
                 "rustc": command(["rustc", "-vV"]), "comparison_seed": 20261014}
     (work / "provenance.json").write_text(json.dumps(metadata, indent=2) + "\n")
-    preflight = command(["top", "-l", "3", "-s", "2", "-n", "0"], log=work / "idle-preflight.log")
-    idle = [float(n) for n in re.findall(r"([0-9.]+)% idle", preflight)]
-    if len(idle) < 3 or min(idle[-2:]) < 90:
-        raise RuntimeError("runner is busy; no timing measurements were started")
+    wait_for_idle(work)
     failures = []
     for name, baseline in [("c1", c1), ("frozen-rust", frozen)]:
         for shape in ["sorted", "unsorted"]:

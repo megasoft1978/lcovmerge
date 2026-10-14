@@ -2,7 +2,7 @@
 
 lcovmerge merges already-exported LCOV `.info` files; it does not collect coverage or replace `genhtml`. Native mode has its own merge policies; the experimental `--lcov-compat=2.6` profile implements a version-pinned subset of LCOV 2.6's merge command. Neither mode replaces LCOV collection, reset, extraction, reporting, or callback workflows. See the [profile contract and validation status](LCOV-PROFILE.md), and compare your records and reports before switching.
 
-## Common option mapping
+## Native-mode option mapping
 
 | lcov | lcovmerge | Notes |
 | --- | --- | --- |
@@ -15,6 +15,13 @@ lcovmerge merges already-exported LCOV `.info` files; it does not collect covera
 | `--substitute` REGEXP | No direct equivalent. Use `--rebase` OLD=NEW or `--prefix-strip` PREFIX for leading path prefixes. | Prefix matching uses path boundaries; it is not regular-expression substitution or automatic path detection. |
 
 The options may serve similar purposes, but their processing and edge cases are not interchangeable. See [all CLI options](USAGE.md) and [record differences](LIMITATIONS.md).
+
+For the opt-in profile, keep LCOV's `-a`/`--add-tracefile`, `-o`/`--output-file`,
+`--parallel`, and `--tempdir` spellings after `--lcov-compat=2.6`. The profile
+expands quoted input globs and retains testcase names. Function coverage defaults
+on and requires function coverpoints across the merged inputs; use
+`--no-function-coverage` for line-only data. Read the [profile contract](LCOV-PROFILE.md)
+for supported configuration and record policies.
 
 ## Differences to review
 

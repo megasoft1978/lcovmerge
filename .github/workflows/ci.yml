@@ -121,15 +121,15 @@ jobs:
             x86_64-unknown-linux-musl) export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
             aarch64-unknown-linux-musl) export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
           esac
-          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
-          scripts/check-binary-size.sh 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
+          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output 'dist/lcovmerge-ci-${{ matrix.suffix }}'
+          scripts/check-binary-size.sh 'dist/lcovmerge-ci-${{ matrix.suffix }}'
 
       - name: Upload Windows executable for native verification
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-release-exe
-          path: dist/lcovmerge-1.1.0-windows-x86_64.exe
+          path: dist/lcovmerge-ci-windows-x86_64.exe
           if-no-files-found: error
           retention-days: 3
 

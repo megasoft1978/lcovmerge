@@ -6,9 +6,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-14
+
 ### Changed
 
-- Require merged source-master function coverpoints whenever LCOV-profile function coverage is enabled, including by default; emit zero function summaries for DA-only source/testcase output and honor `--no-function-coverage`. The requirement spans all inputs and retains ghost master functions.
+- Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
 - Use stable heap merging for compatibility metadata runs, retain full serial batch budgets, and limit sort workers when component budgets are small. Remove the redundant function-source sort; performance measurements remain required before claiming a speed improvement.
 - Add the experimental opt-in `--lcov-compat=2.6` merge profile with quoted `-a` glob expansion and a documented, version-pinned command surface. Validation remains in progress; native defaults are unchanged and native benchmark data does not measure this profile.
 - Execute LCOV-profile branch sections containing DA with bounded signature/occurrence joins and input/merged consistency checks; retain negative-count recovery as zero, handle sparse block IDs, and honor explicit empty-family errors.
@@ -21,7 +23,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Recover malformed LCOV-profile sections in the streaming executor, retaining earlier sections and skipping misplaced records without collecting a whole source in memory. Trim record padding, accept KF source aliases and suffixed end markers, and drain oversized records as single physical lines.
 - Reject repeated LCOV-profile stdin inputs before reading or staging, enforcing the documented single-stdin contract.
 
-- Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
 - Add Rust parser/model property tests and in-process corpus mutation fuzzing alongside the full CLI, oracle, LCOV, determinism, partition, and cleanup suites. AddressSanitizer and ThreadSanitizer targets exercise the Rust implementation.
 - Add isolated native-parity and LCOV-profile benchmark jobs with pinned inputs, verified baselines, and retained measurements and build provenance.
 - Build portable PGO binaries by default with `make`, using cached synthetic training feedback. Add a reproducible PGO build check and a byte-equivalence/performance gate in `bench/compare-builds.py`. Earlier Rust-port measurements show faster threaded and unsorted merges; final-candidate single-worker parity remains under validation. Document the unsorted memory trade-off.
@@ -29,6 +30,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Require merged source-master function coverpoints whenever LCOV-profile function coverage is enabled, including by default; emit zero function summaries for DA-only source/testcase output and honor `--no-function-coverage`. The requirement spans all inputs and retains ghost master functions.
 - Normalize LCOV-profile testcase names before grouping, including bytewise punctuation replacement and the special `,diff` suffix, in both spill and recovery paths; retain the name across following source sections until the next TN record.
 - Classify LCOV recovery errors explicitly so filenames and function names cannot change their ignore-error category; retain public API error codes.
 - Retain removed-testcase function data in source-level collector checks and zero function summaries, including automatic function activation.
