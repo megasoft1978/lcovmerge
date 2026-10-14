@@ -109,7 +109,10 @@ omitting removed testcases. Removed-testcase functions and MC/DC use the same
 eligibility index and separate spill streams for private source-summary data.
 MC/DC line synthesis counts positive reachable outcomes and projects the
 source-wide count into retained testcases without duplicating the private count.
-Structurally malformed sections still use the budget-limited recovery collector;
-large malformed working sets can exceed its record budget. The remaining semantic
+Regular inputs, including malformed sections recovered with `--ignore-errors format`,
+stay on the bounded executor. It retains earlier sections when recovering
+missing terminators and ignores misplaced TN records. Trailing ASCII whitespace
+is removed before record dispatch. Oversized records retain the 1 MiB cap; recovery
+discards the entire physical line using bounded buffers. The remaining semantic
 audit and release validation are still in progress. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.

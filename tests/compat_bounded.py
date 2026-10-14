@@ -27,7 +27,7 @@ def expected_records(spec: dict):
         for i in range(spec["functions"]):
             yield f"FNL:{i},{i + 1},{i + 1}\n"
             yield f"FNA:{i},{spec['hits']},fn_{i:08d}\n"
-    elif shape == "aliases":
+    elif shape in ("aliases", "aliases-recovery"):
         yield "FNL:0,1,1\n"
         for i in range(spec["aliases"]):
             yield f"FNA:0,{spec['hits']},alias_{i:08d}\n"
@@ -210,9 +210,11 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
             for i in range(functions):
                 out.write(f"FNDA:{hits},fn_{i:08d}\n")
             lines = functions
-        elif shape == "aliases":
+        elif shape in ("aliases", "aliases-recovery"):
             aliases = size
             out.write("FNL:17,1,1\n")
+            if shape == "aliases-recovery":
+                out.write("unexpected:discard this record\n")
             for i in range(aliases):
                 out.write(f"FNA:17,{hits},alias_{i:08d}\n")
             lines = 1
@@ -262,7 +264,8 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                          "mcdc-ghost-no-da", "mcdc-missing-line"):
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
-        out.write("end_of_record\n")
+        if shape != "aliases-recovery":
+            out.write("end_of_record\n")
     byte_size = path.stat().st_size
     if byte_size < MIN_INPUT_BYTES:
         raise AssertionError(f"{path.name} is {byte_size} bytes, below {MIN_INPUT_BYTES}")
@@ -331,6 +334,8 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
         command.append("--branch-coverage")
     if spec["shape"] == "branches-no-da":
         command += ["--ignore-errors", "inconsistent"]
+    if spec["shape"] == "aliases-recovery":
+        command += ["--ignore-errors", "format"]
     if spec.get("extra_input"):
         command += ["-a", str(root / spec["extra_input"])]
     if spec["shape"] in ("mcdc", "mcdc-ghost-no-da", "mcdc-missing-line"):
@@ -420,6 +425,7 @@ def main() -> int:
              ("function-ids", "functions", args.target_bytes // 55),
              ("legacy-functions", "legacy", args.target_bytes // 50),
              ("alias-group", "aliases", args.target_bytes // 21),
+             ("alias-recovery", "aliases-recovery", args.target_bytes // 21),
              ("mcdc-group", "mcdc", args.target_bytes // 70),
              ("mcdc-ghost-no-da", "mcdc-ghost-no-da", mcdc_target // 80),
              ("mcdc-missing-line-count", "mcdc-missing-line", mcdc_target // 88),

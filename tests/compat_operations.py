@@ -67,6 +67,21 @@ def main():
         check(from_stdin.returncode == 0 and from_stdin.stdout == from_file.stdout,
               f"stdin/file output differs: {from_stdin.stderr!r}")
         check(not list(tmpdir.iterdir()), "stdin staging files remain after success")
+        # Duplicate stdin must fail while its pipe is still open and empty.
+        duplicate_dest = root / "duplicate-stdin.info"
+        duplicate_dest.write_bytes(b"keep-me")
+        proc = subprocess.Popen(prefix + ["-a", "-", "-a", "-", "-o", str(duplicate_dest)],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            proc.wait(timeout=4)
+            out, err = proc.communicate(timeout=2)
+            check(proc.returncode == 1 and not out and b"stdin (-) only once" in err,
+                  f"duplicate stdin was not rejected before reading: {proc.returncode} {err!r}")
+            check(duplicate_dest.read_bytes() == b"keep-me" and not list(tmpdir.iterdir()),
+                  "duplicate stdin changed output or staged input")
+        finally:
+            if proc.poll() is None:
+                proc.kill(); proc.communicate(timeout=2)
         # Staged mixed inputs retain producer order, including version selection.
         ordered, stdin_copy = root / "ordered.info", root / "stdin-copy.info"
         ordered.write_text("TN:a\nSF:x.c\nVER:file\nDA:1,2\nend_of_record\n")

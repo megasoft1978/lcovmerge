@@ -8,7 +8,7 @@ use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
@@ -16,7 +16,10 @@ pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error>
     if o.inputs.iter().any(|p| p.as_os_str() == "-") {
         return Ok(None);
     }
-    if !scan(req)? {
+    if o.inputs
+        .iter()
+        .any(|p| !p.metadata().is_ok_and(|m| m.is_file()))
+    {
         return Ok(None);
     }
     #[cfg(test)]
@@ -24,88 +27,6 @@ pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error>
     #[cfg(not(test))]
     let budget = o.mem_limit.max(crate::common::MIN_WORKER_BUDGET);
     execute(req, budget).map(|()| Some(Ok(())))
-}
-
-fn scan(req: &Request) -> Result<bool, Error> {
-    use std::io::BufRead;
-    for path in &req.resources.inputs {
-        if !path.metadata().is_ok_and(|m| m.is_file()) {
-            return Ok(false);
-        }
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(_) => return Ok(false),
-        };
-        let reader: Box<dyn Read> = if super::is_gzip_path(path) {
-            Box::new(MultiGzDecoder::new(file))
-        } else {
-            Box::new(file)
-        };
-        let label = path.display().to_string();
-        let mut reader = BufReader::new(StopOnCancel(reader));
-        let mut bytes = Vec::with_capacity(4096);
-        let mut open = false;
-        let mut line = 0u64;
-        loop {
-            check_cancelled()?;
-            bytes.clear();
-            let n = reader
-                .by_ref()
-                .take((MAX_LINE + 2) as u64)
-                .read_until(b'\n', &mut bytes)
-                .map_err(|e| Error::at(3, &label, line + 1, format!("input read failed: {e}")))?;
-            if n == 0 {
-                break;
-            }
-            line += 1;
-            if bytes.last() == Some(&b'\n') {
-                bytes.pop();
-            }
-            if bytes.last() == Some(&b'\r') {
-                bytes.pop();
-            }
-            if bytes.len() > MAX_LINE || bytes.contains(&0) {
-                return Ok(false);
-            }
-            let Ok(s) = std::str::from_utf8(&bytes) else {
-                return Ok(false);
-            };
-            if s.is_empty() || s.starts_with('#') {
-                continue;
-            }
-            if s.starts_with("TN:") {
-                if open {
-                    return Ok(false);
-                }
-            } else if s.starts_with("SF:") {
-                if open {
-                    return Ok(false);
-                }
-                open = true;
-            } else if s == "end_of_record" {
-                if !open {
-                    return Ok(false);
-                }
-                open = false;
-            } else if [
-                "DA:", "FN:", "FNDA:", "FNL:", "FNA:", "LF:", "LH:", "FNF:", "FNH:", "MCDC:",
-                "MCF:", "MCH:", "BRDA:", "BRF:", "BRH:", "VER:",
-            ]
-            .iter()
-            .any(|p| s.starts_with(p))
-            {
-                if !open {
-                    return Ok(false);
-                }
-            } else {
-                return Ok(false);
-            }
-        }
-        if open {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }
 
 fn execute(req: &Request, memory: usize) -> Result<(), Error> {
@@ -164,6 +85,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         let mut section_tc = String::new();
         let mut source: Option<String> = None;
         let mut selected = false;
+        let mut open = false;
+        let mut skip_section = false;
         let mut section = 0u64;
         let mut ordinal = 0u64;
         let mut line_no = 0u64;
@@ -171,27 +94,16 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         loop {
             check_cancelled()?;
             buf.clear();
-            let n = reader
-                .by_ref()
-                .take((MAX_LINE + 2) as u64)
-                .read_until(b'\n', &mut buf)
-                .map_err(|e| {
-                    Error::at(3, &label, line_no + 1, format!("input read failed: {e}"))
-                })?;
-            if n == 0 {
+            let state = super::trace_input::next(&mut reader, &mut buf, &label, line_no + 1)?;
+            if state == super::trace_input::State::End {
                 break;
             }
             line_no += 1;
-            if buf.last() == Some(&b'\n') {
-                buf.pop();
-            }
-            if buf.last() == Some(&b'\r') {
-                buf.pop();
-            }
             let error = |message: &str| {
                 super::policy::at(super::policy::Kind::Format, &label, line_no, message)
             };
-            if buf.len() > MAX_LINE && recover(req, error("line exceeds 1 MiB"))? {
+            if state == super::trace_input::State::Overlong {
+                recover(req, error("line exceeds 1 MiB"))?;
                 continue;
             }
             let s = match std::str::from_utf8(&buf) {
@@ -204,14 +116,42 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                     }
                 }
             };
+            if buf.contains(&0) {
+                recover(req, error("NUL byte in tracefile record"))?;
+                continue;
+            }
             if s.is_empty() || s.starts_with('#') {
                 continue;
             }
             if let Some(v) = s.strip_prefix("TN:") {
+                if open {
+                    recover(
+                        req,
+                        error("TN record must precede the SF record of its section"),
+                    )?;
+                    continue;
+                }
                 tc = policy::testcase_name(v);
                 continue;
             }
-            if let Some(sf) = s.strip_prefix("SF:") {
+            if let Some(sf) = s.strip_prefix("SF:").or_else(|| s.strip_prefix("KF:")) {
+                if std::mem::replace(&mut open, false) {
+                    recover(
+                        req,
+                        error("file record found inside an open section - missing end_of_record"),
+                    )?;
+                    section_tc.clear();
+                }
+                open = true;
+                skip_section = sf.is_empty();
+                if skip_section && recover(req, error("unexpected empty file name in record"))? {
+                    source = None;
+                    selected = false;
+                    section += 1;
+                    ordinal = 0;
+                    section_has_da = false;
+                    continue;
+                }
                 let rewritten = match crate::path::rewrite_path(o, sf) {
                     Ok(p) => p,
                     Err(e) => {
@@ -243,15 +183,35 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 }
                 continue;
             }
-            if s == "end_of_record" {
+            if s.starts_with("end_of_record") {
+                if !open {
+                    recover(req, error("end_of_record with no open section"))?;
+                    continue;
+                }
+                open = false;
                 source = None;
+                selected = false;
+                skip_section = false;
                 section_tc.clear();
+                continue;
+            }
+            if !open {
+                recover(req, error("unexpected record outside of a section"))?;
+                continue;
+            }
+            if skip_section {
                 continue;
             }
             let Some(src) = source.as_ref() else {
                 continue;
             };
             if !selected {
+                continue;
+            }
+            if ["LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MCF:", "MCH:"]
+                .iter()
+                .any(|prefix| s.starts_with(prefix))
+            {
                 continue;
             }
             if let Some(v) = s.strip_prefix("VER:") {
@@ -289,17 +249,18 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 }
                 continue;
             }
-            if !o.function_data
-                && ["FN:", "FNDA:", "FNL:", "FNA:"]
-                    .iter()
-                    .any(|p| s.starts_with(p))
-            {
+            let function_record = ["FN:", "FNDA:", "FNL:", "FNA:"]
+                .iter()
+                .any(|prefix| s.starts_with(prefix));
+            let line_record = s.starts_with("DA:");
+            if !function_record && !line_record {
+                recover(req, error("unexpected tracefile record inside a section"))?;
                 continue;
             }
-            if ["FN:", "FNDA:", "FNL:", "FNA:"]
-                .iter()
-                .any(|prefix| s.starts_with(prefix))
-            {
+            if function_record && !o.function_data {
+                continue;
+            }
+            if function_record && o.function_data {
                 saw_function_data = true;
                 let mut source_key = Vec::new();
                 push_str(&mut source_key, src)?;
@@ -359,9 +320,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                         lines.push(row)?;
                     }
                 }
-                continue;
-            }
-            if !o.function_data {
                 continue;
             }
             if let Some(x) = s.strip_prefix("FN:") {
@@ -485,6 +443,15 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                     }
                 }
             }
+        }
+        if open {
+            let eof_error = super::policy::at(
+                super::policy::Kind::Format,
+                &label,
+                line_no,
+                "unexpected end of file: missing end_of_record",
+            );
+            recover(req, eof_error)?;
         }
     }
     let mut eligibility = eligibility.finish(req)?;
@@ -1614,6 +1581,56 @@ fn ioerr(e: std::io::Error) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn structural_request(root: &Path, input: &Path, output: &Path) -> Request {
+        let mut req = Request::default();
+        req.resources.inputs = vec![input.to_path_buf()];
+        req.resources.output = output.to_path_buf();
+        req.resources.tmpdir = root.to_path_buf();
+        req.resources.function_data = false;
+        req.check_data_consistency = false;
+        req
+    }
+
+    #[test]
+    fn direct_executor_rejects_malformed_structure_without_falling_back() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.info");
+        let output = root.path().join("output.info");
+        std::fs::write(
+            &input,
+            "SF:first.c\nDA:1,1\nSF:second.c\nDA:2,1\nend_of_record\n",
+        )
+        .unwrap();
+        let req = structural_request(root.path(), &input, &output);
+
+        let err = try_run(&req).unwrap_err();
+        assert!(
+            err.message
+                .contains("file record found inside an open section"),
+            "{err:?}"
+        );
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn direct_executor_recovers_structural_errors_in_stream() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.info");
+        let output = root.path().join("output.info");
+        std::fs::write(
+            &input,
+            "SF:first.c\nDA:1,1\nTN:late\nSF:second.c\nDA:2,1\nend_of_record\nunknown:value\n",
+        )
+        .unwrap();
+        let mut req = structural_request(root.path(), &input, &output);
+        req.keep_going = true;
+
+        assert!(try_run(&req).unwrap().unwrap().is_ok());
+        let result = std::fs::read_to_string(output).unwrap();
+        assert!(result.contains("first.c\n"), "{result}");
+        assert!(result.contains("second.c\n"), "{result}");
+    }
 
     #[test]
     fn end_line_join_reads_once_and_preserves_testcase_boundaries() {

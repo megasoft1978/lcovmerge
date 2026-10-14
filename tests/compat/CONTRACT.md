@@ -42,6 +42,22 @@ quiet stdout, and whether the output destination was created. Commands use
 All rows below are required in both backends. `success` and `error` are
 expected oracle exit classes, checked before candidate results are counted.
 
+Structural parser fixtures pin selected LCOV 2.6 behavior. A second `SF:`
+before `end_of_record` is a format error; with `--ignore-errors format`, LCOV
+closes and retains the prior section and parses the new one under inherited
+`TN`. EOF with a section open is also a format error and recovery closes and
+retains that section. `TN` encountered inside an open section is a format
+error; recovery ignores that TN, so following records stay with the original
+testcase. An `end_of_record` without an open section and records outside a
+section are format errors; recovery discards those orphans and retains a later
+valid section. Unknown records inside a section are format errors and are
+ignored on format recovery. An empty `SF:` is a format error; recovery skips
+that section and retains a subsequent valid section. Trailing ASCII whitespace
+is stripped from TN, SF, DA and end markers; whitespace-only lines are legal.
+`end_of_record:extra` is accepted as a section terminator, and `KF:` is
+accepted as an SF source alias. These statements describe only the fixtures
+listed below.
+
 BRF counts reachable branch coverpoints, including unknown (`-`) counts;
 BRH counts positive hits. `U` coverpoints are excluded from those summaries but
 participate in line-consistency checks. Missing-DA recovery uses the number of
@@ -76,6 +92,15 @@ its status is retained, without claiming that it proves a branch mismatch.
 
 | Case | Behavior exercised | Oracle |
 | --- | --- | --- |
+| `struct-nested-sf-strict` / `struct-nested-sf-recovery` | Nested SF is a format error; recovery closes old section and retains both sections with inherited TN | error / success |
+| `struct-missing-eof-strict` / `struct-missing-eof-recovery` | Open section at EOF is a format error; recovery closes and retains it | error / success |
+| `struct-tn-open-strict` / `struct-tn-open-recovery` | TN in an open section is a format error; recovery ignores it and following DA stays under original TN | error / success |
+| `struct-orphan-strict` / `struct-orphan-recovery` | Orphan end marker and DA outside a section are format errors; recovery discards them and retains valid section | error / success |
+| `struct-unknown-strict` / `struct-unknown-recovery` | Unknown in-section record is a format error; recovery ignores it | error / success |
+| `struct-empty-sf-strict` / `struct-empty-sf-recovery` | Empty SF is a format error; recovery skips it and retains the following valid section | error / success |
+| `struct-trailing-ascii-whitespace` | Trailing whitespace on TN/SF/DA/end and whitespace-only line | success |
+| `struct-end-suffix` | `end_of_record:extra` closes section | success |
+| `struct-kf-source-alias` | KF accepted as source record alias | success |
 | `tn-split` | Keep distinct test names | success |
 | `tn-normalization` / `tn-normalization-forgotten` | Normalize bytewise punctuation/Unicode and comma suffixes before testcase grouping; forget normalized names when requested | success |
 | `tn-inheritance` | Keep the normalized TN across subsequent source sections until another TN record appears | success |
@@ -305,6 +330,9 @@ checks positive reachable outcome counts separately from MC/DC summaries and
 hit totals. The MC/DC workloads run without error suppression. Use `--case`
 with `functions-no-da`, `mcdc-ghost-no-da`, or `mcdc-missing-line-count` to select
 these workloads.
+`alias-recovery` adds an unknown record and omits the final section terminator
+around a huge alias group. It requires `--ignore-errors format` to preserve every
+alias through bounded recovery, rather than failing when the group exceeds memory.
 The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy

@@ -16,6 +16,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Stream removed-testcase function aliases and MC/DC metadata through private source-summary runs. Generate missing MC/DC line counts with bounded joins and preserve LCOV's separate reachability flags for synthesized outcomes.
 - Check LCOV-profile function/line consistency before and after input aggregation with bounded source-wide joins, infer ends before merging, and match the pinned default recovery count adjustments and lambda exception.
 - Stage LCOV-profile stdin with bounded buffers so eligible merges, including mixed file/stdin inputs, use spill executors at the original producer position; remove staged input on success, errors, and catchable interruption. Stdin is staged before aggregation begins.
+- Recover malformed LCOV-profile sections in the streaming executor, retaining earlier sections and skipping misplaced records without collecting a whole source in memory. Trim record padding, accept KF source aliases and suffixed end markers, and drain oversized records as single physical lines.
+- Reject repeated LCOV-profile stdin inputs before reading or staging, enforcing the documented single-stdin contract.
 
 - Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
 - Add Rust parser/model property tests and in-process corpus mutation fuzzing alongside the full CLI, oracle, LCOV, determinism, partition, and cleanup suites. AddressSanitizer and ThreadSanitizer targets exercise the Rust implementation.

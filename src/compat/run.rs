@@ -51,6 +51,8 @@ mod signature_store;
 mod sort;
 #[path = "source.rs"]
 mod source;
+#[path = "trace_input.rs"]
+mod trace_input;
 #[path = "version_spill.rs"]
 mod version_spill;
 use policy::{
@@ -109,6 +111,9 @@ fn validate_request(request: &Request) -> Result<(), Error> {
     let opt = &request.resources;
     if opt.inputs.is_empty() {
         return Err(Error::new(1, "LCOV profile requires at least one -a input"));
+    }
+    if opt.inputs.iter().filter(|p| p.as_os_str() == "-").count() > 1 {
+        return Err(Error::new(1, "LCOV profile accepts stdin (-) only once"));
     }
     for category in &request.ignore_errors {
         if ![
@@ -1636,6 +1641,36 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::path::PathBuf;
+    #[test]
+    fn repeated_stdin_is_rejected_before_staging_or_aggregation() {
+        let mut req = Request::default();
+        req.resources.inputs = vec!["-".into(), "-".into()];
+        let error = validate_request(&req).unwrap_err();
+        assert_eq!(error.code, 1);
+        assert!(error.message.contains("stdin (-) only once"));
+    }
+    #[test]
+    fn streaming_format_recovery_skips_entire_bad_physical_records() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.info");
+        let output = root.path().join("output.info");
+        let mut bytes = b"TN:case\nSF:x.c\nDA:1,1\n".to_vec();
+        bytes.extend(std::iter::repeat_n(b'x', 3 * MAX_LINE));
+        bytes.extend_from_slice(b"TN:injected\nDA:1,2\nNUL:\0\n\xff\nDA:2,1\nend_of_record\n");
+        std::fs::write(&input, bytes).unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.resources.tmpdir = root.path().to_owned();
+        req.resources.function_data = false;
+        req.ignore_errors.insert("format".into());
+        assert!(function_runtime::try_run(&req).unwrap().unwrap().is_ok());
+        assert_eq!(
+            std::fs::read_to_string(output).unwrap(),
+            "TN:case\nSF:x.c\nDA:1,3\nDA:2,1\nLF:2\nLH:2\nend_of_record\n"
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+    }
     #[test]
     fn collector_merges_normalized_testcase_names() {
         let req = Request::default();
