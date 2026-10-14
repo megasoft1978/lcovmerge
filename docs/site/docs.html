@@ -55,8 +55,8 @@
           <table>
             <thead><tr><th scope="col">Pipeline</th><th scope="col">Check first</th><th scope="col">When lcovmerge may fit</th></tr></thead>
             <tbody>
-              <tr><th scope="row">C/C++ with gcov</th><td>Try <code>lcov -a</code> for small shard sets.</td><td>Downloaded LCOV shards make the final local merge costly.</td></tr>
-              <tr><th scope="row">Clang</th><td>Merge raw profiles with <code>llvm-profdata</code> before <code>llvm-cov</code>.</td><td>Independent LCOV exports are already the handoff.</td></tr>
+              <tr><th scope="row">gcov coverage</th><td>Try <code>lcov -a</code> for small shard sets.</td><td>Downloaded LCOV shards make the final local merge costly.</td></tr>
+              <tr><th scope="row">LLVM coverage</th><td>Merge raw profiles with <code>llvm-profdata</code> before <code>llvm-cov</code>.</td><td>Independent LCOV exports are already the handoff.</td></tr>
               <tr><th scope="row">Rust</th><td>Use <code>cargo-llvm-cov</code> or grcov to handle native profiles.</td><td>Separate CI jobs leave LCOV files for a local consumer.</td></tr>
               <tr><th scope="row">Python</th><td>Use Coverage.py <code>combine</code> while raw data is available.</td><td>Only exported LCOV shards remain and one file is required.</td></tr>
               <tr><th scope="row">JavaScript</th><td>Use nyc merge while raw coverage JSON is available.</td><td>The local report step needs one LCOV file after export.</td></tr>
@@ -71,7 +71,14 @@
 
       <section id="first-run" aria-labelledby="first-run-title">
         <h2 id="first-run-title">Your first merge in three steps</h2>
-        <p class="small-note">The current source is a native Rust CLI and library targeting the established v1.1.0 command-line behavior. Published v1.1.0 downloads still contain the earlier C build; Rust release binaries will follow in the next release.</p>
+        <p class="small-note">The current source is a native Rust CLI and library. Published v1.1.0 downloads predate the Rust migration.</p>
+        <h3>Build the current Rust CLI</h3>
+        <p>Install stable Rust, Python 3.11+, and Make, then build the portable optimized CLI:</p>
+        <pre class="code-block" data-copy-label="Copy Rust build commands"><code>git clone https://github.com/megasoft1978/lcovmerge.git
+cd lcovmerge
+make
+./bin/lcovmerge coverage/shard-*.info -o coverage/merged.info</code></pre>
+        <h3>Published release downloads</h3>
         <ol class="first-run-steps">
           <li>
             <h3>Download and extract</h3>
@@ -163,12 +170,12 @@ Expand-Archive $asset -DestinationPath .\lcovmerge
         <p>Save the downloaded binary as <code>lcovmerge</code> in your current directory, then paste this in a POSIX shell. It creates two synthetic files and runs the binary from the parent directory; it does not install anything on your PATH.</p>
         <pre class="code-block" data-copy-label="Copy no-install sample"><code>mkdir -p .lcovmerge-demo
 cd .lcovmerge-demo
-printf '%s\n' 'SF:src/example.c' 'DA:1,2' 'end_of_record' &gt; shard-a.info
-printf '%s\n' 'SF:src/example.c' 'DA:1,3' 'end_of_record' &gt; shard-b.info
+printf '%s\n' 'SF:src/example.rs' 'DA:1,2' 'end_of_record' &gt; shard-a.info
+printf '%s\n' 'SF:src/example.rs' 'DA:1,3' 'end_of_record' &gt; shard-b.info
 ../lcovmerge shard-a.info shard-b.info -o merged.info
 cat merged.info</code></pre>
         <p class="small-note">Expected output:</p>
-        <pre class="code-block sample-output"><code>SF:src/example.c
+        <pre class="code-block sample-output"><code>SF:src/example.rs
 DA:1,5
 FNF:0
 FNH:0

@@ -11,10 +11,10 @@ for target in $targets; do
     case "$target" in
         *windows*)
             case "$host" in *windows*) ;; *)
-                [ -n "${WINDOWS_BINARY:-}" ] && [ -f "$WINDOWS_BINARY" ] || {
+                if [ -z "${WINDOWS_BINARY:-}" ] || [ ! -f "$WINDOWS_BINARY" ]; then
                     echo 'Supply WINDOWS_BINARY from native Windows CI, or select Linux/macOS with BUILD_TARGETS.' >&2
                     exit 1
-                }
+                fi
             ;; esac
         ;;
     esac
@@ -27,7 +27,7 @@ case "$dist" in /*) ;; *) dist="$root/$dist" ;; esac
 mkdir -p .cache
 work=$(mktemp -d "$root/.cache/dist-build.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-export CARGO_ENCODED_RUSTFLAGS="$(python3 - "$root" "$work" <<'PYFLAGS'
+CARGO_ENCODED_RUSTFLAGS="$(python3 - "$root" "$work" <<'PYFLAGS'
 import os, sys
 flags = os.environ.get("CARGO_ENCODED_RUSTFLAGS")
 flags = flags.split("\x1f") if flags else os.environ.get("RUSTFLAGS", "").split()
@@ -35,6 +35,7 @@ flags.extend([f"--remap-path-prefix={sys.argv[1]}=.", f"--remap-path-prefix={sys
 print("\x1f".join(flags), end="")
 PYFLAGS
 )"
+export CARGO_ENCODED_RUSTFLAGS
 python3 tools/package-dist.py --clean "$dist"
 for target in $targets; do
     executable=lcovmerge

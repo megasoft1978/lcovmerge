@@ -2,7 +2,7 @@
 
 Merge LCOV `.info` shards for a local report or upload.
 
-This Rust CLI and library target lcovmerge's established command-line and output behavior. Published v1.1.0 binaries and benchmarks are from the former C implementation.
+This Rust CLI and library target lcovmerge's established command-line and output behavior. Published v1.1.0 downloads predate the Rust migration.
 
 ## Is it a fit?
 
@@ -10,19 +10,19 @@ Use when CI leaves shards and a local consumer needs one file. See the [decision
 
 ## Try it
 
-Download and verify the [Linux x86-64 release](https://github.com/megasoft1978/lcovmerge/releases):
+Build the Rust CLI with stable Rust, Python 3.11+, and Make:
 
 ```sh
 set -eu
-asset=lcovmerge-1.1.0-linux-x86_64.tar.gz; base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0; curl -fL "$base/$asset" -o "$asset"; curl -fL "$base/SHA256SUMS" -o SHA256SUMS
-awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256" && sha256sum -c "$asset.sha256" && tar -xzf "$asset"
+git clone https://github.com/megasoft1978/lcovmerge.git
+cd lcovmerge && make
 ```
 
 Merge and report:
 
 ```sh
 # The shell expands the wildcard.
-lcovmerge coverage/shard-*.info -o coverage/merged.info
+./bin/lcovmerge coverage/shard-*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html
 ```
 
@@ -31,18 +31,11 @@ genhtml coverage/merged.info --output-directory coverage/html
 See the [Rust port comparison](docs/BENCHMARKS.md#rust-port-comparison) for measured speed and memory trade-offs.
 
 <!-- README-BENCHMARK:START -->
-Historical C implementation measurements; Rust results are reported separately.
+Native Rust · macOS arm64 · 2026-10-14; 19-run medians after one warm-up.
 
-**Generated Dataset XXL · 20.3 GB input · 128 shards · macOS 27.0 arm64 · Apple M5 Max · 2026-10-12. Builds: lcovmerge 1.1.0 (PGO) / lcov 2.6 / lcov-result-merger 6.0.0. Runs: lcovmerge 3-run median; lcov 1 timed run; lcov-result-merger timeout at 1h 15.8s.**
+Sorted, 104.6 MB: 207 ms (1 job), 145 ms (4 jobs). Unsorted, 11.7 MB: 64.6 ms (1 job), 64.4 ms (4 jobs).
 
-lcovmerge 1.1.0 (PGO): 1m 8.3s / 6.33 MiB peak resident memory (3 measured runs; median time); lcov 2.6: 13m 47.6s / 2.69 GiB peak resident memory (1 measured run).
-lcov-result-merger 6.0.0: timed out after 1h 15.8s; 2.34 GiB peak sampled during run; full-run peak resident memory unavailable. No measured run completed.
-
-Dataset M-trained PGO; portable release binaries.
-
-Generated input measured on one host; this is not an estimate for every workload.
-Public-project check: 8 pinned projects, 15 LCOV shards, 11.2 MB composite. lcovmerge 0.085 s / 15.94 MiB; lcov 2.6: 2.043 s / 140.27 MiB. One host; small input, not a production forecast. See [the full project results](docs/validation/real-projects.md).
-Rounded figures; see the [full benchmark record](data/benchmarks.json) for methods, run statuses, and exact measurements.
+Outputs matched byte for byte in every run. One host and these fixtures do not predict every workload. Published v1.1.0 downloads predate the Rust migration. See the [Rust comparison and raw measurements](docs/BENCHMARKS.md#rust-port-comparison).
 <!-- README-BENCHMARK:END -->
 
 See [all results and methods](docs/BENCHMARKS.md) or [measure private inputs](docs/REAL-WORKLOADS.md).

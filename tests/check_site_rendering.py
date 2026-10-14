@@ -92,8 +92,8 @@ def check_featured_rendering(root, renderer):
     blocks = re.findall(r"```sh\s*(.*?)\s*```", readme, flags=re.DOTALL)
     if len(blocks) != 2 or any(len([line for line in block.splitlines() if line.strip()]) != 3 for block in blocks):
         raise AssertionError("README install and usage examples must each have three lines")
-    if "set -eu" not in blocks[0] or "count != 1" not in blocks[0] or "sha256sum -c" not in blocks[0]:
-        raise AssertionError("README installer must fail closed on a missing or invalid checksum")
+    if "set -eu" not in blocks[0] or "git clone https://github.com/megasoft1978/lcovmerge.git" not in blocks[0] or "cd lcovmerge && make" not in blocks[0]:
+        raise AssertionError("README must build the current Rust source and stop on command errors")
 
     home_path = root / "docs" / "site" / "index.html"
     home = home_path.read_text(encoding="utf-8")
@@ -103,9 +103,8 @@ def check_featured_rendering(root, renderer):
         raise AssertionError("stale generated landing-page benchmark section")
     if expected_home.count('class="home-stat"') != 2:
         raise AssertionError("featured benchmark should render two side-by-side statistics")
-    if ("faster than lcov 2.6" not in expected_home or
-            "lower recorded peak memory" not in expected_home):
-        raise AssertionError("featured benchmark statistics are missing their compact captions")
+    if "sorted · 1 job" not in expected_home or "sorted · 4 jobs" not in expected_home:
+        raise AssertionError("featured Rust medians are missing their workload captions")
     if re.search(r"`(?:\.info|\.gcda|\.profraw|lcov -a)`", home):
         raise AssertionError("homepage prose contains literal Markdown backticks")
     for code_markup in (
@@ -116,8 +115,8 @@ def check_featured_rendering(root, renderer):
             raise AssertionError(f"homepage prose did not render {code_markup} as code")
     if len(re.findall(r"<section\b", home)) > 4:
         raise AssertionError("landing page has more than four sections")
-    if "20.3 GB" not in home or "1m 8.3s" not in home:
-        raise AssertionError("homepage benchmark omitted readable input or elapsed units")
+    if "104.6 MB" not in home or "64" not in home:
+        raise AssertionError("homepage benchmark omitted current Rust measurements")
     if 'role="tablist"' in home:
         raise AssertionError("landing page should not add tabs")
     visible = VisibleText()
@@ -126,53 +125,15 @@ def check_featured_rendering(root, renderer):
     if visible_words > 250:
         raise AssertionError(f"landing page has {visible_words} visible words outside code")
 
-    data = json.loads((root / "data" / "benchmarks.json").read_text(encoding="utf-8"))
-    selected = renderer.featured_dataset(data)
-    if selected.get("input_bytes") != max(
-        item["input_bytes"] for item in data["datasets"]
-        if renderer.completed(item.get("results", {}).get("lcovmerge", {}))
-        and renderer.completed(item.get("results", {}).get("lcov", {}))
-        and renderer.host_identity(item, "lcovmerge", data)
-        == renderer.host_identity(item, "lcov", data)
-        and isinstance(item.get("input_bytes"), int)
-    ):
-        raise AssertionError("featured benchmark did not select the largest completed same-host pair")
-
-    def render_selected(source):
-        original_selector = renderer.featured_dataset
-        renderer.featured_dataset = lambda data=None: source
-        try:
-            return renderer.featured_site()
-        finally:
-            renderer.featured_dataset = original_selector
-
-    selected_without_comparison = dict(selected)
-    selected_without_comparison.pop("comparison", None)
-    selected_without_comparison.pop("semantic_comparison", None)
-    default_note = render_selected(selected_without_comparison)
-    if "Historical C measurements; <span class=\"generated-prefix\">outputs not compared</span>." not in default_note:
-        raise AssertionError("featured benchmark without semantic status lost its fallback note")
-
-    matched = dict(selected)
-    matched["comparison"] = {
-        "lcovmerge_vs_lcov": {
-            "status": "PASS",
-            "details": "PASS normalized SF/DA/FN/FNDA/BRDA keys and counts",
-        },
-    }
-    if "Historical C measurements; <span class=\"generated-prefix\">normalized outputs matched</span>." not in render_selected(matched):
-        raise AssertionError("semantic PASS was not rendered as matched normalized outputs")
-
-    different = dict(selected)
-    different["semantic_comparison"] = {
-        "status": "FAIL",
-        "details": (
-            "FAIL normalized LCOV comparison; compared 1 SF records and 9 metric keys; "
-            "SF:/src/example.c: left-only=2 right-only=3 value-differences=4"
-        ),
-    }
-    if "Historical C measurements; <span class=\"generated-prefix\">9 differences</span>." not in render_selected(different):
-        raise AssertionError("semantic differences were not rendered with their exact count")
+    rust = json.loads((root / "data" / "rust-port-validation.json").read_text(encoding="utf-8"))
+    if section_text(readme, renderer.README_BENCHMARK_START, renderer.README_BENCHMARK_END) != renderer.featured_readme():
+        raise AssertionError("README Rust benchmark is not generated from raw validation data")
+    for name, workload in rust["workloads"].items():
+        hashes = {v["output_sha256"] if "output_sha256" in v else workload["output_sha256"] for v in workload["variants"].values()}
+        if len(hashes) != 1:
+            raise AssertionError(f"{name} Rust validation outputs differ")
+    if "207 ms" not in expected_home or "145 ms" not in expected_home or "65 ms" not in expected_home or "64 ms" not in expected_home:
+        raise AssertionError("featured homepage values differ from the Rust 19-run medians")
 
     synthetic = {
         "host": "runner-a",
@@ -198,7 +159,7 @@ def check_featured_rendering(root, renderer):
         raise AssertionError("timed-out benchmark incorrectly became the featured pair")
     if renderer.comparison_ratios(synthetic["datasets"][1], "lcov") is not None:
         raise AssertionError("timed-out comparator incorrectly received a speed or memory ratio")
-    print(f"featured_benchmark_rendering=PASS dataset={selected['name']} bytes={selected['input_bytes']:,} home_words={visible_words}")
+    print(f"featured_benchmark_rendering=PASS rust_date={rust['date']} home_words={visible_words}")
 
 
 def check_benchmark_data(root, renderer):
@@ -359,14 +320,14 @@ def main():
     readme = (root / "README.md").read_text(encoding="utf-8")
     architecture = (root / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     if ("This Rust CLI and library" not in readme or
-            "Published v1.1.0 binaries and benchmarks are from the former C implementation" not in readme):
-        raise AssertionError("README must identify the Rust source and historical C benchmark scope")
+            "Published v1.1.0 downloads predate the Rust migration" not in readme):
+        raise AssertionError("README must identify the Rust source and pre-migration downloads")
     if "There is no C foreign-function interface" not in architecture:
         raise AssertionError("architecture page must describe the native Rust implementation")
     for page_name, required in (
         ("index.html", "native Rust CLI"),
-        ("docs.html", "Published v1.1.0 downloads still contain the earlier C build"),
-        ("benchmarks.html", "The original tables record the C implementation"),
+        ("docs.html", "Published v1.1.0 downloads predate the Rust migration"),
+        ("benchmarks.html", "archived tables below describe a previous release"),
     ):
         page_text = (root / "docs" / "site" / page_name).read_text(encoding="utf-8")
         if required not in page_text:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = json.loads((ROOT / "data/benchmarks.json").read_text())
+RUST_DATA = json.loads((ROOT / "data/rust-port-validation.json").read_text())
 REAL_PROJECTS = json.loads((ROOT / "data/real-projects.json").read_text())
 BENCHMARK_VERSION = str(DATA["version"])
 START = "<!-- BENCHMARKS:START -->"
@@ -31,7 +32,7 @@ README_BENCHMARK_END = "<!-- README-BENCHMARK:END -->"
 HOME_BENCHMARK_START = "<!-- HOME-BENCHMARK:START -->"
 HOME_BENCHMARK_END = "<!-- HOME-BENCHMARK:END -->"
 WINDOWS_VERIFICATION_SENTENCE = (
-    "For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
+    "For the published v1.1.0 previous release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build "
     "and shipped Zig binary pass the full suite and smoke tests, and separate generated-input "
     "benchmark runs are recorded; physical desktops, other Windows versions and real-user reports "
     "remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are "
@@ -420,135 +421,30 @@ def featured_metadata(source):
 
 
 def featured_readme():
-    source = featured_dataset()
-    labels = display_tool_labels()
-    results = source.get("results", {})
-    merge = results.get("lcovmerge", {})
-    lcov = results.get("lcov", {})
-    merger = results.get("lcov-result-merger", {})
-    rows = ["Historical C implementation measurements; Rust results are reported separately.", "", f'**{featured_metadata(source)}**', ""]
-    rows.append(
-        f'{labels["lcovmerge"]}: {result_elapsed(merge)} / '
-        f'{featured_memory("lcovmerge", merge)} peak resident memory '
-        f'({measurement_note(source, "lcovmerge", merge)}); '
-        f'{labels["lcov"]}: {result_elapsed(lcov)} / '
-        f'{featured_memory("lcov", lcov)} peak resident memory '
-        f'({measurement_note(source, "lcov", lcov)}).'
-    )
-    if merger:
-        if merger.get("status") == "TIMEOUT":
-            rows.append(
-                f'{labels["lcov-result-merger"]}: timed out after '
-                f'{seconds_display(merger["time_s"])}; '
-                f'{featured_memory("lcov-result-merger", merger)}. '
-                'No measured run completed.'
-            )
-        else:
-            rows.append(
-                f'{labels["lcov-result-merger"]}: {result_elapsed(merger)} / '
-                f'{featured_memory("lcov-result-merger", merger)} peak resident memory '
-                f'({measurement_note(source, "lcov-result-merger", merger)}).'
-            )
-    if default_build_note():
-        rows.extend(["", default_build_note()])
-    rows.extend([
-        "",
-        "Generated input measured on one host; this is not an estimate for every workload.",
-        project_derived_readme(),
-        "Rounded figures; see the [full benchmark record](data/benchmarks.json) for methods, "
-        "run statuses, and exact measurements.",
-    ])
-    return "\n".join(rows)
+    sorted_runs = RUST_DATA["workloads"]["sorted"]["variants"]
+    unsorted_runs = RUST_DATA["workloads"]["unsorted"]["variants"]
+    return (f'Native Rust · macOS arm64 · {RUST_DATA["date"]}; 19-run medians after one warm-up.\n\n'
+            f'Sorted, 104.6 MB: {seconds_display(sorted_runs["rust-pgo-jobs1"]["median_wall_seconds"])} (1 job), '
+            f'{seconds_display(sorted_runs["rust-pgo-jobs4"]["median_wall_seconds"])} (4 jobs). Unsorted, 11.7 MB: '
+            f'{seconds_display(unsorted_runs["rust-pgo-jobs1"]["median_wall_seconds"])} (1 job), '
+            f'{seconds_display(unsorted_runs["rust-pgo-jobs4"]["median_wall_seconds"])} (4 jobs).\n\n'
+            'Outputs matched byte for byte in every run. One host and these fixtures do not predict every workload. '
+            'Published v1.1.0 downloads predate the Rust migration. See the '
+            '[Rust comparison and raw measurements](docs/BENCHMARKS.md#rust-port-comparison).')
 
 
 def featured_site():
-    source = featured_dataset()
-    labels = display_tool_labels()
-    results = source.get("results", {})
-    keys = ("lcovmerge", "lcov", "lcov-result-merger")
-    completed_times = [
-        results.get(key, {}).get("time_s")
-        for key in keys
-        if completed(results.get(key, {}))
-    ]
-    maximum = max(completed_times)
-    lcov_ratios = comparison_ratios(source, "lcov")
-    lcov_mem_ratio = lcov_ratios[1] if lcov_ratios else None
-    if lcov_ratios:
-        time_ratio = lcov_ratios[0]
-        headline_html = (
-            '<h2 id="home-title" class="home-stats">'
-            f'<span class="home-stat"><strong>{time_ratio:,.1f}×</strong>'
-            f'<small>faster than {html.escape(labels["lcov"])}</small></span>'
-        )
-        if lcov_mem_ratio is not None:
-            headline_html += (
-                f'<span class="home-stat"><strong>{lcov_mem_ratio:,.1f}×</strong>'
-                '<small>lower recorded peak memory</small></span>'
-            )
-        headline_html += '</h2>'
-    else:
-        headline_html = '<h2 id="home-title">Benchmark ratio unavailable.</h2>'
-
-    chart_items = []
-    for key in keys:
-        result = results.get(key, {})
-        status = result.get("status", "Not reported")
-        if completed(result):
-            time_text = seconds_display(result["time_s"])
-            width = result["time_s"] / maximum * 100
-            bar = f'<span class="bar-fill" style="width:{width:.3f}%"></span>'
-        else:
-            time_text = result_elapsed(result)
-            bar = ""
-        if result.get("status") == "OK":
-            status_note = ""
-            if is_earlier_timing(key, result):
-                status_note = "Earlier measurement; runs unreported"
-        else:
-            status_note = result.get("status", "Not reported")
-            if status_note in {"ERROR", "ERROR_1"}:
-                status_note += " · excluded from scale and ratios"
-        value = result.get("rss_bytes")
-        memory_value = (
-            bytes_display(value, binary=True)
-            if value is not None else memory(result)
-        )
-        if key == "lcov-result-merger" and result.get("status") == "TIMEOUT" and result.get("rss_sampled_bytes"):
-            memory_value = bytes_display(result["rss_sampled_bytes"], binary=True) + " sampled"
-        if key == "lcov" and is_earlier_memory(key, result) and memory_value != "—":
-            memory_value += " (earlier measurement)"
-        chart_items.append(
-            f'<li class="home-bar {key}">'
-            f'<div class="home-bar-label"><span>{html.escape(labels[key])}</span>'
-            f'<strong>{html.escape(time_text)} · {html.escape(memory_value)}</strong></div>'
-            f'<div class="bar-track" aria-hidden="true">{bar}</div>'
-            f'<span class="home-bar-status">{html.escape(status_note)}</span>'
-            '</li>'
-        )
-    mid = maximum / 2
-    axis = (
-        '<div class="bar-axis" role="img" '
-        f'aria-label="Elapsed-time scale from 0 to {seconds_display(maximum)}">'
-        f'<span>{seconds_display(0)}</span><span>{seconds_display(mid)}</span>'
-        f'<span>{seconds_display(maximum)}</span></div>'
-    )
+    w = RUST_DATA["workloads"]
+    vals = {}
+    for workload in ("sorted", "unsorted"):
+        vals[workload] = [f'{round(w[workload]["variants"][f"rust-pgo-jobs{jobs}"]["median_wall_seconds"] * 1000)} ms' for jobs in (1, 4)]
     return "\n".join([
-        headline_html,
-        f'<p class="featured-meta">{input_size_display(source["input_bytes"])} input · '
-        f'{html.escape(str(source.get("shards", "shard count not reported")))}</p>',
-        '<p class="bar-caption">Time · peak resident memory</p>',
-        f'<ul class="home-bars" aria-label="Elapsed time; peak resident memory values are shown">{"".join(chart_items)}</ul>',
-        axis,
-        f'<p class="generated-note">Historical C measurements; '
-        f'<span class="generated-prefix">{html.escape(semantic_comparison_copy(source))}</span>. '
-        f'One host. {html.escape(default_build_note())} v{html.escape(BENCHMARK_VERSION)}.</p>',
-        f'<p class="project-check-note">{html.escape(project_derived_site_copy())} '
-        '<a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">'
-        'Full project results ↗</a></p>',
-        '<a class="text-link" href="benchmarks.html">All results &amp; methodology ↗</a>',
+        f'<h2 id="home-title" class="home-stats"><span class="home-stat"><strong>{vals["sorted"][0]}</strong><small>sorted · 1 job</small></span><span class="home-stat"><strong>{vals["sorted"][1]}</strong><small>sorted · 4 jobs</small></span></h2>',
+        f'<p class="featured-meta">Native Rust · sorted 104.6 MB; unsorted 11.7 MB · 19-run medians · {RUST_DATA["date"]}</p>',
+        f'<p class="generated-note">Unsorted: {vals["unsorted"][0]} (1 job), {vals["unsorted"][1]} (4 jobs). Output bytes matched every run. One macOS arm64 host; results vary by workload.</p>',
+        '<p class="generated-note">Published v1.1.0 downloads predate the Rust migration.</p>',
+        '<a class="text-link" href="benchmarks.html">Rust results &amp; methodology ↗</a>',
     ])
-
 
 def project_derived_copy():
     """Summarize the separate public-project run without mixing it into generated results."""
@@ -823,7 +719,7 @@ def site_benchmark_scope():
         f'<strong>{html.escape(labels["lcovmerge"])}</strong>. Comparators: '
         f'{html.escape(labels["lcov"])} and '
         f'{html.escape(labels["lcov-result-merger"])}. '
-        f'The measured C release is v{html.escape(BENCHMARK_VERSION)}. Generated measurements do not establish a universal speedup '
+        f'The measured build is the v{html.escape(BENCHMARK_VERSION)} previous release. Generated measurements do not establish a universal speedup '
         'or output compatibility. The generated benchmark matrix REAL row remains unmeasured; '
         'separate public-project results are summarized on the <a href="https://github.com/'
         'megasoft1978/lcovmerge/blob/main/docs/validation/real-projects.md">validation page</a>.'
@@ -1078,9 +974,22 @@ def main():
         action="store_true",
         help="update generated sections in docs/site/benchmarks.html only",
     )
+    parser.add_argument("--check", action="store_true", help="fail if generated benchmark sections are stale")
     args = parser.parse_args()
 
     benchmark_page = ROOT / "docs/site/benchmarks.html"
+    if args.check:
+        checks = [
+            (ROOT / "README.md", README_BENCHMARK_START, README_BENCHMARK_END, featured_readme()),
+            (ROOT / "docs/site/index.html", HOME_BENCHMARK_START, HOME_BENCHMARK_END, featured_site()),
+        ]
+        for path, start, end, expected in checks:
+            content = path.read_text(encoding="utf-8")
+            before, tail = content.split(start, 1)
+            actual, after = tail.split(end, 1)
+            if actual.strip() != expected.strip():
+                raise SystemExit(f"stale generated section in {path.relative_to(ROOT)}")
+        return
     if args.site_only:
         render_site_benchmarks(benchmark_page)
         return

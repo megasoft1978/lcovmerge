@@ -1410,7 +1410,7 @@ mod tests {
     #[test]
     fn run_reader_rejects_embedded_string_nul() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nul");
+        let path = dir.path().join("embedded-nul.run");
         let mut bytes = encoded_record();
         let path_len = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
         bytes[58 + path_len] = 0;
