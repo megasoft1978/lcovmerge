@@ -49,6 +49,8 @@ expected oracle exit classes, checked before candidate results are counted.
 | `true-empty-source` | Empty source file with a data record | success |
 | `uncovered-line` | Uncovered line data | success |
 | `branch-canonical` | Canonicalize block IDs when merging | success |
+| `branch-duplicate-da-max-saturation` | Three duplicate DA counts saturate at signed 64-bit maximum in the branch collector | success |
+| `checksum-conflict-ignored-branch-collector` | Ignore conflicting DA checksums while branch coverage activates the collector | success |
 | `branch-duplicate-signature` | Duplicate branch signatures | success |
 | `branch-strict-inconsistent` | Strict line/branch consistency | error |
 | `branch-recovery-inconsistent` | Recover with `--ignore-errors inconsistent` | success |
@@ -81,6 +83,7 @@ expected oracle exit classes, checked before candidate results are counted.
 | `count-overflow-saturation` | Aggregate counts saturate at signed 64-bit maximum | success |
 | `negative-count-strict` | Negative count rejected | error |
 | `negative-count-recovery` | Negative count recovery with `--ignore-errors negative` | success |
+| `negative-count-recovery-disabled-consistency` | Recover negative count with consistency checks disabled | success |
 | `fraction-count` | Fractional count truncates toward zero | success |
 | `checksum-valid` | Existing checksum matches source | success |
 | `checksum-mismatch` | Existing checksum mismatch | error |
@@ -173,3 +176,7 @@ Rust profile preserves exact digits and selects the pure-Perl policy for this
 case. Its XS row must match the retained rounded result with every other field
 equal, and is reported as an expected reference difference rather than an XS
 conformance pass. Other candidate differences continue to fail.
+
+The requested fractional FNA count with an explicit FNL end line is not a
+required case: pinned LCOV 2.6 rejects `FNDA:1.5` as an invalid, empty
+tracefile in both XS and pure-Perl modes.
