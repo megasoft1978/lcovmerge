@@ -55,7 +55,8 @@ unsupported operation or setting is needed.
 
 Testcase names use LCOV's bytewise normalization: trailing ASCII whitespace is
 removed, non-word bytes become `_`, and comma suffixes are discarded except for
-the special `,diff` marker. Normalized names group together before counts merge;
+the special `,diff` marker. A name remains in effect for following source sections
+until another TN record appears. Normalized names group together before counts merge;
 `--forget-test-names` then uses the unnamed testcase.
 
 Counts saturate at LCOV's signed 64-bit maximum, and fractional counts truncate.

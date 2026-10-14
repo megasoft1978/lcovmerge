@@ -78,6 +78,7 @@ its status is retained, without claiming that it proves a branch mismatch.
 | --- | --- | --- |
 | `tn-split` | Keep distinct test names | success |
 | `tn-normalization` / `tn-normalization-forgotten` | Normalize bytewise punctuation/Unicode and comma suffixes before testcase grouping; forget normalized names when requested | success |
+| `tn-inheritance` | Keep the normalized TN across subsequent source sections until another TN record appears | success |
 | `duplicate-input` | Duplicate input aggregation | success |
 | `true-empty-source` | Empty source file with a data record | success |
 | `uncovered-line` | Uncovered line data | success |

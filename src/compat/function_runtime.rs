@@ -230,7 +230,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 section_tc = if req.forget_test_names {
                     String::new()
                 } else {
-                    std::mem::take(&mut tc)
+                    tc.clone()
                 };
                 section_has_da = false;
                 if selected {
@@ -245,7 +245,6 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
             if s == "end_of_record" {
                 source = None;
-                tc.clear();
                 section_tc.clear();
                 continue;
             }

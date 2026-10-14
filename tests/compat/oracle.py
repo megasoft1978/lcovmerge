@@ -189,6 +189,7 @@ def fixtures(directory):
         # These fixtures intentionally contain no DA records in the named testcases.
         "branch-no-da.info": f"TN:alpha\nSF:{srcname}\nBRDA:2,7,0,1\nend_of_record\n",
         "mcdc-no-da.info": f"TN:alpha\nSF:{srcname}\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "tn-inheritance.info": f"TN:a-b,ignored\nSF:{srcname}\nDA:1,1\nend_of_record\nSF:{srcname}\nDA:1,2\nend_of_record\nSF:{othername}\nDA:1,1\nend_of_record\n",
         "tn-normalization.info": "".join(f"TN:{tc}\nSF:{srcname}\nDA:1,1\nend_of_record\n" for tc in ["a-b", "a_b", " space\t", "café", "test,ignored", "test,different,rest"]),
         "mcdc-missing-line-single.info": f"TN:single\nSF:{srcname}\nDA:1,1\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
         "mcdc-missing-line-split.info": f"TN:a\nSF:{srcname}\nDA:1,1\nMCDC:2,2,t,1,0,expr\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nMCDC:2,2,f,1,0,expr\nend_of_record\n",
@@ -241,6 +242,7 @@ def fixtures(directory):
 # both verified LCOV backends before candidate comparison is considered.
 CASES = [
     ("integer-exact-above-f64", ["--no-function-coverage", "-a", "integer-exact.info"], 0),
+    ("tn-inheritance", ["--no-function-coverage", "-a", "tn-inheritance.info"], 0),
     ("tn-normalization", ["--no-function-coverage", "-a", "tn-normalization.info"], 0),
     ("tn-normalization-forgotten", ["--no-function-coverage", "--forget-test-names", "-a", "tn-normalization.info"], 0),
     ("tn-split", ["--no-function-coverage", "-a", "one.info", "-a", "two.info"], 0),

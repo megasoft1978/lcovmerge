@@ -24,7 +24,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Normalize LCOV-profile testcase names before grouping, including bytewise punctuation replacement and the special `,diff` suffix, in both spill and recovery paths.
+- Normalize LCOV-profile testcase names before grouping, including bytewise punctuation replacement and the special `,diff` suffix, in both spill and recovery paths; retain the name across following source sections until the next TN record.
 - Classify LCOV recovery errors explicitly so filenames and function names cannot change their ignore-error category; retain public API error codes.
 - Retain removed-testcase function data in source-level collector checks and zero function summaries, including automatic function activation.
 - Retain recovered negative branch counts as zero in LCOV collector paths, preserving their expressions, exception kinds, and branch positions.

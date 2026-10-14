@@ -632,12 +632,10 @@ fn try_line_spill(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
                 } else {
                     tc.clone()
                 };
-                tc.clear();
                 continue;
             }
             if s == "end_of_record" {
                 source = None;
-                tc.clear();
                 section_tc.clear();
                 continue;
             }
@@ -1223,7 +1221,6 @@ fn parse_input_sections(
                 source: rewritten,
                 ..Section::default()
             });
-            testcase.clear();
             modern_decls.clear();
             legacy_decls.clear();
             continue;
@@ -1642,7 +1639,7 @@ mod tests {
     #[test]
     fn collector_merges_normalized_testcase_names() {
         let req = Request::default();
-        let input = b"TN:a-b\nSF:x.c\nDA:1,1\nend_of_record\nTN:a_b,ignored\nSF:x.c\nDA:1,2\nend_of_record\n";
+        let input = b"TN:a-b\nSF:x.c\nDA:1,1\nend_of_record\nSF:x.c\nDA:1,4\nend_of_record\nTN:a_b,ignored\nSF:x.c\nDA:1,2\nend_of_record\n";
         let mut sections = Vec::new();
         parse_input(
             Box::new(&input[..]),
@@ -1656,7 +1653,7 @@ mod tests {
         .unwrap();
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].testcase, "a_b");
-        assert_eq!(sections[0].lines[&1].0, 3);
+        assert_eq!(sections[0].lines[&1].0, 7);
     }
     #[test]
     fn bounded_mcdc_executor_synthesizes_missing_senses_and_merges_counts() {
