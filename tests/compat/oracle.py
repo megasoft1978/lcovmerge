@@ -151,6 +151,16 @@ def fixtures(directory):
         "modern-fna-overlap-end-range.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:0,1,3\nFNA:0,0,first\nFNL:1,2,3\nFNA:1,0,second\nend_of_record\n",
         "modern-fna-aliases-line-match.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nFNL:7,1,3\nFNA:7,0,fn\nFNA:7,1,alias\nend_of_record\n",
         "lambda-modern-fna-line-mismatch.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:7,1,3\nFNA:7,0,{{lambda()#1}}\nend_of_record\n",
+        "fn-zero-cross-testcase-same-input.info": f"TN:a\nSF:{srcname}\nFN:1,zero_fn\nFNDA:0,zero_fn\nDA:1,0\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "fn-hit-cross-testcase-same-input.info": f"TN:a\nSF:{srcname}\nFN:1,hit_fn\nFNDA:1,hit_fn\nDA:1,1\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
+        "fn-zero-cross-input.info": f"TN:a\nSF:{srcname}\nFN:1,zero_fn\nFNDA:0,zero_fn\nDA:1,0\nend_of_record\n",
+        "fn-positive-later-input.info": f"TN:b\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "fn-explicit-beyond-last-da.info": f"TN:alpha\nSF:{srcname}\nFNL:7,4,6\nFNA:7,1,late_fn\nDA:1,1\nend_of_record\n",
+        "fn-explicit-no-da.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,3\nFNA:7,0,empty_fn\nend_of_record\n",
+        "fn-lambda-mixed-alias.info": f"TN:alpha\nSF:{str((directory/'lambda.c').resolve())}\nDA:1,1\nFNL:7,1,3\nFNA:7,0,{{lambda(0)}}\nFNA:7,0,ordinary_alias\nend_of_record\n",
+        "fn-cpp-lambda-first-line.info": f"TN:alpha\nSF:{str((directory/'lambda.cpp').resolve())}\nDA:1,1\nDA:2,0\nFNL:7,1,2\nFNA:7,0,{{lambda()#1}}\nend_of_record\n",
+        "fn-cpp-lambda-later-line.info": f"TN:alpha\nSF:{str((directory/'lambda.cpp').resolve())}\nDA:1,0\nDA:2,1\nFNL:7,1,2\nFNA:7,0,{{lambda()#1}}\nend_of_record\n",
+        "fn-mangled-nested.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:7,1,3\nFNA:7,0,_ZZ4funcvENKUlvE_clEv\nend_of_record\n",
         "derive-source-wide-a.info": f"TN:a\nSF:{srcname}\nFN:1,foo\nFNDA:1,foo\nDA:1,1\nend_of_record\n",
         "derive-source-wide-b.info": f"TN:b\nSF:{srcname}\nDA:5,1\nend_of_record\n",
         "derive-source-wide-explicit-a.info": f"TN:a\nSF:{srcname}\nFNL:0,1,5\nFNA:0,1,foo\nDA:1,0\nend_of_record\n",
@@ -165,6 +175,7 @@ def fixtures(directory):
     (directory / "blank.c").write_bytes(b"")
     (directory / "derive.cpp").write_text("\n" * 8)
     (directory / "lambda.cpp").write_text("\n" * 5)
+    (directory / "lambda.c").write_text("\n" * 5)
     (directory / "lambda.py").write_text("\n" * 5)
     (directory / "checksum-valid.info").write_text(rows["checksum-valid.info"].replace(
         "PLACEHOLDER", base64.b64encode(hashlib.md5(b"int sample_1 = 1;").digest()).decode().rstrip("=")))
@@ -262,6 +273,15 @@ CASES = [
     ("lambda-modern-fna-line-mismatch", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "lambda-modern-fna-line-mismatch.info"], 0),
     ("derive-endline-source-wide", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "derive-source-wide-a.info", "-a", "derive-source-wide-b.info"], 0),
     ("modern-fna-source-wide-consistency", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "derive-source-wide-explicit-a.info", "-a", "derive-source-wide-explicit-b.info"], 1),
+    ("fn-zero-line-hit-same-input-testcases", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-zero-cross-testcase-same-input.info"], 1),
+    ("fn-hit-line-zero-same-input-testcases", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-hit-cross-testcase-same-input.info"], 0),
+    ("fn-zero-line-hit-separate-inputs", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-zero-cross-input.info", "-a", "fn-positive-later-input.info"], 1),
+    ("fn-explicit-start-beyond-last-da", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-explicit-beyond-last-da.info"], 1),
+    ("fn-explicit-no-da-empty", ["--function-coverage", "--rc", "check_data_consistency=1", "--ignore-errors", "inconsistent,empty", "-a", "fn-explicit-no-da.info"], 0),
+    ("fn-lambda-mixed-alias-not-exempt", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-lambda-mixed-alias.info"], 1),
+    ("fn-cpp-lambda-first-line-exempt", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-cpp-lambda-first-line.info"], 0),
+    ("fn-cpp-lambda-later-line-error", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-cpp-lambda-later-line.info"], 1),
+    ("fn-mangled-nested-not-lambda", ["--function-coverage", "--rc", "check_data_consistency=1", "-a", "fn-mangled-nested.info"], 1),
     ("modern-missing-end-cross-input", ["--function-coverage", "-a", "missing-ends-a.info", "-a", "missing-ends-b.info"], 0),
     ("orphan-function-hit-strict", ["--function-coverage", "-a", "orphan-function-hit.info"], 1),
     ("orphan-function-hit-recovery", ["--function-coverage", "--ignore-errors", "mismatch,empty", "-a", "orphan-function-hit.info"], 0),
@@ -358,6 +378,8 @@ def main():
         html_ignored_errors = ["source"]
         if expected == 0 and ("inconsistent" in opts or "check_data_consistency=0" in opts):
             html_ignored_errors.append("inconsistent")
+        if name == "fn-explicit-no-da-empty":
+            html_ignored_errors.append("empty")
         case_dir = workdir / name
         case_dir.mkdir(parents=True, exist_ok=True)
         make_inputs(case_dir)
@@ -436,7 +458,7 @@ def main():
             if not backend_row["oracle_expected_status_match"] or not backend_row["backend_confirmed_for_invocation"]:
                 failures += 1
                 print(f"FAIL oracle {backend}/{name}: status={oracle['status']} xs={observed_xs} expected_xs={expected_xs}", file=sys.stderr)
-            if expected == 0:
+            if expected == 0 and name != "fn-explicit-no-da-empty":
                 html_dir = case_dir / f"html-{backend}"
                 remove(html_dir)
                 html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
@@ -488,7 +510,7 @@ def main():
                             "semantic_match": expected != 0 or normalized(sem_cand) == normalized(semantic_oracle),
                             "match": ok, "expected_reference_difference": known_reference_difference,
                             "target_match": ok or known_reference_difference}
-                if expected == 0:
+                if expected == 0 and name != "fn-explicit-no-da-empty":
                     html_dir = case_dir / f"html-candidate-{backend}"
                     remove(html_dir)
                     html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),
