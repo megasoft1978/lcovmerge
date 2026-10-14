@@ -81,6 +81,7 @@ def source_text(lines=16):
 def fixtures(directory):
     src = directory / "sample.c"
     src.write_text(source_text())
+    (directory / "source.pl").write_text("print qq(ok);\n")
     other = directory / "other.c"
     other.write_text("int other = 1;\n")
     bad_source = directory / "missing.c"
@@ -142,6 +143,18 @@ def fixtures(directory):
         "branch-checksum-conflict-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1,aaaa\nBRDA:1,7,0,1\nend_of_record\n",
         "branch-checksum-conflict-b.info": f"TN:beta\nSF:{srcname}\nDA:1,2,bbbb\nBRDA:1,9,0,2\nend_of_record\n",
         "branch-duplicate-da-max.info": f"TN:alpha\nSF:{srcname}\nDA:1,9223372036854775807\nDA:1,9223372036854775807\nDA:1,9223372036854775807\nBRDA:1,7,0,1\nend_of_record\n",
+        "branch-negative.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,-1\nend_of_record\n",
+        "branch-line-hit-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,1\nend_of_record\n",
+        "branch-line-hit-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nBRDA:1,7,0,0\nend_of_record\n",
+        "branch-line-hit.pl.info": f"TN:a\nSF:{str((directory/'source.pl').resolve())}\nDA:1,1\nBRDA:1,7,0,1\nend_of_record\n",
+        "branch-line-zero.pl.info": f"TN:b\nSF:{str((directory/'source.pl').resolve())}\nDA:1,0\nBRDA:1,7,0,0\nend_of_record\n",
+        "branch-global-da-a.info": f"TN:a\nSF:{srcname}\nDA:1,0\nBRDA:1,7,0,0\nend_of_record\n",
+        "branch-global-da-b.info": f"TN:b\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,1\nend_of_record\n",
+        "branch-large-sparse.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,70000,0,1\nend_of_record\n",
+        "branch-duplicate-numeric-ids.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,1\nBRDA:1,7,00,2\nend_of_record\n",
+        "branch-missing-line-cross-a.info": f"TN:a\nSF:{srcname}\nDA:1,1\nBRDA:2,7,0,1\nend_of_record\n",
+        "branch-missing-line-cross-b.info": f"TN:b\nSF:{srcname}\nDA:1,0\nend_of_record\n",
+        "branch-no-da.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nBRDA:1,7,0,0\nBRDA:1,7,1,-\nend_of_record\n",
         "fractional-fna.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,1.5,fractional\nDA:1,2\nend_of_record\n",
         "fractional-fna-collector.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,1.5,fractional\nBRDA:1,7,0,1\nDA:1,2\nend_of_record\n",
         "negative-fna.info": f"TN:alpha\nSF:{srcname}\nFNL:7,1,1\nFNA:7,-1,negative\nDA:1,0\nend_of_record\n",
@@ -199,6 +212,16 @@ CASES = [
     ("uncovered-line", ["--no-function-coverage", "-a", "uncovered.info"], 0),
     ("branch-canonical", ["--branch-coverage", "--no-function-coverage", "-a", "branches-a.info", "-a", "branches-b.info"], 0),
     ("branch-duplicate-da-max-saturation", ["--branch-coverage", "--no-function-coverage", "-a", "branch-duplicate-da-max.info"], 0),
+    ("branch-negative-strict", ["--branch-coverage", "--no-function-coverage", "-a", "branch-negative.info"], 1),
+    ("branch-negative-recovery", ["--branch-coverage", "--ignore-errors", "negative,inconsistent", "--no-function-coverage", "-a", "branch-negative.info"], 0),
+    ("branch-large-sparse-block", ["--branch-coverage", "--no-function-coverage", "-a", "branch-large-sparse.info"], 0),
+    ("branch-duplicate-numeric-ids", ["--branch-coverage", "--no-function-coverage", "-a", "branch-duplicate-numeric-ids.info"], 0),
+    ("branch-line-cross-testcase", ["--branch-coverage", "--function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-line-hit-a.info", "-a", "branch-line-hit-b.info"], 1),
+    ("branch-line-cross-testcase-perl-exemption", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-line-hit.pl.info", "-a", "branch-line-zero.pl.info"], 0),
+    ("branch-missing-line-cross-testcase", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-missing-line-cross-a.info", "-a", "branch-missing-line-cross-b.info"], 0),
+    ("branch-missing-line-consistency-disabled", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=0", "-a", "branch-missing-line-cross-a.info"], 0),
+    ("branch-no-da", ["--branch-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "branch-no-da.info"], 0),
+    ("branch-global-da-cross-testcase", ["--branch-coverage", "--no-function-coverage", "--rc", "check_data_consistency=1", "-a", "branch-global-da-a.info", "-a", "branch-global-da-b.info"], 0),
     ("branch-duplicate-signature", ["--branch-coverage", "--no-function-coverage", "-a", "branch-duplicate.info"], 0),
     ("branch-strict-inconsistent", ["--rc", "check_data_consistency=1", "--branch-coverage", "--no-function-coverage", "-a", "branch-inconsistent.info"], 1),
     ("branch-recovery-inconsistent", ["--ignore-errors", "inconsistent", "--branch-coverage", "--no-function-coverage", "-a", "branch-inconsistent.info"], 0),
@@ -376,7 +399,8 @@ def main():
         name, opts, expected = case[:3]
         mode = case[3] if len(case) == 4 else "file"
         html_ignored_errors = ["source"]
-        if expected == 0 and ("inconsistent" in opts or "check_data_consistency=0" in opts):
+        if expected == 0 and ("inconsistent" in opts or "check_data_consistency=0" in opts or
+                              name == "branch-line-cross-testcase-perl-exemption"):
             html_ignored_errors.append("inconsistent")
         if name == "fn-explicit-no-da-empty":
             html_ignored_errors.append("empty")
@@ -458,7 +482,7 @@ def main():
             if not backend_row["oracle_expected_status_match"] or not backend_row["backend_confirmed_for_invocation"]:
                 failures += 1
                 print(f"FAIL oracle {backend}/{name}: status={oracle['status']} xs={observed_xs} expected_xs={expected_xs}", file=sys.stderr)
-            if expected == 0 and name != "fn-explicit-no-da-empty":
+            if expected == 0 and name not in ("fn-explicit-no-da-empty", "branch-no-da"):
                 html_dir = case_dir / f"html-{backend}"
                 remove(html_dir)
                 html_argv = [str(genhtml), "--ignore-errors", ",".join(html_ignored_errors), "--output-directory", str(html_dir),

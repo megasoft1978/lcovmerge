@@ -42,6 +42,13 @@ quiet stdout, and whether the output destination was created. Commands use
 All rows below are required in both backends. `success` and `error` are
 expected oracle exit classes, checked before candidate results are counted.
 
+For BRDA summaries, zero is an evaluated coverpoint with no hits; `-` is an
+unknown count excluded from evaluated branch totals. The source-wide recovery
+case records synthesized nonzero line coverage for missing branch lines. A
+`.pl` source accepts otherwise-mismatched line and branch counts in both
+verified backends. BRDA-only input with no DA record is rejected as empty and
+is not represented as a successful empty-output fixture.
+
 | Case | Behavior exercised | Oracle |
 | --- | --- | --- |
 | `tn-split` | Keep distinct test names | success |
@@ -50,6 +57,15 @@ expected oracle exit classes, checked before candidate results are counted.
 | `uncovered-line` | Uncovered line data | success |
 | `branch-canonical` | Canonicalize block IDs when merging | success |
 | `branch-duplicate-da-max-saturation` | Three duplicate DA counts saturate at signed 64-bit maximum in the branch collector | success |
+| `branch-negative-strict` / `branch-negative-recovery` | Negative BRDA hit count is rejected; recovery needs `negative,inconsistent` and normalizes the count to zero | error / success |
+| `branch-large-sparse-block` | Sparse branch block ID 70000 is canonicalized without materializing intervening IDs | success |
+| `branch-duplicate-numeric-ids` | Numerically equivalent branch IDs (`0` and `00`) remain separate records in one block | success |
+| `branch-line-cross-testcase` | A line hit in one testcase conflicts with a zero branch hit in another | error |
+| `branch-line-cross-testcase-perl-exemption` | `.pl` source permits a line hit in one testcase and zero branch hit in another | success |
+| `branch-missing-line-cross-testcase` | Recover missing branch line; synthesized line coverage propagates source-wide | success |
+| `branch-missing-line-consistency-disabled` | Missing branch line with consistency checks disabled | success |
+| `branch-no-da` | BRDA records with zero and unknown (`-`) counts beside a DA record retain their count forms | success |
+| `branch-global-da-cross-testcase` | Source-wide branch aggregation for individually valid testcase inputs with different line and branch hit states | success |
 | `checksum-conflict-ignored-branch-collector` | Ignore conflicting DA checksums while branch coverage activates the collector | success |
 | `branch-duplicate-signature` | Duplicate branch signatures | success |
 | `branch-strict-inconsistent` | Strict line/branch consistency | error |
