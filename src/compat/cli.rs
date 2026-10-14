@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-const HELP: &str = "lcovmerge LCOV 2.6 merge profile\nUsage: lcovmerge --lcov-compat=2.6 -a PATTERN [-a PATTERN ...] [-o FILE]\n  -a, --add-tracefile PATTERN  add matching tracefiles (repeatable)\n  -o, --output-file FILE      write output (default stdout; last -o wins)\n      --include PATTERN       include matching source paths\n      --exclude PATTERN       exclude matching source paths\n      --(no-)function-coverage enable/disable function data\n      --(no-)branch-coverage   enable/disable branch data\n      --(no-)mcdc-coverage     enable/disable MC/DC data\n      --(no-)checksum          enable/disable checksums\n      --forget-test-names      merge testcase identities\n      --ignore-errors LIST     inconsistent, version, mismatch, format, empty, source, unused, negative\n      --keep-going             continue after recoverable errors\n      --tempdir DIR            temporary directory\n      --parallel[=N]           workers (default 1, 0 selects available cores)\n      --mem-limit SIZE         lcovmerge arena limit extension\n  -q, --quiet | -v, --verbose | -h, --help | --version\n";
+const HELP: &str = "lcovmerge LCOV 2.6 merge profile\nUsage: lcovmerge --lcov-compat=2.6 -a PATTERN [-a PATTERN ...] [-o FILE]\n  -a, --add-tracefile PATTERN  add matching tracefiles (repeatable)\n  -o, --output-file FILE      write output (default stdout; last -o wins)\n      --include PATTERN       include matching source paths\n      --exclude PATTERN       exclude matching source paths\n      --(no-)function-coverage enable/disable function data\n      --(no-)branch-coverage   enable/disable branch data\n      --(no-)mcdc-coverage     enable/disable MC/DC data\n      --(no-)checksum          enable/disable checksums\n      --forget-test-names      merge testcase identities\n      --ignore-errors LIST     inconsistent, version, mismatch, format, empty, source, unused, negative\n      --keep-going             continue after recoverable errors\n      --tempdir DIR            temporary directory\n      --parallel[=N]           workers (default 1, 0 selects cores up to memory capacity)\n      --mem-limit SIZE         lcovmerge arena limit extension\n  -q, --quiet | -v, --verbose | -h, --help | --version\n";
 
 fn err(msg: impl Into<String>) -> Error {
     Error::new(1, msg)
@@ -146,9 +146,7 @@ fn parallel(value: &str) -> Result<usize, Error> {
         .parse::<usize>()
         .map_err(|_| err("--parallel expects a non-negative worker count"))?;
     match n {
-        0 => Ok(std::thread::available_parallelism()
-            .map_or(1, |n| n.get())
-            .min(32)),
+        0 => Ok(0),
         1..=32 => Ok(n),
         _ => Err(err("--parallel expects 0-32 (0 selects available cores)")),
     }
@@ -262,6 +260,9 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
     for setting in rc {
         let (key, value) = split_setting(&setting)?;
         let key = key.trim();
+        if config::deprecated(key) {
+            continue;
+        }
         if !config::supported(key) && !matches!(key, "memory" | "memory_percentage") {
             return Err(err(format!(
                 "unsupported merge-relevant --rc setting: {key}"
@@ -496,7 +497,13 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<Request>
     if !req.resources.jobs_explicit {
         req.resources.jobs = 1;
     }
-    if req.resources.jobs > req.resources.mem_limit / MIN_WORKER_BUDGET {
+    let capacity = req.resources.mem_limit / MIN_WORKER_BUDGET;
+    if req.resources.jobs == 0 {
+        req.resources.jobs = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(32)
+            .min(capacity);
+    } else if req.resources.jobs > capacity {
         return Err(err("worker count exceeds --mem-limit capacity"));
     }
     Ok(Some(req))
@@ -586,15 +593,99 @@ mod tests {
             "-ofinal",
             "--tempdir=tmp",
             "--parallel=0",
+            "--mem-limit=8M",
             "--ignore-errors=Inconsistent,format",
-            "--mem-limit=256M",
         ])
         .unwrap()
         .unwrap();
         assert_eq!(r.resources.inputs, vec![PathBuf::from("file")]);
         assert_eq!(r.resources.output, PathBuf::from("final"));
-        assert!(r.resources.jobs >= 1 && r.resources.jobs <= 32);
+        assert_eq!(r.resources.jobs, 1);
         assert!(r.ignore_errors.contains("format"));
+    }
+
+    #[test]
+    fn omitted_parallel_value_is_memory_capped_but_explicit_count_is_checked() {
+        let auto = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--mem-limit=8M",
+            "--parallel",
+            "-a",
+            "a",
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(auto.resources.jobs, 1);
+        assert!(parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--mem-limit=8M",
+            "--parallel=2",
+            "-a",
+            "a",
+        ])
+        .is_err());
+        let overridden = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--parallel=2",
+            "--parallel=0",
+            "--mem-limit=8M",
+            "-a",
+            "a",
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(overridden.resources.jobs, 1);
+        let from_rc = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--rc=parallel=0",
+            "--mem-limit=8M",
+            "-a",
+            "a",
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(from_rc.resources.jobs, 1);
+    }
+
+    #[test]
+    fn explicit_dash_output_matches_lcov_stdout_destination() {
+        let default = parse_s(&["x", "--lcov-compat=2.6", "-a", "a"])
+            .unwrap()
+            .unwrap();
+        let explicit = parse_s(&["x", "--lcov-compat=2.6", "-o", "-", "-a", "a"])
+            .unwrap()
+            .unwrap();
+        assert_eq!(default.resources.output, PathBuf::from("-"));
+        assert_eq!(explicit.resources.output, default.resources.output);
+    }
+
+    #[test]
+    fn deprecated_coverage_aliases_are_ignored_in_rc_and_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let rc = dir.path().join("aliases.rc");
+        std::fs::write(
+            &rc,
+            "lcov_branch_coverage = 1\nlcov_function_coverage = 0\nlcov_br_coverage = 1\nlcov_func_coverage = 0\ngenhtml_branch_coverage = 1\ngenhtml_function_coverage = 0\n",
+        )
+        .unwrap();
+        let rc_arg = rc.to_string_lossy().into_owned();
+        let r = parse_s(&[
+            "x",
+            "--lcov-compat=2.6",
+            "--config-file",
+            &rc_arg,
+            "--rc=lcov_branch_coverage=1",
+            "-a",
+            "a",
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(!r.resources.branch_coverage);
+        assert!(r.resources.function_data);
     }
     #[test]
     fn rejects_memory_and_bad_categories() {

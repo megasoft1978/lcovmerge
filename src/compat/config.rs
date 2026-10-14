@@ -102,6 +102,8 @@ fn read_file(
             let value = expand_env(value.trim(), key, path, line_number + 1)?;
             if key == "config_file" {
                 read_file(Path::new(&value), depth + 1, active, settings)?;
+            } else if deprecated(key) {
+                // LCOV 2.6 warns and skips these aliases in rc files.
             } else if supported(key) {
                 settings.push((key.to_owned(), value));
             } else if known_but_unsupported(key) {
@@ -160,6 +162,18 @@ pub fn supported(key: &str) -> bool {
             | "exclude"
             | "parallel"
             | "lcov_tmp_dir"
+    )
+}
+
+pub fn deprecated(key: &str) -> bool {
+    matches!(
+        key,
+        "lcov_branch_coverage"
+            | "lcov_function_coverage"
+            | "lcov_br_coverage"
+            | "lcov_func_coverage"
+            | "genhtml_branch_coverage"
+            | "genhtml_function_coverage"
     )
 }
 
@@ -275,5 +289,16 @@ mod tests {
         assert!(supported("branch_coverage"));
         assert!(known_but_unsupported("memory"));
         assert!(known_but_unsupported("sort_input"));
+        for alias in [
+            "lcov_branch_coverage",
+            "lcov_function_coverage",
+            "lcov_br_coverage",
+            "lcov_func_coverage",
+            "genhtml_branch_coverage",
+            "genhtml_function_coverage",
+        ] {
+            assert!(deprecated(alias));
+            assert!(!supported(alias));
+        }
     }
 }
