@@ -121,6 +121,22 @@ jobs:
             --workdir .cache/remote-native \
             --runs 99
 
+      - name: Upload compact native benchmark reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cache/remote-native/summary.json
+            .cache/remote-native/provenance.json
+            .cache/remote-native/idle-preflight*
+            .cache/remote-native/*.log
+            .cache/remote-native/results/*/report.json
+            .cache/remote-native-setup
+            .cache/optimized/build.json
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Upload native macOS benchmark artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

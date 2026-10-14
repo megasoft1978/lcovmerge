@@ -68,6 +68,21 @@ files.
   Scoop smoke workflow for that release. See [Scoop packaging](../packaging/scoop/README.md).
 - [ ] Record any known issues and open follow-up tasks for unsupported features.
 
+## Published archive validation
+
+After publication, dispatch the five-platform validation workflow with the
+published version, without its leading `v`:
+
+```sh
+gh workflow run published-release.yml --ref main -f version=1.2.0
+```
+
+It checks out the release tag, downloads and verifies each platform's archive,
+runs the CLI and compatibility operational suites against that executable, and
+verifies archive and checksum-manifest attestations. The Linux x86-64 job also
+verifies the published checksum signature and SBOM attestation. Review all five
+jobs and their retained reports before completing the release.
+
 ## Scoop release validation
 
 `packaging/scoop/lcovmerge.json` is the manifest template. Download the release's `SHA256SUMS` into a

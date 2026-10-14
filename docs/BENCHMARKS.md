@@ -49,6 +49,8 @@ paired measurements for each baseline, sorted/unsorted workload and worker count
 precision after earlier inconclusive comparisons. The acceptance rule is unchanged.
 Reports retain binaries, input hashes/bundle, training inputs/profile, compiler and
 host identities, raw samples, resource metrics and uncertainty intervals for 90 days.
+A separate compact reports artifact makes results available without downloading
+the retained binaries and input bundle.
 The temporary unpublished transport release is removed after those artifacts are
 retained. Results on a different host are reported separately from earlier local
 measurements, including inconclusive or losing results.
@@ -86,6 +88,14 @@ The [full artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/3863
 include binaries, training data, logs and per-invocation measurements. Temporary
 disk metrics sample the selected temporary directory only; output-parent staging
 files are excluded, and short-lived peaks can be missed.
+
+The subsequent `ec8dac0` candidate also missed the gate. Its frozen-Rust sorted
+one-job ratio was 1.022 [1.008, 1.033]; the four-job sorted comparison and both
+unsorted comparisons were inconclusive. Against C1, one-job sorted parity was
+inconclusive, while the other three comparisons passed. All outputs matched.
+[The complete retained report](../data/native-parity-ec8dac0.json) includes every
+comparison. Further runs control Spotlight indexing explicitly; these earlier
+results remain part of the record.
 
 ## LCOV profile comparison
 
