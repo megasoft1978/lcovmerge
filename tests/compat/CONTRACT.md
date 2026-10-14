@@ -149,6 +149,12 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `branch-no-da-strict` / `branch-no-da-empty-recovery` | BRDA-only input has no valid records; strict mode reports corrupt/empty input, while empty recovery succeeds with a zero-byte trace | error / success |
 | `mcdc-no-da-strict` / `mcdc-no-da-empty-recovery` | MC/DC-only input has no valid records; strict mode reports corrupt/empty input, while empty recovery succeeds with a zero-byte trace | error / success |
 | `removed-no-da-shared-source` | A no-DA testcase sharing an input and source with a DA testcase is removed; its BRDA and MC/DC records do not appear in output | success |
+| `no-da-before-valid-strict` / `no-da-before-valid-empty-recovery` | A no-DA input is rejected as empty even when a later input supplies DA for the same source; ignoring `empty` retains only the later testcase | error / success |
+| `no-da-ver-dropped-before-valid` | VER from an all-no-DA input does not appear on the later retained testcase | success |
+| `checksum-duplicate-valid-invalid` / `checksum-duplicate-invalid-valid` | With `--checksum`, each duplicate DA checksum is checked against source in producer order; a wrong checksum errors regardless of valid-hash order | error |
+| `checksum-missing-recovered-valid` / `checksum-valid-then-missing-conflict` | Missing DA checksums warn under version recovery; a later valid checksum is selected and output is DA count 3 with the source hash | success |
+| `ghost-no-da-function-alias` | Function/branch-only testcase has no valid DA and the input errors as empty | error |
+| `ghost-no-da-function-alias-shared-source` / `ghost-no-da-function-alias-error-effects` | A DA testcase and same-source zero-DA testcase with function alias and BRDA: empty recovery filters the latter; output has only keep, FNF=0/FNH=0, DA:1,1, with and without consistency checking | success |
 | `branch-fn-synthesized-single` | Branch-derived DA is emitted for a single testcase and the function summary is FNF=1/FNH=1 | success |
 | `branch-fn-synthesized-multiple` | Branch-derived DA contributes to the source master summary but is omitted from a multi-testcase line output; function summary remains FNF=1/FNH=1 | success |
 | `modern-fna-line-mismatch-zero` | Strict consistency rejects FNA zero hits when its line is hit | error |
@@ -222,6 +228,19 @@ condition is asserted. The same empty-trace exception applies to
 
 In `removed-no-da-shared-source`, LCOV retains only testcase `keep` and its
 `DA:1,1`; the removed testcase contributes neither branch nor MC/DC records.
+This removal does not bypass source-wide input validation: a separate input
+containing no valid DA records raises `empty` even if a later input has DA for
+the same SF. With `--ignore-errors empty` that input contributes no output.
+Its VER is discarded with its zero-DA testcase, so the later retained output
+has no VER. Function aliases and branches from a zero-DA testcase are checked
+before filtering; after empty recovery that testcase is removed and its aliases
+and branch records do not enter output. This fixture uses internally
+consistent counts, so it does not establish an inconsistency error for ghost
+metadata.
+With checksums enabled, each DA checksum is compared to source immediately.
+Bad hashes error in either duplicate-record order. Missing hashes produce a
+recoverable version warning; the valid hash from the other duplicate is kept
+in output, with the counts accumulated (3 in these fixtures).
 The function synthesis fixtures include `DA:1,1` so the testcase is valid, but
 line 2 has BRDA and no DA. For a single testcase LCOV emits synthesized
 `DA:2,1`; with multiple testcases the source summary contains the branch
