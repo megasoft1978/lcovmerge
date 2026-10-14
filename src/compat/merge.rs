@@ -123,6 +123,11 @@ pub fn write_sections(
     branches: bool,
     mcdc: bool,
 ) -> Result<(), Error> {
+    let sources_with_functions: std::collections::HashSet<&str> = sections
+        .iter()
+        .filter(|s| !s.functions.is_empty())
+        .map(|s| s.source.as_str())
+        .collect();
     for s in sections {
         check_cancelled()?;
         if !s.saw_coverpoint {
@@ -156,7 +161,7 @@ pub fn write_sections(
                     writeln!(out, "FNA:{idx},{},{}", f.hits, name).map_err(io_error)?;
                 }
             }
-            if !groups.is_empty() {
+            if !groups.is_empty() || sources_with_functions.contains(s.source.as_str()) {
                 let hit = groups
                     .iter()
                     .filter(|g| g.2.iter().any(|(_, f)| f.hits > 0))

@@ -77,6 +77,32 @@ expected oracle exit classes, checked before candidate results are counted.
 | `malformed-da` | Malformed line record | error |
 | `malformed-branch` | Malformed branch record | error |
 | `malformed-function` | Malformed function record | error |
+| `signed-max-count` | Signed 64-bit maximum in line, function, and branch counts | success |
+| `count-overflow-saturation` | Aggregate counts saturate at signed 64-bit maximum | success |
+| `negative-count-strict` | Negative count rejected | error |
+| `negative-count-recovery` | Negative count recovery with `--ignore-errors negative` | success |
+| `fraction-count` | Fractional count truncates toward zero | success |
+| `checksum-valid` | Existing checksum matches source | success |
+| `checksum-mismatch` | Existing checksum mismatch | error |
+| `checksum-mismatch-recovery` | Recover checksum mismatch with `--ignore-errors version` | success |
+| `checksum-default-ignored` | Checksum is ignored by default | success |
+| `checksum-no-flag-precedence` | `--no-checksum` overrides earlier `--checksum` | success |
+| `function-conflict-strict` | Same function name at different locations across testcases | success |
+| `mcdc-expression-strict` | Cross-testcase MC/DC expression conflict | error |
+| `mcdc-expression-recovery` | Recover cross-testcase MC/DC expression conflict | success |
+| `mcdc-layout-summary` | MC/DC layout, unreachable records, and summary counts | success |
+| `mcdc-duplicate-permuted` | Duplicate MC/DC expressions merged from inputs in permuted order | success |
+| `source-version-split` | Conflicting source versions across testcases | error |
+| `source-version-recovery` | Recover conflicting source versions | success |
+| `malformed-branch-disabled` | Malformed branch payload is ignored when branch coverage is disabled | success |
+| `malformed-function-disabled` | Malformed function payload is ignored when function coverage is disabled | success |
+| `consistency-enabled-success` | `check_data_consistency=1` on consistent data | success |
+| `derive-endline-disabled` | Disable function end-line inference | success |
+| `checksum-cross-testcase` | Select and propagate source checksum across testcases | success |
+| `branch-only-recovery-summary` | Branch recovery counts nonzero coverpoints, not taken totals | success |
+| `derive-endline-cross-testcase` | Derive function end line using that testcase's line data | success |
+| `lambda-cpp-no-inference` | Do not infer lambda end line in C++ source | success |
+| `function-aliases-cross-testcase` | Source-wide function aliases retain testcase-local identity | success |
 
 ## Comparison rules and limits
 

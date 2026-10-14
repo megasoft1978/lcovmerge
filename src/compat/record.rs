@@ -45,6 +45,26 @@ fn number(s: &str, file: &str, line: u64) -> Result<u64, Error> {
         .map_err(|_| Error::at(2, file, line, "numeric LCOV field overflow"))
 }
 
+pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> {
+    const MAX_COUNT: u64 = i64::MAX as u64;
+    if s.is_empty() {
+        return Err(Error::at(2, file, line, "non-integer coverage count"));
+    }
+    let value = s
+        .parse::<f64>()
+        .map_err(|_| Error::at(2, file, line, "non-integer coverage count"))?;
+    if !value.is_finite() {
+        return Err(Error::at(2, file, line, "non-integer coverage count"));
+    }
+    if value < 0.0 {
+        return Err(Error::at(2, file, line, "negative coverage count"));
+    }
+    if value >= MAX_COUNT as f64 {
+        return Ok(MAX_COUNT);
+    }
+    Ok(value.trunc() as u64)
+}
+
 impl Section {
     pub fn add_line(&mut self, payload: &str, file: &str, line: u64) -> Result<(), Error> {
         let mut fields = payload.split(',');
@@ -52,7 +72,7 @@ impl Section {
         if n == 0 {
             return Err(Error::at(2, file, line, "DA line must be positive"));
         }
-        let count = number(fields.next().unwrap_or(""), file, line)?;
+        let count = parse_count(fields.next().unwrap_or(""), file, line)?;
         let checksum = fields.next().map(str::to_owned);
         if fields.next().is_some()
             || checksum
@@ -107,10 +127,7 @@ impl Section {
                 "inconsistent function declaration",
             ));
         }
-        f.hits = f
-            .hits
-            .checked_add(hits)
-            .ok_or_else(|| Error::at(2, file, line, "function count overflow"))?;
+        f.hits = f.hits.saturating_add(hits).min(i64::MAX as u64);
         self.saw_coverpoint = true;
         Ok(())
     }
@@ -138,6 +155,6 @@ impl Section {
 }
 
 pub fn checked_add(a: u64, b: u64, file: &str, what: &str) -> Result<u64, Error> {
-    a.checked_add(b)
-        .ok_or_else(|| Error::new(2, format!("{file}: {what} count overflow")))
+    let _ = (file, what);
+    Ok(a.saturating_add(b).min(i64::MAX as u64))
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Differential LCOV 2.6 characterization runner; see CONTRACT.md."""
 import argparse
+import base64
 import glob
 import gzip
 import hashlib
@@ -107,11 +108,44 @@ def fixtures(directory):
         "malformed-branch.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nBRDA:bad\nend_of_record\n",
         "malformed-function.info": f"TN:alpha\nSF:{srcname}\nFN:bad\nend_of_record\n",
         "malformed-mcdc.info": f"TN:alpha\nSF:{srcname}\nDA:10,1\nMCDC:bad\nend_of_record\n",
+        "count-max.info": f"TN:alpha\nSF:{srcname}\nDA:1,9223372036854775807\nDA:2,1\nFN:1,sample\nFNDA:9223372036854775807,sample\nBRDA:2,1,0,9223372036854775807\nend_of_record\n",
+        "count-overflow-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,9223372036854775807\nend_of_record\n",
+        "count-overflow-b.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "count-negative.info": f"TN:alpha\nSF:{srcname}\nDA:1,-1\nend_of_record\n",
+        "count-fraction.info": f"TN:alpha\nSF:{srcname}\nDA:1,1.9\nend_of_record\n",
+        "checksum-valid.info": f"TN:alpha\nSF:{srcname}\nDA:1,1,PLACEHOLDER\nend_of_record\n",
+        "checksum-mismatch.info": f"TN:alpha\nSF:{srcname}\nDA:1,1,AAAA\nend_of_record\n",
+        "checksum-missing.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nend_of_record\n",
+        "function-conflict-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFN:1,3,dupe\nFNDA:1,dupe\nend_of_record\n",
+        "function-conflict-b.info": f"TN:beta\nSF:{srcname}\nDA:1,1\nFN:1,4,dupe\nFNDA:2,dupe\nend_of_record\n",
+        "mcdc-conflict-a.info": f"TN:alpha\nSF:{srcname}\nDA:10,1\nMCDC:10,2,t,1,0,first\nend_of_record\n",
+        "mcdc-conflict-b.info": f"TN:beta\nSF:{srcname}\nDA:10,1\nMCDC:10,2,t,2,0,second\nend_of_record\n",
+        "version-a.info": f"TN:alpha\nSF:{srcname}\nVER:1.0\nDA:1,1\nend_of_record\n",
+        "version-b.info": f"TN:beta\nSF:{srcname}\nVER:2.0\nDA:1,1\nend_of_record\n",
+        "malformed-branch-disabled.info": f"TN:alpha\nSF:{srcname}\nBRDA:bad\nDA:1,1\nend_of_record\n",
+        "malformed-function-disabled.info": f"TN:alpha\nSF:{srcname}\nFN:bad\nDA:1,1\nend_of_record\n",
+        "mcdc-layout.info": f"TN:alpha\nSF:{srcname}\nDA:10,1\nMCDC:10,2,t,1,0,A\nMCDC:10,2,f,0,0,A\nMCDC:10,U2,t,0,1,B\nMCDC:10,U2,f,1,1,B\nend_of_record\n",
+        "mcdc-duplicate-a.info": f"TN:alpha\nSF:{srcname}\nDA:10,1\nMCDC:10,2,t,2,0,A\nend_of_record\n",
+        "mcdc-duplicate-b.info": f"TN:alpha\nSF:{srcname}\nDA:10,1\nMCDC:10,2,f,1,0,A\nMCDC:10,2,t,1,0,A\nend_of_record\n",
+        "checksum-cross-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1,{base64.b64encode(hashlib.md5(b'int sample_1 = 1;').digest()).decode().rstrip('=')}\nend_of_record\n",
+        "checksum-cross-b.info": f"TN:beta\nSF:{srcname}\nDA:1,2\nend_of_record\n",
+        "branch-only-recovery.info": f"TN:alpha\nSF:{srcname}\nDA:2,0\nBRDA:2,4,0,2\nBRDA:2,4,1,4\nend_of_record\n",
+        "derive-cross-a.info": f"TN:alpha\nSF:{str((directory/'derive.cpp').resolve())}\nDA:3,1\nFN:3,derive_me\nFNDA:1,derive_me\nend_of_record\n",
+        "derive-cross-b.info": f"TN:beta\nSF:{str((directory/'derive.cpp').resolve())}\nDA:7,0\nend_of_record\n",
+        "lambda-cpp.info": f"TN:alpha\nSF:{str((directory/'lambda.cpp').resolve())}\nDA:2,1\nFN:2,outer{{lambda(0)}}\nFNDA:1,outer{{lambda(0)}}\nend_of_record\n",
+        "lambda-python.info": f"TN:alpha\nSF:{str((directory/'lambda.py').resolve())}\nDA:2,1\nFN:2,outer.<locals>.inner\nFNDA:1,outer.<locals>.inner\nend_of_record\n",
+        "aliases-cross-a.info": f"TN:alpha\nSF:{srcname}\nDA:3,1\nFN:3,short_name\nFNDA:2,short_name\nend_of_record\n",
+        "aliases-cross-b.info": f"TN:beta\nSF:{srcname}\nDA:3,1\nFN:3,long_name\nFNDA:3,long_name\nend_of_record\n",
         "other.info": f"TN:alpha\nSF:{othername}\nDA:1,1\nend_of_record\n",
     }
     for name, content in rows.items():
         (directory / name).write_text(content)
     (directory / "blank.c").write_bytes(b"")
+    (directory / "derive.cpp").write_text("\n" * 8)
+    (directory / "lambda.cpp").write_text("\n" * 5)
+    (directory / "lambda.py").write_text("\n" * 5)
+    (directory / "checksum-valid.info").write_text(rows["checksum-valid.info"].replace(
+        "PLACEHOLDER", base64.b64encode(hashlib.md5(b"int sample_1 = 1;").digest()).decode().rstrip("=")))
     (directory / "nested").mkdir(exist_ok=True)
     (directory / "nested" / "inner.info").write_text(rows["one.info"])
     (directory / "shard-a.info").write_text(rows["one.info"])
@@ -158,6 +192,32 @@ CASES = [
     ("malformed-da", ["--no-function-coverage", "-a", "malformed-da.info"], 1),
     ("malformed-branch", ["--branch-coverage", "--no-function-coverage", "-a", "malformed-branch.info"], 1),
     ("malformed-function", ["--function-coverage", "-a", "malformed-function.info"], 1),
+    ("signed-max-count", ["--branch-coverage", "--function-coverage", "-a", "count-max.info"], 0),
+    ("count-overflow-saturation", ["--no-function-coverage", "-a", "count-overflow-a.info", "-a", "count-overflow-b.info"], 0),
+    ("negative-count-strict", ["--no-function-coverage", "-a", "count-negative.info"], 1),
+    ("negative-count-recovery", ["--ignore-errors", "negative", "--no-function-coverage", "-a", "count-negative.info"], 0),
+    ("fraction-count", ["--no-function-coverage", "-a", "count-fraction.info"], 0),
+    ("checksum-valid", ["--checksum", "--no-function-coverage", "-a", "checksum-valid.info"], 0),
+    ("checksum-mismatch", ["--checksum", "--no-function-coverage", "-a", "checksum-mismatch.info"], 1),
+    ("checksum-mismatch-recovery", ["--ignore-errors", "version", "--checksum", "--no-function-coverage", "-a", "checksum-mismatch.info"], 0),
+    ("checksum-default-ignored", ["--no-function-coverage", "-a", "checksum-valid.info"], 0),
+    ("checksum-no-flag-precedence", ["--checksum", "--no-checksum", "--no-function-coverage", "-a", "checksum-missing.info"], 0),
+    ("function-conflict-strict", ["--function-coverage", "-a", "function-conflict-a.info", "-a", "function-conflict-b.info"], 0),
+    ("mcdc-expression-strict", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-conflict-a.info", "-a", "mcdc-conflict-b.info"], 1),
+    ("mcdc-expression-recovery", ["--ignore-errors", "inconsistent", "--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-conflict-a.info", "-a", "mcdc-conflict-b.info"], 0),
+    ("mcdc-layout-summary", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-layout.info"], 0),
+    ("mcdc-duplicate-permuted", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-duplicate-b.info", "-a", "mcdc-duplicate-a.info"], 0),
+    ("source-version-split", ["--no-function-coverage", "-a", "version-a.info", "-a", "version-b.info"], 1),
+    ("source-version-recovery", ["--ignore-errors", "version", "--no-function-coverage", "-a", "version-a.info", "-a", "version-b.info"], 0),
+    ("malformed-branch-disabled", ["--no-branch-coverage", "--no-function-coverage", "-a", "malformed-branch-disabled.info"], 0),
+    ("malformed-function-disabled", ["--no-function-coverage", "-a", "malformed-function-disabled.info"], 0),
+    ("consistency-enabled-success", ["--rc", "check_data_consistency=1", "--function-coverage", "-a", "one.info"], 0),
+    ("derive-endline-disabled", ["--rc", "derive_function_end_line=0", "--function-coverage", "-a", "functions.info"], 0),
+    ("checksum-cross-testcase", ["--ignore-errors", "version", "--checksum", "--no-function-coverage", "-a", "checksum-cross-a.info", "-a", "checksum-cross-b.info"], 0),
+    ("branch-only-recovery-summary", ["--ignore-errors", "inconsistent", "--rc", "check_data_consistency=1", "--branch-coverage", "--no-function-coverage", "-a", "branch-only-recovery.info"], 0),
+    ("derive-endline-cross-testcase", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "derive-cross-a.info", "-a", "derive-cross-b.info"], 0),
+    ("lambda-cpp-no-inference", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "lambda-cpp.info"], 0),
+    ("function-aliases-cross-testcase", ["--function-coverage", "-a", "aliases-cross-a.info", "-a", "aliases-cross-b.info"], 0),
 ]
 
 

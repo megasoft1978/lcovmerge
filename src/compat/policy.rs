@@ -69,7 +69,7 @@ pub(super) fn parse_branch(
     let hits = if count == "-" {
         None
     } else {
-        Some(num(Some(count), file, line)?)
+        Some(parse_count(count, file, line)?)
     };
     let blocks = s.branches.entry(ln).or_default();
     let bi = usize::try_from(block)
@@ -107,7 +107,7 @@ pub(super) fn parse_mcdc(
         .next()
         .ok_or_else(|| Error::at(2, file, line, "malformed MCDC record"))?;
     let sense = f.next().unwrap_or("");
-    let count = num(f.next(), file, line)?;
+    let count = parse_count(f.next().unwrap_or(""), file, line)?;
     let index = num(f.next(), file, line)?;
     let expr = f
         .next()
@@ -254,6 +254,10 @@ pub(super) fn can_recover(req: &Request, error: &Error) -> bool {
     let m = error.message.to_ascii_lowercase();
     let category = if m.contains("path") {
         "path"
+    } else if m.contains("negative") {
+        "negative"
+    } else if m.contains("non-integer") {
+        "format"
     } else if m.contains("overflow") {
         "count"
     } else if m.contains("checksum") || m.contains("source version") {
@@ -278,7 +282,10 @@ pub(super) fn parse_named_count(s: &str, file: &str, line: u64) -> Result<(u64, 
     if name.is_empty() {
         return Err(Error::at(2, file, line, "empty function name"));
     }
-    Ok((num(Some(n), file, line)?, name.to_owned()))
+    Ok((parse_count(n, file, line)?, name.to_owned()))
+}
+pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> {
+    record::parse_count(s, file, line)
 }
 pub(super) fn num(s: Option<&str>, file: &str, line: u64) -> Result<u64, Error> {
     let s = s.unwrap_or("");
@@ -321,10 +328,9 @@ pub(super) fn derive_function_ends(sections: &mut [Section], req: &Request) -> R
         ) {
             continue;
         }
-        let mut lines = BTreeSet::new();
-        let mut groups: BTreeMap<u64, Option<u64>> = BTreeMap::new();
-        for s in sections.iter().filter(|s| s.source == source) {
-            lines.extend(s.lines.keys().copied());
+        for s in sections.iter_mut().filter(|s| s.source == source) {
+            let lines: BTreeSet<_> = s.lines.keys().copied().collect();
+            let mut groups: BTreeMap<u64, Option<u64>> = BTreeMap::new();
             for (name, f) in &s.functions {
                 if name.contains("{lambda(") || (extension == "java" && name.contains(".lambda$")) {
                     continue;
@@ -334,25 +340,26 @@ pub(super) fn derive_function_ends(sections: &mut [Section], req: &Request) -> R
                     *end = f.end_line;
                 }
             }
-        }
-        let starts: Vec<_> = groups.keys().copied().collect();
-        for (i, start) in starts.iter().copied().enumerate() {
-            if groups[&start].is_some() {
-                continue;
-            }
-            let next = starts.get(i + 1).copied().unwrap_or(u64::MAX);
-            let end = lines.range(start..next).next_back().copied();
-            if let Some(end) = end {
-                groups.insert(start, Some(end));
-            } else {
-                let error = Error::new(2, format!("inconsistent line coverage for function at {source}:{start}; cannot derive end line"));
-                if !can_recover(req, &error) {
-                    return Err(error);
+            let starts: Vec<_> = groups.keys().copied().collect();
+            for (i, start) in starts.iter().copied().enumerate() {
+                if groups[&start].is_some() {
+                    continue;
+                }
+                let next = starts.get(i + 1).copied().unwrap_or(u64::MAX);
+                let end = lines.range(start..next).next_back().copied();
+                if let Some(end) = end {
+                    groups.insert(start, Some(end));
+                } else {
+                    let error = Error::new(2, format!("inconsistent line coverage for function at {source}:{start}; cannot derive end line"));
+                    if !can_recover(req, &error) {
+                        return Err(error);
+                    }
                 }
             }
-        }
-        for s in sections.iter_mut().filter(|s| s.source == source) {
-            for f in s.functions.values_mut() {
+            for (name, f) in &mut s.functions {
+                if name.contains("{lambda(") || (extension == "java" && name.contains(".lambda$")) {
+                    continue;
+                }
                 if f.end_line.is_none() {
                     f.end_line = groups.get(&f.line).copied().flatten();
                 }
