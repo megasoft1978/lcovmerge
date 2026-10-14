@@ -43,6 +43,9 @@ mod signature_store;
 mod sort;
 #[path = "source.rs"]
 mod source;
+#[allow(dead_code)] // Root integration consumes this reducer from function_runtime.rs.
+#[path = "version_spill.rs"]
+mod version_spill;
 use policy::{
     can_recover, num, parse_branch, parse_fn, parse_mcdc, parse_named_count,
     validate_or_generate_checksum,
