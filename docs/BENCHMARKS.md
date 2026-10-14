@@ -97,6 +97,13 @@ inconclusive, while the other three comparisons passed. All outputs matched.
 comparison. Further runs control Spotlight indexing explicitly; these earlier
 results remain part of the record.
 
+With Spotlight disabled, `92cbd7a` passed all four C1 comparisons and both
+unsorted frozen-Rust comparisons. The frozen-Rust sorted ratios still missed
+the gate: 1.005 [1.001, 1.011] at one job and 1.018 [1.006, 1.039] at four jobs.
+All outputs matched. [The controlled-run report](../data/native-parity-92cbd7a.json)
+retains all eight results and the indexing/preflight diagnostics; the release
+gate remains unmet.
+
 ## LCOV profile comparison
 
 The opt-in merge profile requires separate measurements from native mode. Use

@@ -243,7 +243,7 @@ impl<R: BufRead> Parser<R> {
             // Fall back to full line validation so malformed UTF-8 and NUL diagnostics stay identical.
             return Ok(false);
         };
-        if checksum.contains(&0) {
+        if memchr::memchr(0, checksum).is_some() {
             return Err(self.err(2, "binary or invalid UTF-8 input"));
         }
         let checksum = std::str::from_utf8(checksum)
@@ -771,6 +771,31 @@ mod tests {
         let rows: Vec<_> = std::iter::from_fn(|| p.next_record().unwrap()).collect();
         assert_eq!(rows.iter().filter(|r| r.kind == SECTION).count(), 2);
         assert!(p.take_diagnostics()[0].contains("recovered joined end_of_record/source boundary"));
+    }
+
+    #[test]
+    fn checksum_fast_path_preserves_utf8_and_rejects_binary_data() {
+        let checksum = "é".repeat(16);
+        let input = format!("SF:/x.c\nDA:1,2,{checksum}\nend_of_record\n");
+        let reader = std::io::BufReader::with_capacity(15, input.as_bytes());
+        let mut parser = Parser::new(reader, "checksum.info".into(), 0, opts());
+        parser.next_record().unwrap();
+        parser.next_record().unwrap();
+        assert_eq!(parser.next_record().unwrap().unwrap().extra, checksum);
+        assert!(parser.next_record().unwrap().is_none());
+
+        for invalid in [0, 0xff] {
+            let mut input = b"SF:/x.c\nDA:1,2,".to_vec();
+            input.extend_from_slice(&[b'x'; 32]);
+            input.extend_from_slice(&[invalid, b'\n']);
+            let reader = std::io::BufReader::with_capacity(17, input.as_slice());
+            let mut parser = Parser::new(reader, "checksum.info".into(), 0, opts());
+            parser.next_record().unwrap();
+            parser.next_record().unwrap();
+            let error = parser.next_record().unwrap_err();
+            assert_eq!(error.code, 2);
+            assert!(error.message.contains("binary or invalid UTF-8 input"));
+        }
     }
 
     #[test]

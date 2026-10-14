@@ -281,6 +281,8 @@ def malformed_tests(binary: Path, temporary: Path) -> int:
         ("no-colon", b"not-lcov\n", 2, b"outside an SF"),
         ("bare-garbage", b"garbage", 2, b"outside an SF"),
         ("binary-nul", b"SF:/bad.c\nX:\x00\n", 2, b"binary or invalid UTF-8"),
+        ("checksum-binary", b"SF:/bad.c\nDA:1,2," + b"x" * 32 + b"\x00\n", 2, b"binary or invalid UTF-8"),
+        ("checksum-invalid-utf8", b"SF:/bad.c\nDA:1,2," + b"x" * 32 + b"\xff\n", 2, b"binary or invalid UTF-8"),
         ("invalid-utf8", b"SF:/bad.c\nX:\xff\n", 2, b"binary or invalid UTF-8"),
         ("oversize-line", b"SF:/bad.c\nX:" + b"a" * (max_line - 1) + b"\n", 2, b"line exceeds 1 MiB"),
         ("truncated-record", b"SF:/truncated.c\nDA:7,", 2, b"DA record"),
