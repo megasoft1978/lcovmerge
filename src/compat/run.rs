@@ -13,6 +13,8 @@ use std::path::Path;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
+#[path = "function_spill.rs"]
+mod function_spill;
 #[path = "line_spill.rs"]
 mod line_spill;
 #[path = "merge.rs"]
@@ -21,7 +23,6 @@ mod merge;
 mod policy;
 #[path = "record.rs"]
 mod record;
-#[cfg(test)]
 #[path = "sort.rs"]
 mod sort;
 #[path = "source.rs"]
