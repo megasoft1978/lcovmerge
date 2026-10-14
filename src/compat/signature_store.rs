@@ -2,13 +2,14 @@
 use crate::common::{check_cancelled, Error};
 use std::cmp::Ordering;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const IO: usize = 1024;
+const WRITE_BUF: usize = 1024;
 const DESC: usize = 32;
-const MIN_BUDGET: usize = DESC * 2 + IO * 2;
+const MIN_BUDGET: usize = DESC * 2 + IO * 2 + WRITE_BUF;
 
 #[derive(Clone, Copy, Default)]
 struct D {
@@ -81,14 +82,17 @@ fn cmp_sig(file: &mut File, a: D, b: D, x: &mut [u8], y: &mut [u8]) -> Result<Or
     Ok(a.len.cmp(&b.len))
 }
 fn cmp_order(file: &mut File, a: D, b: D, x: &mut [u8], y: &mut [u8]) -> Result<Ordering, Error> {
-    Ok(cmp_sig(file, a, b, x, y)?.then(a.ordinal.cmp(&b.ordinal)))
+    Ok(a.len
+        .cmp(&b.len)
+        .then(cmp_sig(file, a, b, x, y)?)
+        .then(a.ordinal.cmp(&b.ordinal)))
 }
 
 pub struct Store {
+    data: BufWriter<File>,
+    meta: File,
     dir: Arc<tempfile::TempDir>,
     budget: usize,
-    data: File,
-    meta: File,
     offset: u64,
     ordinal: u64,
     active: Option<(u64, u64)>,
@@ -107,9 +111,9 @@ pub struct Rank {
     pub length: u64,
 }
 pub struct Cursor {
-    _dir: Arc<tempfile::TempDir>,
     data: File,
     desc: File,
+    _dir: Arc<tempfile::TempDir>,
     budget: usize,
     prev: Option<D>,
     rank: u64,
@@ -134,17 +138,21 @@ impl Store {
             .map_err(err)?;
         let meta = File::create(dir.path().join("meta")).map_err(err)?;
         Ok(Self {
+            data: BufWriter::with_capacity(WRITE_BUF, data),
+            meta,
             dir,
             budget,
-            data,
-            meta,
             offset: 0,
             ordinal: 0,
             active: None,
         })
     }
-    pub fn begin(&mut self, id: u64) {
+    pub fn begin(&mut self, id: u64) -> Result<(), Error> {
+        if self.active.is_some() {
+            return Err(err("begin inside signature"));
+        }
         self.active = Some((id, 0));
+        Ok(())
     }
     pub fn push_kind(&mut self, k: u8) -> Result<(), Error> {
         cancelled()?;
@@ -157,13 +165,14 @@ impl Store {
             b'b' | b'e' | b'f' => k,
             _ => return Err(err("invalid signature kind")),
         };
-        self.data
-            .seek(SeekFrom::Start(self.offset + *n))
-            .map_err(err)?;
-        self.data.write_all(&[b]).map_err(err)?;
-        *n = n
+        let next = n
             .checked_add(1)
             .ok_or_else(|| err("signature length overflow"))?;
+        self.offset
+            .checked_add(next)
+            .ok_or_else(|| err("signature offset overflow"))?;
+        self.data.write_all(&[b]).map_err(err)?;
+        *n = next;
         let _ = id;
         Ok(())
     }
@@ -173,6 +182,7 @@ impl Store {
             .active
             .take()
             .ok_or_else(|| err("end outside signature"))?;
+        self.data.flush().map_err(err)?;
         write_d(
             &mut self.meta,
             D {
@@ -196,8 +206,9 @@ impl Store {
         if self.active.is_some() {
             return Err(err("unfinished signature"));
         }
+        self.data.flush().map_err(err)?;
         self.meta.flush().map_err(err)?;
-        let cap = (self.budget - IO * 2) / (DESC * 2);
+        let cap = (self.budget - IO * 2 - WRITE_BUF) / (DESC * 2);
         if cap == 0 {
             return Err(err(
                 "budget cannot hold descriptor chunks and comparison buffers",
@@ -209,7 +220,13 @@ impl Store {
             let mut v = Vec::with_capacity(cap);
             while v.len() < cap {
                 match read_d(&mut src)? {
-                    Some(d) => v.push(d),
+                    Some(d) => {
+                        d.off
+                            .checked_add(d.len)
+                            .filter(|end| *end <= self.offset)
+                            .ok_or_else(|| err("invalid signature range"))?;
+                        v.push(d)
+                    }
                     None => break,
                 }
             }
@@ -226,7 +243,18 @@ impl Store {
             }
             runs += 1;
         }
-        let fan = ((self.budget - IO * 2) / DESC).min(32).max(2);
+        let mut fan = ((self.budget - IO * 2 - WRITE_BUF)
+            / (DESC + std::mem::size_of::<Option<D>>() + std::mem::size_of::<File>()))
+        .min(32)
+        .max(2);
+        #[cfg(unix)]
+        {
+            let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } == 0 {
+                let soft = unsafe { limit.assume_init().rlim_cur };
+                fan = fan.min((soft as usize).saturating_sub(16).max(2));
+            }
+        }
         let mut pass = 0;
         while runs > 1 {
             cancelled()?;
@@ -337,9 +365,9 @@ impl Ranked {
             File::open(path(self.dir.path(), self.pass, 0)).map_err(err)?
         };
         Ok(Cursor {
-            _dir: self.dir.clone(),
             data: File::open(&self.data).map_err(err)?,
             desc,
+            _dir: self.dir.clone(),
             budget: self.budget,
             prev: None,
             rank: 0,
@@ -356,6 +384,27 @@ impl Cursor {
             self.done = true;
             return Ok(None);
         };
+        let size = self.data.metadata().map_err(err)?.len();
+        let end = d
+            .off
+            .checked_add(d.len)
+            .ok_or_else(|| err("signature range overflow"))?;
+        if end > size {
+            return Err(err("truncated signature range"));
+        }
+        if self.prev.is_none() || self.prev.is_some() {
+            let mut left = d.len;
+            self.data.seek(SeekFrom::Start(d.off)).map_err(err)?;
+            let mut buf = [0; IO];
+            while left > 0 {
+                let n = left.min(IO as u64) as usize;
+                self.data.read_exact(&mut buf[..n]).map_err(err)?;
+                if buf[..n].iter().any(|b| !matches!(*b, b'b' | b'e' | b'f')) {
+                    return Err(err("invalid kind in signature data"));
+                }
+                left -= n as u64;
+            }
+        }
         if let Some(p) = self.prev {
             let mut x = vec![0; IO];
             let mut y = vec![0; IO];
@@ -381,7 +430,7 @@ mod tests {
     #[test]
     fn long_exact_rank_and_cursor_lifetime() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 2112).unwrap();
+        let mut s = Store::new(p.path(), 3136).unwrap();
         let a = vec![b'e'; 30000];
         for (id, bytes) in [
             (1, a.clone()),
@@ -394,7 +443,7 @@ mod tests {
             (4, vec![b'b'; 8]),
             (5, vec![b'f'; 2]),
         ] {
-            s.begin(id);
+            s.begin(id).unwrap();
             for b in bytes {
                 s.push_kind(b).unwrap()
             }
@@ -422,9 +471,9 @@ mod tests {
     #[test]
     fn normalize_and_truncated_data_is_rejected() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 2112).unwrap();
+        let mut s = Store::new(p.path(), 3136).unwrap();
         for (id, k) in [(1, b'v'), (2, b'b')] {
-            s.begin(id);
+            s.begin(id).unwrap();
             s.push_kind(k).unwrap();
             s.end().unwrap()
         }
@@ -438,9 +487,9 @@ mod tests {
     #[test]
     fn many_runs_and_mixed_lengths() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 2112).unwrap();
+        let mut s = Store::new(p.path(), 3136).unwrap();
         for i in (0..500u64).rev() {
-            s.begin(i);
+            s.begin(i).unwrap();
             for b in 0..(i % 13) {
                 s.push_kind(if b % 2 == 0 { b'e' } else { b'f' }).unwrap()
             }
@@ -453,5 +502,25 @@ mod tests {
             n += 1
         }
         assert_eq!(n, 500);
+    }
+    #[test]
+    fn shorter_signature_sorts_first_and_nested_begin_fails() {
+        let p = tempfile::tempdir().unwrap();
+        let mut s = Store::new(p.path(), 3136).unwrap();
+        s.begin(1).unwrap();
+        assert!(s.begin(9).is_err());
+        for b in b"fff" {
+            s.push_kind(*b).unwrap();
+        }
+        s.end().unwrap();
+        s.begin(2).unwrap();
+        for b in b"bfff" {
+            s.push_kind(*b).unwrap();
+        }
+        s.end().unwrap();
+        let r = s.finish().unwrap();
+        let mut c = r.cursor().unwrap();
+        assert_eq!(c.next().unwrap().unwrap().id, 1);
+        assert_eq!(c.next().unwrap().unwrap().id, 2);
     }
 }
