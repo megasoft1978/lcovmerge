@@ -8,6 +8,7 @@ pub(super) struct Checker {
     tmpdir: PathBuf,
     each: usize,
     jobs: usize,
+    last_multiple: Option<(String, u64)>,
 }
 struct Scope {
     key: Vec<u8>,
@@ -46,7 +47,23 @@ impl Checker {
             tmpdir: tmpdir.to_owned(),
             each,
             jobs,
+            last_multiple: None,
         })
+    }
+    pub(super) fn mark_multiple(&mut self, source: &str, input: u64) -> Result<(), Error> {
+        if self
+            .last_multiple
+            .as_ref()
+            .is_some_and(|(old, id)| old == source && *id == input)
+        {
+            return Ok(());
+        }
+        let mut key = function_check::prefix(source, input)?;
+        key.push(0);
+        put_string(&mut key, "")?;
+        self.rows.push(key, vec![1])?;
+        self.last_multiple = Some((source.to_owned(), input));
+        Ok(())
     }
     pub(super) fn push_line(
         &mut self,
@@ -140,6 +157,10 @@ fn walk(
         let rank = byte(&mut key)?;
         if rank == 0 {
             let tc = string(&mut key)?;
+            if key.is_empty() && row.value == [1] {
+                scope.as_mut().unwrap().multiple = true;
+                continue;
+            }
             if !key.is_empty() || !row.value.is_empty() {
                 return Err(corrupt());
             }

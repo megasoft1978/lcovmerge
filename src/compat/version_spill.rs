@@ -80,11 +80,20 @@ impl Reducer {
 
     /// Return one row per source. Conflicting later producers are skipped when
     /// the request policy allows recovery; the first producer always wins.
+    #[cfg(test)]
     pub(super) fn finish(self, req: &super::Request) -> Result<sort::Sorted, Error> {
+        self.finish_eligible(req, None)
+    }
+    pub(super) fn finish_eligible(
+        self,
+        req: &super::Request,
+        mut eligibility: Option<&mut super::eligibility::Index>,
+    ) -> Result<sort::Sorted, Error> {
         let sorted = self.sorter.finish()?;
         let mut cursor = sorted.cursor()?;
         let mut reduced = sort::Sorter::new(&req.resources.tmpdir, self.budget, self.jobs)?;
         let mut group: Option<(Vec<u8>, Vec<u8>)> = None;
+        let mut local: Option<(Vec<u8>, Vec<u8>)> = None;
         while let Some(row) = cursor.next()? {
             let end = row
                 .key
@@ -97,6 +106,29 @@ impl Reducer {
             }
             let source_key = row.key[..end].to_vec();
             let (_vlen, version, label, line) = decode_value(&row.value)?;
+            let local_key = row.key[..end + 8].to_vec();
+            if let Some((key, first)) = local.as_ref().filter(|(key, _)| *key == local_key) {
+                let _ = key;
+                if *first != version {
+                    let error = policy::at(
+                        policy::Kind::Version,
+                        label,
+                        line,
+                        "conflicting source versions within input",
+                    );
+                    if !policy::can_recover(req, &error) {
+                        return Err(error);
+                    }
+                }
+            } else {
+                local = Some((local_key, version.clone()));
+            }
+            if let Some(index) = eligibility.as_deref_mut() {
+                let input = u64::from_be_bytes(row.key[end..end + 8].try_into().unwrap());
+                if !index.source(decode_source(&source_key)?, input)?.alive {
+                    continue;
+                }
+            }
             if let Some((prior_key, prior_version)) = group.as_ref() {
                 if *prior_key != source_key {
                     reduced.push(prior_key.clone(), prior_version.clone())?;

@@ -98,7 +98,9 @@ mixed file/stdin input, is staged to disk with fixed-size buffers and then uses 
 same eligible executors as a regular file. Source versions use bounded producer-order
 reduction and propagate across retained testcases. Eligible checksum inputs use a
 source-line sort and disk-backed source index; even one checksum group larger
-than memory is streamed. Branch sections without DA and MC/DC-only sections still use the
+than memory is streamed. Branch-only sections without DA use a disk-backed
+input/source/testcase eligibility index, preserving source-summary checks while
+omitting removed testcases. Removed testcases with functions or MC/DC still use the
 collector; large working sets can exceed its record budget. Completing those
 bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.

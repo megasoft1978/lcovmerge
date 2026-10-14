@@ -40,7 +40,7 @@ def expected_records(spec: dict):
             group = f"{'U' if i % 5 == 0 else ''}{spec['mcdc_conditions']}"
             yield f"MCDC:1,{group},t,{spec['hits']},{i},condition_{i:08d}\n"
             yield f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n"
-    elif shape != "lines":
+    elif shape not in ("lines", "branches-no-da"):
         raise AssertionError(shape)
     yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
 
@@ -198,6 +198,11 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                 group = f"{kind}{'U' if i % 5 == 0 else ''}70000"
                 out.write(f"BRDA:1,{group},branch_{i:08d},{hits}\n")
             lines = 1
+        elif shape == "branches-no-da":
+            out.write(f"DA:1,0\nend_of_record\nTN:removed\nSF:{source}\n")
+            for i in range(size):
+                out.write(f"BRDA:2,70000,branch_{i:08d},0\n")
+            lines, hits = 1, 0
         elif shape == "mcdc":
             conditions = size
             for i in range(conditions):
@@ -205,7 +210,7 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
                 out.write(f"MCDC:1,{group},t,{hits},{i},condition_{i:08d}\n")
                 out.write(f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n")
             lines = 1
-        if shape not in ("lines", "checksums"):
+        if shape not in ("lines", "checksums", "branches-no-da"):
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
         out.write("end_of_record\n")
@@ -265,10 +270,14 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
                "-" if spec.get("stdin") else str(root / f"{name}.info"), "-o", str(output)]
-    if spec["shape"] in ("lines", "mcdc", "branches", "checksums"):
+    if spec["shape"] in ("lines", "mcdc", "branches", "checksums", "branches-no-da"):
         command.append("--no-function-coverage")
-    if spec["shape"] == "branches":
+    if spec["shape"] in ("branches", "branches-no-da"):
         command.append("--branch-coverage")
+    if spec["shape"] == "branches-no-da":
+        command += ["--ignore-errors", "inconsistent"]
+    if spec.get("extra_input"):
+        command += ["-a", str(root / spec["extra_input"])]
     if spec["shape"] == "mcdc":
         command.append("--mcdc-coverage")
     if spec["shape"] == "checksums":
@@ -357,14 +366,15 @@ def main() -> int:
              ("alias-group", "aliases", args.target_bytes // 21),
              ("mcdc-group", "mcdc", args.target_bytes // 70),
              ("branch-block", "branches", args.target_bytes // 28),
-             ("checksum-group", "checksums", args.target_bytes // 28))
-    valid_cases = {name for name, _, _ in cases} | {"lines-stdin"}
+             ("checksum-group", "checksums", args.target_bytes // 28),
+             ("branches-no-da", "branches-no-da", args.target_bytes // 28))
+    valid_cases = {name for name, _, _ in cases} | {"lines-stdin", "lines-mixed-stdin"}
     if args.case and set(args.case) - valid_cases:
         ap.error("unknown case: " + ", ".join(sorted(set(args.case) - valid_cases)))
     results, failures = [], []
     stdin_spec = None
     for name, shape, size in cases:
-        if args.case and name not in args.case and not (name == "lines" and "lines-stdin" in args.case):
+        if args.case and name not in args.case and not (name == "lines" and set(args.case) & {"lines-stdin", "lines-mixed-stdin"}):
             continue
         source = root / f"{name}.c"; source.write_text("hello\n" if shape == "checksums" else "int x;\n")
         spec = write_case(root / f"{name}.info", source, shape, size)
@@ -386,6 +396,15 @@ def main() -> int:
         if not row.get("output_verified"):
             failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
             print(f"FAIL lines-stdin: {row.get('failure')}", file=sys.stderr)
+    if not args.case or "lines-mixed-stdin" in args.case:
+        assert stdin_spec is not None
+        (root / "mixed-extra.info").write_text(f"TN:bounded\nSF:{stdin_spec['source']}\nDA:1,0\nend_of_record\n")
+        mixed = dict(stdin_spec, stdin=True, input_name="lines.info", extra_input="mixed-extra.info")
+        row = run_case(binary, root, config, tempdir, "lines-mixed-stdin", mixed, args.timeout)
+        results.append(row)
+        if not row.get("output_verified"):
+            failures.append({k: row.get(k) for k in ("name", "failure", "argv", "stdout_log", "stderr_log", "output")})
+            print(f"FAIL lines-mixed-stdin: {row.get('failure')}", file=sys.stderr)
     report = {"binary": str(binary), "byte_budget": BYTE_BUDGET, "minimum_input_bytes": MIN_INPUT_BYTES,
               "cases": results, "failures": failures}
     (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")

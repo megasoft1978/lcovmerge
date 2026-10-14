@@ -154,7 +154,10 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `checksum-duplicate-valid-invalid` / `checksum-duplicate-invalid-valid` | With `--checksum`, each duplicate DA checksum is checked against source in producer order; a wrong checksum errors regardless of valid-hash order | error |
 | `checksum-missing-recovered-valid` / `checksum-valid-then-missing-conflict` | Missing DA checksums warn under version recovery; a later valid checksum is selected and output is DA count 3 with the source hash | success |
 | `ghost-no-da-function-alias` | Function/branch-only testcase has no valid DA and the input errors as empty | error |
-| `ghost-no-da-function-alias-shared-source` / `ghost-no-da-function-alias-error-effects` | A DA testcase and same-source zero-DA testcase with function alias and BRDA: empty recovery filters the latter; output has only keep, FNF=0/FNH=0, DA:1,1, with and without consistency checking | success |
+| `cross-testcase-function-branch-shared-source` / `cross-testcase-function-branch-consistency` | Both testcases have DA; the zero-hit DA testcase retains its hit function and branch because the other testcase supplies source-wide line coverage | success |
+| `ghost-function-master-hit` / `ghost-function-master-zero` | A testcase without any DA retains function data in the source master; the hit case emits only the kept testcase with FNF=0/FNH=0, while zero-hit function data conflicts with its positive source line | success / error |
+| `ghost-function-master-auto` | Default function activation retains the removed testcase's source-level function presence and emits zero function summaries on its retained testcase | success |
+| `removed-branch-only-strict` / `removed-branch-only-recovery` | A removed testcase has BRDA on a missing source line; strict consistency fails, while recovery synthesizes a private source-summary DA and emits only the original kept testcase | error / success |
 | `branch-fn-synthesized-single` | Branch-derived DA is emitted for a single testcase and the function summary is FNF=1/FNH=1 | success |
 | `branch-fn-synthesized-multiple` | Branch-derived DA contributes to the source master summary but is omitted from a multi-testcase line output; function summary remains FNF=1/FNH=1 | success |
 | `modern-fna-line-mismatch-zero` | Strict consistency rejects FNA zero hits when its line is hit | error |
@@ -232,11 +235,13 @@ This removal does not bypass source-wide input validation: a separate input
 containing no valid DA records raises `empty` even if a later input has DA for
 the same SF. With `--ignore-errors empty` that input contributes no output.
 Its VER is discarded with its zero-DA testcase, so the later retained output
-has no VER. Function aliases and branches from a zero-DA testcase are checked
-before filtering; after empty recovery that testcase is removed and its aliases
-and branch records do not enter output. This fixture uses internally
-consistent counts, so it does not establish an inconsistency error for ghost
-metadata.
+has no VER. The cross-testcase function/branch cases contain a real `DA:1,0`
+in their second testcase; both testcases remain in output. Separate ghost
+function cases contain no DA in the removed testcase. Its positive function
+data survives in the source master but is omitted from testcase output; a
+zero-hit function conflicts with the positive source line. A branch-only ghost
+on a missing line also fails consistency unless `inconsistent` is ignored;
+recovery keeps its synthesized DA private to the source summary.
 With checksums enabled, each DA checksum is compared to source immediately.
 Bad hashes error in either duplicate-record order. Missing hashes produce a
 recoverable version warning; the valid hash from the other duplicate is kept
@@ -265,8 +270,11 @@ legacy functions, one very large alias group, a large MC/DC group, and one huge
 branch block with sparse ID 70000 and mixed exception/unreachable records.
 A checksum workload puts over a million producers into one source-line group
 and verifies its selected checksum, accumulated count, and source version.
-An eighth case reuses the DA fixture through stdin and verifies every output
-record again. Use `--case checksum-group` to run only that workload.
+Two cases reuse the DA fixture through sole and mixed stdin and verify every
+output record again. A tenth case puts over a million branches into a testcase
+without DA; recovery retains only the original testcase's DA output and keeps
+the generated point private to the source summary. Use `--case checksum-group`
+or `--case branches-no-da` to run only those workloads.
 The validator streams the output against
 independently generated expectations, checking every DA value and line,
 function declaration, alias, hit, ID, and summary. LCOV 2.6 normalizes legacy

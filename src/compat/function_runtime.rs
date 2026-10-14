@@ -1,7 +1,7 @@
 //! Bounded DA and function compatibility executor.
 use super::{
-    branch_check, branch_spill, checksum_spill, function_check, function_spill, line_spill,
-    mcdc_spill, policy, sort, version_spill, Request, StopOnCancel,
+    branch_check, branch_spill, checksum_spill, eligibility, function_check, function_spill,
+    line_spill, mcdc_spill, policy, sort, version_spill, Request, StopOnCancel,
 };
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
@@ -23,7 +23,15 @@ pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error>
     let budget = o.mem_limit;
     #[cfg(not(test))]
     let budget = o.mem_limit.max(crate::common::MIN_WORKER_BUDGET);
-    execute(req, budget).map(|result| Some(Ok(result)))
+    Ok(match execute(req, budget)? {
+        Outcome::Executed => Some(Ok(())),
+        Outcome::Collector => None,
+    })
+}
+
+enum Outcome {
+    Executed,
+    Collector,
 }
 
 fn scan(req: &Request) -> Result<bool, Error> {
@@ -47,7 +55,6 @@ fn scan(req: &Request) -> Result<bool, Error> {
         let mut open = false;
         let mut saw_da = false;
         let mut saw_mcdc = false;
-        let mut saw_branches = false;
         let mut line = 0u64;
         loop {
             check_cancelled()?;
@@ -87,14 +94,13 @@ fn scan(req: &Request) -> Result<bool, Error> {
                 open = true;
                 saw_da = false;
                 saw_mcdc = false;
-                saw_branches = false;
             } else if s == "end_of_record" {
                 if !open {
                     return Ok(false);
                 }
                 // Sections without DA currently require the collector's
                 // source/testcase metadata propagation path.
-                if (saw_mcdc || saw_branches) && !saw_da {
+                if saw_mcdc && !saw_da {
                     return Ok(false);
                 }
                 open = false;
@@ -110,7 +116,6 @@ fn scan(req: &Request) -> Result<bool, Error> {
                 }
                 saw_da |= s.starts_with("DA:");
                 saw_mcdc |= req.mcdc_coverage && s.starts_with("MCDC:");
-                saw_branches |= req.resources.branch_coverage && s.starts_with("BRDA:");
             } else {
                 return Ok(false);
             }
@@ -122,11 +127,11 @@ fn scan(req: &Request) -> Result<bool, Error> {
     Ok(true)
 }
 
-fn execute(req: &Request, memory: usize) -> Result<(), Error> {
+fn execute(req: &Request, memory: usize) -> Result<Outcome, Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
-    let reserve = 3 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
-    let slots = (4 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
+    let reserve = 5 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
+    let slots = (5 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
         if req.check_data_consistency && o.function_data {
             4
         } else {
@@ -141,6 +146,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         (memory / (3 * (MAX_LINE + crate::common::IO_BLOCK + 4096))).clamp(2, 32),
     )?;
     let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+    let mut eligibility = eligibility::Recorder::new(&o.tmpdir, each)?;
     let checksums_enabled = req.checksum || o.strict_checksum;
     let mut checksums = if checksums_enabled {
         Some(checksum_spill::Processor::new(&o.tmpdir, each, fanin)?)
@@ -180,6 +186,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         let mut section = 0u64;
         let mut ordinal = 0u64;
         let mut line_no = 0u64;
+        let mut section_has_da = false;
         loop {
             check_cancelled()?;
             buf.clear();
@@ -244,6 +251,15 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 } else {
                     std::mem::take(&mut tc)
                 };
+                section_has_da = false;
+                if selected {
+                    eligibility.push(
+                        source.as_ref().unwrap(),
+                        input_id as u64,
+                        &section_tc,
+                        false,
+                    )?;
+                }
                 continue;
             }
             if s == "end_of_record" {
@@ -328,6 +344,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                     Ok(()) => {}
                 }
                 if let Some((ln, (count, sum))) = sec.lines.into_iter().next() {
+                    if !section_has_da {
+                        eligibility.push(src, input_id as u64, &section_tc, true)?;
+                        section_has_da = true;
+                    }
                     let row = line_spill::Entry {
                         kind: 1,
                         source: src.clone(),
@@ -479,7 +499,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
     }
-    let version_rows = versions.finish(req)?;
+    let mut eligibility = eligibility.finish(req)?;
+    let version_rows = versions.finish_eligible(req, Some(&mut eligibility))?;
     let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
@@ -505,6 +526,14 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         };
         if row.name.is_empty() {
             continue;
+        }
+        if !eligibility.source(&row.source, row.input)?.alive {
+            continue;
+        }
+        if !eligibility.testcase(&row.source, row.input, &row.testcase)? {
+            // Preserve input-master functions through the collector until the
+            // private master alias stream has a bounded representation.
+            return Ok(Outcome::Collector);
         }
         if (row.start == 0 || row.end == Some(0))
             && recover(
@@ -657,6 +686,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let function_profiles_sorted = function_profiles.finish()?;
     let function_sources_sorted = function_sources.finish()?;
     let mut generated_lines = None;
+    let mut has_master_branch_coverpoints = false;
     let branch_rows = if let Some(branches) = branches {
         let mut checker = branch_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
         let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
@@ -664,10 +694,16 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             checker.push_line(&row.source, &row.testcase, row.input, row.line, row.count)?;
         }
         drop(reader);
-        let rows = branches.finish_observed(
+        let rows = branches.finish_eligible(
             req,
-            |src, tc, input, line, signature, occurrence, position, hit| {
-                checker.push_branch(src, tc, input, line, signature, occurrence, position, hit)
+            Some(&mut eligibility),
+            |src, tc, input, line, signature, occurrence, position, hit, unreachable, multiple| {
+                has_master_branch_coverpoints |= !unreachable;
+                if multiple {
+                    checker.mark_multiple(src, input)?;
+                }
+                checker.push_branch(src, tc, input, line, signature, occurrence, position, hit)?;
+                Ok(true)
             },
         )?;
         let generated = checker.finish(req)?;
@@ -754,7 +790,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     drop(names);
     let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
-    let mut has_branch_coverpoints = false;
+    let mut has_branch_coverpoints = has_master_branch_coverpoints;
     let mut has_mcdc_coverpoints = false;
     if let Some(rows) = branch_rows {
         let mut cursor = rows.cursor()?;
@@ -1124,7 +1160,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             stats.runs, stats.passes, stats.bytes_read, stats.bytes_written, stats.workers
         );
     }
-    write_final(req, final_rows.cursor()?)
+    write_final(req, final_rows.cursor()?)?;
+    Ok(Outcome::Executed)
 }
 
 fn write_final(req: &Request, mut cursor: sort::Cursor) -> Result<(), Error> {

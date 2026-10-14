@@ -128,7 +128,7 @@ pub fn write_sections(
 ) -> Result<(), Error> {
     let sources_with_functions: std::collections::HashSet<&str> = sections
         .iter()
-        .filter(|s| !s.functions.is_empty())
+        .filter(|s| !s.functions.is_empty() || s.saw_function_data)
         .map(|s| s.source.as_str())
         .collect();
     for s in sections {

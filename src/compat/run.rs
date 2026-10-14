@@ -21,6 +21,8 @@ mod checksum_spill;
 #[allow(dead_code)] // Kept private until spill execution is introduced.
 #[path = "codec.rs"]
 mod codec;
+#[path = "eligibility.rs"]
+mod eligibility;
 #[path = "function_check.rs"]
 mod function_check;
 #[path = "function_runtime.rs"]
@@ -1062,7 +1064,11 @@ fn parse_input(
     )?;
     for section in local {
         // LCOV discards a source with function records but no line coverpoints.
-        if section.lines.is_empty() && section.branches.is_empty() && section.mcdc.is_empty() {
+        if section.lines.is_empty()
+            && section.branches.is_empty()
+            && section.mcdc.is_empty()
+            && !section.saw_function_data
+        {
             continue;
         }
         finish_section(section, sections, indexes, held, limit, label, 0, req)?;
@@ -1579,7 +1585,7 @@ fn finish_section(
             }
         }
     }
-    if !s.saw_coverpoint || !s.selected {
+    if (!s.saw_coverpoint && !s.saw_function_data) || !s.selected {
         return Ok(());
     }
     if s.discarded_testcase {

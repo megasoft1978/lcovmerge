@@ -93,10 +93,37 @@ impl Reducer {
         self.finish_observed(req, |_, _, _, _, _, _, _, _| Ok(()))
     }
 
+    #[cfg(test)]
     pub(super) fn finish_observed(
         self,
-        _req: &Request,
+        req: &Request,
         mut observe: impl FnMut(&str, &str, u64, u64, u64, u64, u64, bool) -> Result<(), Error>,
+    ) -> Result<Sorted, Error> {
+        self.finish_eligible(
+            req,
+            None,
+            |src, tc, input, line, sig, occ, pos, hit, _, _| {
+                observe(src, tc, input, line, sig, occ, pos, hit)?;
+                Ok(true)
+            },
+        )
+    }
+    pub(super) fn finish_eligible(
+        self,
+        _req: &Request,
+        mut eligibility: Option<&mut super::eligibility::Index>,
+        mut observe: impl FnMut(
+            &str,
+            &str,
+            u64,
+            u64,
+            u64,
+            u64,
+            u64,
+            bool,
+            bool,
+            bool,
+        ) -> Result<bool, Error>,
     ) -> Result<Sorted, Error> {
         let Self {
             raw,
@@ -117,6 +144,15 @@ impl Reducer {
         while let Some(item) = row.take() {
             check_cancelled()?;
             let current = decode_raw(&item.key, &item.value)?;
+            if let Some(index) = eligibility.as_deref_mut() {
+                if !index
+                    .source(&current.identity.source, current.identity.input)?
+                    .alive
+                {
+                    row = raw_cursor.next()?;
+                    continue;
+                }
+            }
             if group
                 .as_ref()
                 .is_none_or(|g| g.identity != current.identity)
@@ -274,7 +310,16 @@ impl Reducer {
                 }
                 block = Some(current_block);
             }
-            observe(
+            let (keep, multiple) = if let Some(index) = eligibility.as_deref_mut() {
+                let status = index.source(&tagged_row.source, tagged_row.input)?;
+                (
+                    index.testcase(&tagged_row.source, tagged_row.input, &tagged_row.tc)?,
+                    status.multiple,
+                )
+            } else {
+                (true, false)
+            };
+            let observed = observe(
                 &tagged_row.source,
                 &tagged_row.tc,
                 tagged_row.input,
@@ -283,7 +328,13 @@ impl Reducer {
                 occurrence,
                 tagged_row.position,
                 tagged_row.hits.is_some_and(|hits| hits > 0),
+                tagged_row.unreachable,
+                multiple,
             )?;
+            if !keep || !observed {
+                row = cursor.next()?;
+                continue;
+            }
             fold.push(
                 &tagged_row.source,
                 &tagged_row.tc,
