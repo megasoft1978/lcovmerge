@@ -4,7 +4,9 @@ use std::cmp::Ordering;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 
 const MAX_KEY: usize = 4 << 20;
 const MAX_VALUE: usize = 2 << 20;
@@ -29,11 +31,17 @@ struct Item {
     ordinal: u64,
 }
 pub(super) struct Sorter {
-    dir: tempfile::TempDir,
+    dir: Arc<tempfile::TempDir>,
     budget: usize,
     held: usize,
     batch: Vec<Item>,
     batch_cap: usize,
+    batch_budget: usize,
+    requested: usize,
+    handles: Vec<JoinHandle<Result<u64, Error>>>,
+    workers: usize,
+    active: Arc<AtomicUsize>,
+    max_workers: Arc<AtomicUsize>,
     runs: u64,
     passes: u64,
     read: u64,
@@ -147,13 +155,19 @@ impl Sorter {
             .prefix("lcov-meta-")
             .tempdir_in(tmpdir)
             .map_err(err)?;
-        let _requested_workers = jobs.max(1);
+        let requested = jobs.max(1).min((budget / (IO + OVERHEAD + 1)).max(1));
         Ok(Self {
-            dir,
+            dir: Arc::new(dir),
             budget,
             held: 0,
             batch: Vec::new(),
             batch_cap: 0,
+            batch_budget: budget / (requested + 1),
+            requested,
+            handles: Vec::with_capacity(requested),
+            workers: 0,
+            active: Arc::new(AtomicUsize::new(0)),
+            max_workers: Arc::new(AtomicUsize::new(0)),
             runs: 0,
             passes: 0,
             read: 0,
@@ -185,6 +199,13 @@ impl Sorter {
         if minimum > self.budget {
             return Err(err(format!("atomic row and merge buffers require at least {minimum} bytes; increase --mem-limit")));
         }
+        if minimum > self.batch_budget {
+            while !self.handles.is_empty() {
+                self.join_one()?;
+            }
+            self.requested = 1;
+            self.batch_budget = self.budget;
+        }
         let item_size = std::mem::size_of::<Item>();
         let needs_growth = self.batch.len() == self.batch.capacity();
         let requested = if needs_growth {
@@ -206,7 +227,7 @@ impl Sorter {
             .saturating_add(growth)
             .saturating_add(relocation)
             .saturating_add(IO)
-            > self.budget
+            > self.batch_budget
         {
             self.flush()?;
             self.batch = Vec::new();
@@ -221,7 +242,13 @@ impl Sorter {
                 .saturating_add(n)
                 .saturating_add(requested.saturating_mul(item_size))
                 .saturating_add(IO);
-            if peak > self.budget {
+            if peak > self.batch_budget {
+                if self.handles.is_empty() && self.requested > 1 {
+                    self.requested = 1;
+                    self.batch_budget = self.budget;
+                }
+            }
+            if peak > self.batch_budget {
                 return Err(err(
                     "atomic row plus vector growth exceeds budget; increase --mem-limit",
                 ));
@@ -249,21 +276,53 @@ impl Sorter {
             return Ok(());
         }
         cancelled()?;
-        self.batch.sort_unstable_by(cmp);
-        let p = run_path(self.dir.path(), 0, self.runs);
-        let mut f = BufWriter::with_capacity(IO, File::create(p).map_err(err)?);
-        for item in &self.batch {
-            write_item(&mut f, item, &mut self.written)?;
+        while self.handles.len() >= self.requested {
+            self.join_one()?;
         }
-        f.flush().map_err(err)?;
+        let id = self.runs;
         self.runs += 1;
-        self.batch.clear();
-        self.batch_cap = self.batch.capacity();
-        self.held = self.batch_cap * std::mem::size_of::<Item>();
+        let path = run_path(self.dir.path(), 0, id);
+        let batch = std::mem::take(&mut self.batch);
+        let active = self.active.clone();
+        let max_workers = self.max_workers.clone();
+        self.held = 0;
+        self.batch_cap = 0;
+        self.handles.push(thread::spawn(move || {
+            let now = active.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+            max_workers.fetch_max(now, AtomicOrdering::Relaxed);
+            let result = (|| {
+                cancelled()?;
+                let mut batch = batch;
+                batch.sort_unstable_by(cmp);
+                let mut bytes = 0;
+                let mut f = BufWriter::with_capacity(IO, File::create(path).map_err(err)?);
+                for item in &batch {
+                    write_item(&mut f, item, &mut bytes)?;
+                }
+                f.flush().map_err(err)?;
+                Ok(bytes)
+            })();
+            active.fetch_sub(1, AtomicOrdering::Relaxed);
+            result
+        }));
+        self.workers = self.max_workers.load(AtomicOrdering::Relaxed);
         Ok(())
+    }
+    fn join_one(&mut self) -> Result<(), Error> {
+        let h = self.handles.remove(0);
+        match h.join() {
+            Ok(result) => {
+                self.written = self.written.saturating_add(result?);
+                Ok(())
+            }
+            Err(_) => Err(err("sort worker panicked")),
+        }
     }
     pub(super) fn finish(mut self) -> Result<Sorted, Error> {
         self.flush()?;
+        while !self.handles.is_empty() {
+            self.join_one()?;
+        }
         let mut count = self.runs;
         let mut pass = 0u64;
         // Reserve two complete maximum-sized row heads, their vector overhead, and I/O space.
@@ -325,7 +384,7 @@ impl Sorter {
             self.passes += 1;
         }
         Ok(Sorted {
-            dir: Arc::new(self.dir),
+            dir: self.dir.clone(),
             final_runs: count,
             final_pass: pass,
             max_frame: self.max_frame,
@@ -334,9 +393,16 @@ impl Sorter {
                 passes: self.passes,
                 bytes_read: self.read,
                 bytes_written: self.written,
-                workers: 1,
+                workers: self.max_workers.load(AtomicOrdering::Relaxed).max(1),
             },
         })
+    }
+}
+impl Drop for Sorter {
+    fn drop(&mut self) {
+        for handle in self.handles.drain(..) {
+            let _ = handle.join();
+        }
     }
 }
 impl Sorted {
@@ -448,6 +514,44 @@ mod tests {
             Err(e) => assert!(e.message.contains("truncated")),
             Ok(_) => panic!("truncated frame accepted"),
         }
+    }
+
+    #[test]
+    fn parallel_batches_are_deterministic_and_report_workers() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut expected = None;
+        for jobs in [1, 2, 4] {
+            let mut sorter = Sorter::new(parent.path(), 32768, jobs).unwrap();
+            for i in (0..4096u32).rev() {
+                sorter
+                    .push((i % 17).to_be_bytes().to_vec(), i.to_le_bytes().to_vec())
+                    .unwrap();
+            }
+            let sorted = sorter.finish().unwrap();
+            assert!(sorted.stats().runs > 3);
+            assert_eq!(sorted.stats().workers, jobs);
+            let mut cursor = sorted.cursor().unwrap();
+            let mut rows = Vec::new();
+            while let Some(row) = cursor.next().unwrap() {
+                rows.push((row.key, row.value));
+            }
+            if let Some(ref prior) = expected {
+                assert_eq!(&rows, prior);
+            }
+            expected = Some(rows);
+        }
+        assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn worker_write_error_joins_and_cleans_tempdir() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut sorter = Sorter::new(parent.path(), 16384, 2).unwrap();
+        sorter.push(b"a".to_vec(), b"b".to_vec()).unwrap();
+        fs::create_dir(run_path(sorter.dir.path(), 0, 0)).unwrap();
+        sorter.flush().unwrap();
+        assert!(sorter.finish().is_err());
+        assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
     }
 }
 
