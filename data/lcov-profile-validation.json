@@ -13561,7 +13561,7 @@
   "resource_measurement": {
     "cpu": "wait4 user plus system CPU",
     "rss": "wait4 ru_maxrss; not summed process-tree RSS",
-    "temporary_disk": "sampled every 20ms; shorter peaks may be missed",
+    "temporary_disk": "selected --tempdir only, sampled every20ms; excludes output-parent staging and can miss shorter peaks",
     "wall": "includes CLI startup; excludes normalization after process exit"
   },
   "run_url": "https://github.com/megasoft1978/lcovmerge/actions/runs/38633742948",

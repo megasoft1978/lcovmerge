@@ -219,7 +219,9 @@ impl<W: Write> OutputState<W> {
                         // Both u64 fields fit in 20 decimal bytes. Assemble
                         // the common DA row once instead of repeatedly entering
                         // the writer for tags, separators, and individual fields.
-                        let mut line = [0u8; 45];
+                        // Include a usual 32-byte checksum and the newline so
+                        // common rows enter the buffered writer only once.
+                        let mut line = [0u8; 78];
                         line[..3].copy_from_slice(b"DA:");
                         let mut end = 3;
                         let mut number = itoa::Buffer::new();
@@ -232,12 +234,18 @@ impl<W: Write> OutputState<W> {
                             line[end..end + digits.len()].copy_from_slice(digits);
                             end += digits.len();
                         }
-                        if !r.extra.is_empty() {
+                        if r.extra.len() > 32 {
                             self.writer.write_all(&line[..end])?;
                             self.writer.write_all(b",")?;
                             self.writer.write_all(r.extra.as_bytes())?;
                             self.writer.write_all(b"\n")?;
                         } else {
+                            if !r.extra.is_empty() {
+                                line[end] = b',';
+                                end += 1;
+                                line[end..end + r.extra.len()].copy_from_slice(r.extra.as_bytes());
+                                end += r.extra.len();
+                            }
                             line[end] = b'\n';
                             self.writer.write_all(&line[..end + 1])?;
                         }
@@ -381,11 +389,16 @@ mod tests {
     }
     #[test]
     fn da_maximum_width_fields_preserve_optional_checksum() {
-        for checksum in ["", "source-hash"] {
+        for checksum in [
+            String::new(),
+            "source-hash".into(),
+            "x".repeat(32),
+            "x".repeat(33),
+        ] {
             let mut record = row(DA, "x.c");
             record.a = u64::MAX;
             record.value = u64::MAX;
-            record.extra = checksum.into();
+            record.extra = checksum.clone();
             let mut output = OutputState::new(Vec::new());
             output.record(&record).unwrap();
             let suffix = if checksum.is_empty() {

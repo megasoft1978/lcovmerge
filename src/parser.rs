@@ -147,9 +147,13 @@ impl<R: BufRead> Parser<R> {
         record: &mut Option<Record>,
     ) -> Result<bool, Error> {
         loop {
-            if let Some(sink) = sink.as_mut() {
-                for diagnostic in self.take_diagnostics() {
-                    sink(&diagnostic)?;
+            // Normal records have no diagnostics. Avoid replacing and dropping
+            // an empty vector on every pass through the streaming parser.
+            if !self.diagnostics.is_empty() {
+                if let Some(sink) = sink.as_mut() {
+                    for diagnostic in self.take_diagnostics() {
+                        sink(&diagnostic)?;
+                    }
                 }
             }
             if let Some(row) = self.queue.pop_front() {

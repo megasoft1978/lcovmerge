@@ -51,6 +51,40 @@ The temporary unpublished transport release is removed after those artifacts are
 retained. Results on a different host are reported separately from earlier local
 measurements, including inconclusive or losing results.
 
+### Isolated native parity, 2026-10-14
+
+Candidate `9c3421c` was measured on an Apple M1 virtual macOS runner using the
+original frozen Rust binary and held-out inputs, plus a runner-native PGO rebuild
+of C1. Five preflight attempts were retained; only the fifth met the unchanged
+90% idle requirement. Each combination then used 99 seeded paired runs. Ratios
+are candidate elapsed time divided by baseline elapsed time; the acceptance
+rule requires the upper 95% interval bound to be at most 1.
+
+| Baseline | Input | Jobs | Rust / baseline (95% interval) | Result |
+| --- | --- | ---: | ---: | --- |
+| C1 | sorted | 1 | 0.990 [0.984, 0.997] | observed-pass |
+| C1 | sorted | 4 | 0.697 [0.689, 0.711] | observed-pass |
+| C1 | unsorted | 1 | 0.848 [0.844, 0.852] | observed-pass |
+| C1 | unsorted | 4 | 0.854 [0.849, 0.862] | observed-pass |
+| Frozen Rust | sorted | 1 | 1.009 [0.997, 1.015] | inconclusive |
+| Frozen Rust | sorted | 4 | 1.016 [1.007, 1.024] | regression |
+| Frozen Rust | unsorted | 1 | 0.987 [0.982, 0.992] | observed-pass |
+| Frozen Rust | unsorted | 4 | 0.985 [0.981, 0.992] | observed-pass |
+
+All C1 comparisons passed. Frozen-Rust sorted single-job parity remains
+inconclusive, and sorted four-job performance regressed by about 1.6%; the
+candidate therefore did not pass the full native release gate. Unsorted Rust
+median RSS was about 44 MiB versus C1's 18 MiB. Four-job sorted merging used
+about 0.50 CPU seconds versus C1's 0.37 while reducing elapsed time. These are
+measured trade-offs, not universal speed or memory guarantees.
+
+[Raw comparison reports, paired ratios, metrics, build/input/profile hashes and
+preflight history](../data/native-parity-validation.json) retain the evidence.
+The [full artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/38635325400)
+include binaries, training data, logs and per-invocation measurements. Temporary
+disk metrics sample the selected temporary directory only; output-parent staging
+files are excluded, and short-lived peaks can be missed.
+
 ## LCOV profile comparison
 
 The opt-in merge profile requires separate measurements from native mode. Use
@@ -134,8 +168,9 @@ establish neither universal superiority nor native-mode parity with C1.
 [Measured samples, input/binary/profile hashes, commands, resource metrics and
 oracle identity](../data/lcov-profile-validation.json) preserve the provenance.
 Wall and CPU measurements include CLI startup; RSS is `wait4`'s `ru_maxrss`,
-not the simultaneous sum of a process tree. Temporary disk peaks are sampled
-every 20 ms and can miss shorter peaks. The
+not the simultaneous sum of a process tree. Temporary disk peaks sample only the selected
+temporary directory every 20 ms; output-parent staging files are excluded, and
+shorter peaks can be missed. The
 [workflow artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/38633742948)
 retain full outputs, logs, source fixtures and PGO feedback for 90 days.
 
