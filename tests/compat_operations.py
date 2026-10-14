@@ -67,6 +67,22 @@ def main():
         check(from_stdin.returncode == 0 and from_stdin.stdout == from_file.stdout,
               f"stdin/file output differs: {from_stdin.stderr!r}")
         check(not list(tmpdir.iterdir()), "stdin staging files remain after success")
+        # Staged mixed inputs retain producer order, including version selection.
+        ordered, stdin_copy = root / "ordered.info", root / "stdin-copy.info"
+        ordered.write_text("TN:a\nSF:x.c\nVER:file\nDA:1,2\nend_of_record\n")
+        stdin_copy.write_text("TN:a\nSF:x.c\nVER:stdin\nDA:1,1\nend_of_record\n")
+        for stdin_first in (True, False):
+            inputs = [str(stdin_copy), str(ordered)] if stdin_first else [str(ordered), str(stdin_copy)]
+            flags = ["--no-function-coverage", "--ignore-errors", "version"]
+            reference = run(prefix + flags + ["-a", inputs[0], "-a", inputs[1]])
+            mixed = ["-" if path == str(stdin_copy) else path for path in inputs]
+            actual = run(prefix + flags + ["-a", mixed[0], "-a", mixed[1]], input=stdin_copy.read_bytes())
+            check(reference.returncode == actual.returncode == 0 and reference.stdout == actual.stdout,
+                  f"mixed stdin producer order differs: {actual.stderr!r}")
+            version = b"VER:stdin\n" if stdin_first else b"VER:file\n"
+            check(version in actual.stdout and b"DA:1,3\n" in actual.stdout,
+                  "mixed stdin lost selected version or counts")
+            check(not list(tmpdir.iterdir()), "mixed stdin staging files remain")
         dest_stdin = root / "stdin-error.info"
         dest_stdin.write_bytes(b"keep-me")
         invalid_stdin = run(prefix + ["-a", "-", "-o", str(dest_stdin)], input=bad.read_bytes())
@@ -119,6 +135,11 @@ def main():
         # POSIX resource and cancellation probes. Explicit skips are limited to unsupported platforms.
         if os.name == "posix" and sys.platform in ("linux", "darwin"):
             import resource
+            fifo = root / "named-pipe.info"
+            os.mkfifo(fifo)
+            rejected = run(prefix + ["-a", str(fifo), "-a", "-"], input=a.read_bytes())
+            check(rejected.returncode == 1 and b"not a regular file" in rejected.stderr,
+                  f"named pipe was not rejected before aggregation: {rejected.stderr!r}")
             # Force a caught output write failure without relying on /dev/full.
             def fsize_limit():
                 signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
@@ -127,33 +148,34 @@ def main():
             r = subprocess.run(prefix + ["-a", str(a), "-o", str(dest)], capture_output=True, timeout=8, preexec_fn=fsize_limit)
             check(r.returncode != 0 and dest.read_bytes() == b"keep-me", "RLIMIT_FSIZE write failure did not preserve destination")
             # Interrupt while stdin is open but blocked; timeout is the guard against failed cancellation.
-            proc = subprocess.Popen([p for p in prefix if p != "--quiet"] + ["--verbose", "-a", "-", "-o", str(root / "cancel.info")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            try:
-                # The input diagnostic is emitted after handler installation.
-                # Slow sanitizer startup must not turn this into an uncaught signal.
-                import select
-                deadline = time.monotonic() + 8
-                ready_output = bytearray()
-                marker = b"lcovmerge: reading LCOV input -\n"
-                while marker not in ready_output:
-                    remaining = deadline - time.monotonic()
-                    check(remaining > 0, "blocked-stdin input readiness timed out")
-                    readable, _, _ = select.select([proc.stderr], [], [], remaining)
-                    check(bool(readable), "blocked-stdin input readiness timed out")
-                    chunk = os.read(proc.stderr.fileno(), 4096)
-                    check(bool(chunk), f"blocked-stdin exited before readiness: {bytes(ready_output)!r}")
-                    ready_output.extend(chunk)
-                proc.send_signal(signal.SIGINT)
-                # Keep stdin open until cancellation completes. communicate()
-                # would close it and could hide an interrupted-read retry bug.
-                proc.wait(timeout=4)
-                _, err = proc.communicate(timeout=2)
-                err = bytes(ready_output) + err
-                check(proc.returncode == 1 and b"interrupted" in err, f"blocked-stdin signal was not caught cleanly: {proc.returncode} {err!r}")
-                check(not list(tmpdir.iterdir()), "interruption left temporary runs")
-            finally:
-                if proc.poll() is None:
-                    proc.kill(); proc.communicate(timeout=2)
+            for input_flags in (["-a", "-"], ["-a", str(a), "-a", "-"], ["-a", "-", "-a", str(a)]):
+                proc = subprocess.Popen([p for p in prefix if p != "--quiet"] + ["--verbose", *input_flags, "-o", str(root / "cancel.info")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    # The input diagnostic is emitted after handler installation.
+                    # Slow sanitizer startup must not turn this into an uncaught signal.
+                    import select
+                    deadline = time.monotonic() + 8
+                    ready_output = bytearray()
+                    marker = b"lcovmerge: reading LCOV input -\n"
+                    while marker not in ready_output:
+                        remaining = deadline - time.monotonic()
+                        check(remaining > 0, "blocked-stdin input readiness timed out")
+                        readable, _, _ = select.select([proc.stderr], [], [], remaining)
+                        check(bool(readable), "blocked-stdin input readiness timed out")
+                        chunk = os.read(proc.stderr.fileno(), 4096)
+                        check(bool(chunk), f"blocked-stdin exited before readiness: {bytes(ready_output)!r}")
+                        ready_output.extend(chunk)
+                    proc.send_signal(signal.SIGINT)
+                    # Keep stdin open until cancellation completes. communicate()
+                    # would close it and could hide an interrupted-read retry bug.
+                    proc.wait(timeout=4)
+                    _, err = proc.communicate(timeout=2)
+                    err = bytes(ready_output) + err
+                    check(proc.returncode == 1 and b"interrupted" in err, f"blocked-stdin signal was not caught cleanly: {proc.returncode} {err!r}")
+                    check(not list(tmpdir.iterdir()), "interruption left temporary runs")
+                finally:
+                    if proc.poll() is None:
+                        proc.kill(); proc.communicate(timeout=2)
             # A low descriptor limit should be handled as a normal input/resource error.
             def nofile_limit():
                 soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)

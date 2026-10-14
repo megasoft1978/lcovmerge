@@ -150,30 +150,45 @@ fn validate_request(request: &Request) -> Result<(), Error> {
     if opt.inputs.iter().filter(|p| p.as_os_str() == "-").count() > 1 {
         return Err(Error::new(1, "stdin may appear only once in LCOV inputs"));
     }
+    for path in opt.inputs.iter().filter(|p| p.as_os_str() != "-") {
+        if path.metadata().is_ok_and(|m| !m.is_file()) {
+            return Err(Error::new(
+                3,
+                format!(
+                    "LCOV input {} is not a regular file; use - for stdin",
+                    path.display()
+                ),
+            ));
+        }
+    }
 
     Ok(())
 }
 
 pub fn run(mut request: Request) -> Result<(), Error> {
     validate_request(&request)?;
-    // Stage a sole stdin input to disk so existing bounded executors can scan
-    // and sort it. Mixed inputs retain their original read/error ordering.
-    let staged =
-        if request.resources.inputs.len() == 1 && request.resources.inputs[0].as_os_str() == "-" {
-            if request.resources.verbose && !request.resources.quiet {
-                eprintln!("lcovmerge: reading LCOV input -");
-            }
-            let reader =
-                stdin_reader().map_err(|e| Error::new(3, format!("cannot read stdin: {e}")))?;
-            Some(input_spool::stage(
-                StopOnCancel(reader),
-                &request.resources.tmpdir,
-            )?)
-        } else {
-            None
-        };
-    if let Some(file) = &staged {
-        request.resources.inputs[0] = file.path().to_owned();
+    // Stdin is a profile extension. Stage it before aggregation so all inputs
+    // can use bounded joins, while retaining its original producer position.
+    let stdin_index = request
+        .resources
+        .inputs
+        .iter()
+        .position(|p| p.as_os_str() == "-");
+    let staged = if stdin_index.is_some() {
+        if request.resources.verbose && !request.resources.quiet {
+            eprintln!("lcovmerge: reading LCOV input -");
+        }
+        let reader =
+            stdin_reader().map_err(|e| Error::new(3, format!("cannot read stdin: {e}")))?;
+        Some(input_spool::stage(
+            StopOnCancel(reader),
+            &request.resources.tmpdir,
+        )?)
+    } else {
+        None
+    };
+    if let (Some(index), Some(file)) = (stdin_index, &staged) {
+        request.resources.inputs[index] = file.path().to_owned();
     }
     let result = run_inputs(request);
     result.map_err(|mut error| {

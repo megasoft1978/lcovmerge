@@ -13,7 +13,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Execute source-version propagation with bounded sorting. Match automatic function-family empty errors and discard no-DA input sources and testcase output while retaining source master metadata.
 - Execute eligible checksum inputs with bounded source-line joins and a disk-backed source index, preserving source-wide checksum selection across testcases.
 - Check LCOV-profile function/line consistency before and after input aggregation with bounded source-wide joins, infer ends before merging, and match the pinned default recovery count adjustments and lambda exception.
-- Stage a sole LCOV-profile stdin input with bounded buffers so eligible DA/function/MC/DC merges use the spill executors; remove staged input on success, errors, and catchable interruption. Mixed stdin/file input ordering is unchanged.
+- Stage LCOV-profile stdin with bounded buffers so eligible merges, including mixed file/stdin inputs, use spill executors at the original producer position; remove staged input on success, errors, and catchable interruption. Stdin is staged before aggregation begins.
 
 - Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
 - Add Rust parser/model property tests and in-process corpus mutation fuzzing alongside the full CLI, oracle, LCOV, determinism, partition, and cleanup suites. AddressSanitizer and ThreadSanitizer targets exercise the Rust implementation.

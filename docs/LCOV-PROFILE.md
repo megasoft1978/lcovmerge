@@ -16,6 +16,12 @@ off. Explicitly enabling a family requires corresponding coverpoints unless
 `empty` errors are ignored; automatic function handling accepts DA-only inputs.
 Testcase names are retained unless `--forget-test-names` is selected.
 
+Inputs are regular files or one `-` for stdin. Stdin is a lcovmerge extension:
+LCOV 2.6 treats `-a -` as a filename. The profile stages stdin to disk before
+aggregation, then merges it at its original input position; this also supports
+mixed file/stdin inputs. File parsing errors can therefore follow completion of
+stdin staging. Catchable interruption removes the staged input.
+
 ## Supported command surface
 
 | Setting | Profile spelling |
@@ -87,12 +93,12 @@ claim is made before the implementation's release gates pass.
 
 DA/function inputs, branch sections containing DA, and MC/DC sections containing
 DA use external sort runs. Branch blocks use streamed, exact signature ranking
-and bounded joins; sparse block IDs do not allocate sparse arrays. A sole stdin input is staged to disk with fixed-size buffers and then uses the
+and bounded joins; sparse block IDs do not allocate sparse arrays. Stdin, including
+mixed file/stdin input, is staged to disk with fixed-size buffers and then uses the
 same eligible executors as a regular file. Source versions use bounded producer-order
 reduction and propagate across retained testcases. Eligible checksum inputs use a
 source-line sort and disk-backed source index; even one checksum group larger
-than memory is streamed. Branch sections without DA,
-mixed stdin/file inputs, and MC/DC-only sections still use the
+than memory is streamed. Branch sections without DA and MC/DC-only sections still use the
 collector; large working sets can exceed its record budget. Completing those
 bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.
