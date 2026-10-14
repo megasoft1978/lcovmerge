@@ -126,3 +126,10 @@ Run comparator tests with:
 ```sh
 python3 -m unittest discover -s tests/compat -p 'test_*.py'
 ```
+
+The `integer-exact-above-f64` fixture records a reference disagreement: XS
+rounds `9007199254740993` to `9007199254740992`; pure Perl preserves it. The
+Rust profile preserves exact digits and selects the pure-Perl policy for this
+case. Its XS row must match the retained rounded result with every other field
+equal, and is reported as an expected reference difference rather than an XS
+conformance pass. Other candidate differences continue to fail.

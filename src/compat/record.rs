@@ -50,6 +50,15 @@ pub(super) fn parse_count(s: &str, file: &str, line: u64) -> Result<u64, Error> 
     if s.is_empty() {
         return Err(Error::at(2, file, line, "non-integer coverage count"));
     }
+    let digits = s.strip_prefix('+').unwrap_or(s);
+    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Ok(digits.bytes().fold(0u64, |value, digit| {
+            value
+                .saturating_mul(10)
+                .saturating_add(u64::from(digit - b'0'))
+                .min(MAX_COUNT)
+        }));
+    }
     let value = s
         .parse::<f64>()
         .map_err(|_| Error::at(2, file, line, "non-integer coverage count"))?;

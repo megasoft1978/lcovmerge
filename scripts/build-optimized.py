@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import hashlib
 import json
@@ -121,6 +122,39 @@ def main() -> int:
                     hashes.append(digest(output))
                 if hashes[0] != hashes[1]:
                     raise RuntimeError(f"PGO training output differed by job count: {name}")
+            compat = work / "compat-inputs"
+            compat.mkdir(exist_ok=True)
+            source = compat / "sample.c"
+            source_lines = ["int f(void) {", "    int a = 1;", "    return a;", "}"]
+            source.write_text("\n".join(source_lines) + "\n", encoding="utf-8")
+            config = compat / "lcovrc"
+            config.write_text("", encoding="utf-8")
+            compat_inputs = []
+            for shard in range(4):
+                rows = [f"TN:test-{shard % 2}", f"SF:{source}", "VER:training-43",
+                        "FNL:0,1,4", f"FNA:0,{shard + 1},f", "FNA:0,0,alias",
+                        "BRDA:2,0,0,1", "BRDA:2,0,1,0",
+                        "MCDC:2,2,t,1,0,a", "MCDC:2,2,f,0,0,a",
+                        "MCDC:2,2,t,1,1,b", "MCDC:2,2,f,0,1,b"]
+                for number, text in enumerate(source_lines, 1):
+                    checksum = base64.b64encode(hashlib.md5(text.encode()).digest()).decode().rstrip("=")
+                    rows.append(f"DA:{number},1,{checksum}")
+                rows.append("end_of_record")
+                path = compat / f"shard-{shard}.info"
+                path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+                compat_inputs.append(path)
+            compat_hashes = []
+            for jobs in [1, 4]:
+                output = work / f"compat-{jobs}.info"
+                command = [str(binary), "--lcov-compat=2.6", "--config-file", str(config),
+                           "--branch-coverage", "--mcdc-coverage", "--checksum", "--parallel", str(jobs),
+                           "--tempdir", str(work), "-o", str(output)]
+                for path in compat_inputs:
+                    command.extend(["-a", str(path)])
+                subprocess.run(command, env=env, check=True)
+                compat_hashes.append(digest(output))
+            if compat_hashes[0] != compat_hashes[1]:
+                raise RuntimeError("Compatibility PGO output differed by job count")
             subprocess.run([str(tool), "merge", "-o", str(profile), *map(str, (work / "raw").glob("*.profraw"))], check=True)
         frozen_profile = work / ("profile-" + digest(profile) + ".profdata")
         if not frozen_profile.exists():

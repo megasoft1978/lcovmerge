@@ -43,6 +43,15 @@ merge profile. `--memory` and `memory_percentage` do not map to the record
 arena budget and are rejected. Run the native mode or upstream LCOV when an
 unsupported operation or setting is needed.
 
+## Count policy
+
+Counts saturate at LCOV's signed 64-bit maximum, and fractional counts truncate.
+Rust preserves exact decimal integers. In the retained `DA:1,9007199254740993`
+fixture, LCOV 2.6 XS emits `9007199254740992`, while pure Perl and Rust retain
+`9007199254740993`. The profile follows the pure-Perl result for this ambiguity.
+The harness records this reference disagreement explicitly; it is not an XS
+conformance pass or a guarantee of XS equivalence for arbitrary wide counts.
+
 ## Validation and operational differences
 
 The reference is [LCOV v2.6](https://github.com/linux-test-project/lcov/releases/tag/v2.6),

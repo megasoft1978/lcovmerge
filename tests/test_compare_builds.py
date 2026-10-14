@@ -3,10 +3,12 @@
 
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bench" / "compare-builds.py"
@@ -32,8 +34,20 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="compare-builds-test-") as temporary:
         root = Path(temporary)
         baseline, candidate = root / "baseline", root / "candidate"
-        executable(baseline, b"identical output\n")
-        executable(candidate, b"different output\n")
+        if os.name == "nt":
+            baseline, candidate = baseline.with_suffix(".exe"), candidate.with_suffix(".exe")
+            source = root / "fixture.rs"
+            source.write_text('fn main() { let a: Vec<_> = std::env::args().collect(); '
+                              'let i = a.iter().position(|s| s == "-o").unwrap(); '
+                              'let name = std::path::Path::new(&a[0]).file_stem().unwrap(); '
+                              'let data = if name == "candidate" { b"different output\\n".as_slice() } '
+                              'else { b"identical output\\n".as_slice() }; '
+                              'std::fs::write(&a[i + 1], data).unwrap(); }', encoding="utf-8")
+            subprocess.run(["rustc", "--edition=2021", str(source), "-o", str(baseline)], check=True)
+            shutil.copy2(baseline, candidate)
+        else:
+            executable(baseline, b"identical output\n")
+            executable(candidate, b"different output\n")
         trace = root / "input.info"
         trace.write_text("SF:/synthetic.c\nDA:1,1\n", encoding="utf-8")
         workdir = root / ".cache" / "run"

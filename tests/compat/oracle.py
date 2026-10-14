@@ -159,6 +159,7 @@ def fixtures(directory):
 # (name, argv options, expected status). Each required row is asserted against
 # both verified LCOV backends before candidate comparison is considered.
 CASES = [
+    ("integer-exact-above-f64", ["--no-function-coverage", "-a", "integer-exact.info"], 0),
     ("tn-split", ["--no-function-coverage", "-a", "one.info", "-a", "two.info"], 0),
     ("duplicate-input", ["--no-function-coverage", "-a", "one.info", "-a", "one.info"], 0),
     ("true-empty-source", ["--no-function-coverage", "-a", "true-empty.info"], 0),
@@ -223,6 +224,7 @@ CASES = [
 
 def make_inputs(directory):
     fixtures(directory)
+    (directory / "integer-exact.info").write_text(f"TN:alpha\nSF:{directory / 'sample.c'}\nDA:1,9007199254740993\nend_of_record\n")
     (directory / "truncated.info.gz").write_bytes(gzip.compress(b"TN:x\nSF:x.c\nDA:1,1\nend_of_record\n")[:-8])
 
 
@@ -296,6 +298,7 @@ def main():
                 "genhtml_executable": str(genhtml), "timeout_seconds": args.timeout,
                 "required_cases": len(CASES), "cases": []}
     failures = 0
+    reference_differences = 0
     backends = (("xs", None), ("pure-perl", "1"))
     for case in CASES:
         name, opts, expected = case[:3]
@@ -414,13 +417,22 @@ def main():
                 ok = (cr["status"] == oracle["status"] and not cr["timed_out"] and
                       ((expected != 0 and same_failure_surface) or
                        (expected == 0 and normalized(sem_cand) == normalized(semantic_oracle))))
+                known_reference_difference = (
+                    name == "integer-exact-above-f64" and backend == "xs" and expected == 0
+                    and cr["status"] == 0 and not cr["timed_out"]
+                    and b"DA:1,9007199254740992\n" in semantic_oracle
+                    and normalized(semantic_oracle.replace(b"DA:1,9007199254740992\n", b"DA:1,9007199254740993\n")) == normalized(sem_cand)
+                )
+                if known_reference_difference:
+                    reference_differences += 1
                 cand_row = {"argv": cargv, "result": record(cr), "log": str(cand_log),
                             "output_path": str(cand_out), "output_sha256": digest(cb),
                             "semantic_output_sha256": digest(sem_cand),
                             "output": sem_cand.decode("utf-8", "surrogateescape") if cr["status"] == 0 else None,
                             "failure_surface_match": same_failure_surface,
                             "semantic_match": expected != 0 or normalized(sem_cand) == normalized(semantic_oracle),
-                            "match": ok}
+                            "match": ok, "expected_reference_difference": known_reference_difference,
+                            "target_match": ok or known_reference_difference}
                 if expected == 0:
                     html_dir = case_dir / f"html-candidate-{backend}"
                     remove(html_dir)
@@ -437,16 +449,18 @@ def main():
                     if not cand_row["genhtml_match"]:
                         failures += 1
                         print(f"FAIL candidate genhtml {backend}/{name}", file=sys.stderr)
-                if not ok:
+                if not ok and not known_reference_difference:
                     failures += 1
                     print(f"FAIL candidate {backend}/{name}: oracle={oracle['status']}, candidate={cr['status']}", file=sys.stderr)
                 backend_row["candidate"] = cand_row
             entry["backends"].append(backend_row)
         manifest["cases"].append(entry)
     manifest["failures"] = failures
+    manifest["expected_reference_differences"] = reference_differences
+    manifest["integer_policy"] = "Exact integer parsing; pure-Perl reference applies to the documented XS input-rounding fixture."
     manifest_path = workdir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"workdir": str(workdir), "required_cases": len(CASES), "backend_runs": len(CASES) * 2,
+    print(json.dumps({"workdir": str(workdir), "required_cases": len(CASES), "backend_runs": len(CASES) * 2, "expected_reference_differences": reference_differences,
                       "failures": failures, "manifest": str(manifest_path)}, indent=2))
     return 1 if failures else 0
 

@@ -115,8 +115,9 @@ pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Err
     Ok(())
 }
 
+#[inline(never)]
 pub fn write_sections(
-    mut out: impl Write,
+    out: &mut dyn Write,
     sections: &[Section],
     checksums: bool,
     functions: bool,

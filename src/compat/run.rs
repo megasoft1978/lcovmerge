@@ -181,7 +181,7 @@ pub fn run(request: Request) -> Result<(), Error> {
         let stdout =
             stdout_writer().map_err(|e| Error::new(3, format!("cannot write stdout: {e}")))?;
         write_sections(
-            BufWriter::new(stdout),
+            &mut BufWriter::new(stdout),
             &sections,
             request.checksum || opt.strict_checksum,
             opt.function_data,
@@ -203,15 +203,18 @@ pub fn run(request: Request) -> Result<(), Error> {
         })?;
         let result = if is_gzip_path(&opt.output) {
             let mut encoder = GzEncoder::new(&mut staged, Compression::default());
-            write_sections(
-                BufWriter::new(&mut encoder),
-                &sections,
-                request.checksum || opt.strict_checksum,
-                opt.function_data,
-                opt.branch_coverage,
-                request.mcdc_coverage,
-            )
-            .and_then(|_| {
+            let written = {
+                let mut writer = BufWriter::new(&mut encoder);
+                write_sections(
+                    &mut writer,
+                    &sections,
+                    request.checksum || opt.strict_checksum,
+                    opt.function_data,
+                    opt.branch_coverage,
+                    request.mcdc_coverage,
+                )
+            };
+            written.and_then(|_| {
                 encoder
                     .finish()
                     .map(|_| ())
@@ -219,7 +222,7 @@ pub fn run(request: Request) -> Result<(), Error> {
             })
         } else {
             write_sections(
-                BufWriter::new(&mut staged),
+                &mut BufWriter::new(&mut staged),
                 &sections,
                 request.checksum || opt.strict_checksum,
                 opt.function_data,
@@ -394,7 +397,18 @@ fn parse_input(
             continue;
         }
         if let Some(x) = s.strip_prefix("DA:") {
-            recover_line!(section.add_line(x, label, line_no));
+            match section.add_line(x, label, line_no) {
+                Err(e) if e.message.contains("negative coverage count") && can_recover(req, &e) => {
+                    let mut fields = x.splitn(3, ',');
+                    let location = fields.next().unwrap_or("");
+                    let _ = fields.next();
+                    let checksum = fields.next().map(|v| format!(",{v}")).unwrap_or_default();
+                    section.add_line(&format!("{location},0{checksum}"), label, line_no)?;
+                }
+                result => {
+                    recover_line!(result);
+                }
+            }
             if req.resources.strict_checksum || req.checksum {
                 validate_or_generate_checksum(section, x, req, label, line_no)?;
             }
@@ -639,6 +653,9 @@ fn finish_section(
                 }
             }
             for (name, function) in &s.functions {
+                if old.testcase != s.testcase {
+                    continue;
+                }
                 if old.functions.get(name).is_some_and(|existing| {
                     existing.line != function.line || existing.end_line != function.end_line
                 }) {
@@ -650,6 +667,26 @@ fn finish_section(
                     );
                     if !can_recover(req, &e) {
                         return Err(e);
+                    }
+                }
+            }
+            for (location, items) in &s.mcdc {
+                if let Some(existing) = old.mcdc.get(location) {
+                    for (key, item) in items {
+                        if existing
+                            .get(key)
+                            .is_some_and(|prior| prior.expr != item.expr)
+                        {
+                            let e = Error::at(
+                                2,
+                                label,
+                                line,
+                                "inconsistent MC/DC expression across testcases",
+                            );
+                            if !can_recover(req, &e) {
+                                return Err(e);
+                            }
+                        }
                     }
                 }
             }
