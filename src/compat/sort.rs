@@ -2,7 +2,7 @@
 use crate::common::{check_cancelled, Error};
 use std::cmp::Ordering;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -39,16 +39,18 @@ pub(super) struct Sorter {
     read: u64,
     written: u64,
     ordinal: u64,
+    max_frame: usize,
 }
 pub(super) struct Sorted {
     dir: Arc<tempfile::TempDir>,
     final_runs: u64,
+    final_pass: u64,
+    max_frame: usize,
     stats: Stats,
 }
 pub(super) struct Cursor {
     _dir: Arc<tempfile::TempDir>,
-    runs: Vec<RunReader>,
-    heads: Vec<Option<Item>>,
+    reader: Option<RunReader>,
 }
 
 fn err(s: impl std::fmt::Display) -> Error {
@@ -60,7 +62,7 @@ fn cancelled() -> Result<(), Error> {
 fn run_path(dir: &Path, pass: u64, id: u64) -> PathBuf {
     dir.join(format!("r-{pass}-{id}"))
 }
-fn write_item(w: &mut File, i: &Item, bytes: &mut u64) -> Result<(), Error> {
+fn write_item(w: &mut impl Write, i: &Item, bytes: &mut u64) -> Result<(), Error> {
     cancelled()?;
     let k = u32::try_from(i.row.key.len()).map_err(err)?;
     let v = u32::try_from(i.row.value.len()).map_err(err)?;
@@ -80,14 +82,16 @@ fn write_item(w: &mut File, i: &Item, bytes: &mut u64) -> Result<(), Error> {
     Ok(())
 }
 struct RunReader {
-    file: File,
+    file: BufReader<File>,
     bytes: u64,
+    max_frame: usize,
 }
 impl RunReader {
-    fn open(p: &Path) -> Result<Self, Error> {
+    fn open(p: &Path, max_frame: usize) -> Result<Self, Error> {
         Ok(Self {
-            file: File::open(p).map_err(err)?,
+            file: BufReader::with_capacity(IO, File::open(p).map_err(err)?),
             bytes: 0,
+            max_frame,
         })
     }
     fn next(&mut self) -> Result<Option<Item>, Error> {
@@ -109,7 +113,11 @@ impl RunReader {
         }
         let k = u32::from_le_bytes(h[4..8].try_into().unwrap()) as usize;
         let v = u32::from_le_bytes(h[8..12].try_into().unwrap()) as usize;
-        if k > MAX_KEY || v > MAX_VALUE || k.checked_add(v).is_none_or(|n| n + HEADER > MAX_FRAME) {
+        if k > MAX_KEY
+            || v > MAX_VALUE
+            || k.checked_add(v)
+                .is_none_or(|n| n + HEADER > MAX_FRAME || n + HEADER > self.max_frame)
+        {
             return Err(err("frame exceeds field or total limit"));
         }
         let mut key = vec![0; k];
@@ -151,10 +159,14 @@ impl Sorter {
             read: 0,
             written: 0,
             ordinal: 0,
+            max_frame: HEADER,
         })
     }
     pub(super) fn push(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Error> {
         cancelled()?;
+        self.max_frame = self
+            .max_frame
+            .max(key.len().saturating_add(value.len()).saturating_add(HEADER));
         let n = key
             .capacity()
             .checked_add(value.capacity())
@@ -173,25 +185,52 @@ impl Sorter {
         if minimum > self.budget {
             return Err(err(format!("atomic row and merge buffers require at least {minimum} bytes; increase --mem-limit")));
         }
-        self.batch.try_reserve(1).map_err(err)?;
-        let delta =
-            self.batch.capacity().saturating_sub(self.batch_cap) * std::mem::size_of::<Item>();
+        let item_size = std::mem::size_of::<Item>();
+        let needs_growth = self.batch.len() == self.batch.capacity();
+        let requested = if needs_growth {
+            self.batch.capacity().saturating_mul(2).max(4)
+        } else {
+            self.batch.capacity()
+        };
+        let growth = requested
+            .saturating_sub(self.batch.capacity())
+            .saturating_mul(item_size);
+        let relocation = if needs_growth {
+            self.batch.capacity().saturating_mul(item_size)
+        } else {
+            0
+        };
         if self
             .held
             .saturating_add(n)
-            .saturating_add(delta)
+            .saturating_add(growth)
+            .saturating_add(relocation)
             .saturating_add(IO)
             > self.budget
         {
-            if !self.batch.is_empty() {
-                self.flush()?;
-            }
-            if self.held.saturating_add(n).saturating_add(IO) > self.budget {
-                return Err(err(format!("atomic row and batch allocation require at least {} bytes; increase --mem-limit", self.held.saturating_add(n).saturating_add(IO))));
-            }
+            self.flush()?;
+            self.batch = Vec::new();
+            self.batch_cap = 0;
+            self.held = 0;
         }
-        let delta =
-            self.batch.capacity().saturating_sub(self.batch_cap) * std::mem::size_of::<Item>();
+        let old_capacity = self.batch.capacity();
+        if self.batch.len() == old_capacity {
+            let requested = old_capacity.saturating_mul(2).max(4);
+            let peak = self
+                .held
+                .saturating_add(n)
+                .saturating_add(requested.saturating_mul(item_size))
+                .saturating_add(IO);
+            if peak > self.budget {
+                return Err(err(
+                    "atomic row plus vector growth exceeds budget; increase --mem-limit",
+                ));
+            }
+            self.batch
+                .try_reserve_exact(requested - self.batch.len())
+                .map_err(err)?;
+        }
+        let delta = self.batch.capacity().saturating_sub(old_capacity) * item_size;
         self.batch_cap = self.batch.capacity();
         self.held = self.held.saturating_add(n).saturating_add(delta);
         let ordinal = self.ordinal;
@@ -210,18 +249,17 @@ impl Sorter {
             return Ok(());
         }
         cancelled()?;
-        self.batch.sort_by(cmp);
+        self.batch.sort_unstable_by(cmp);
         let p = run_path(self.dir.path(), 0, self.runs);
-        let mut f = File::create(p).map_err(err)?;
+        let mut f = BufWriter::with_capacity(IO, File::create(p).map_err(err)?);
         for item in &self.batch {
             write_item(&mut f, item, &mut self.written)?;
         }
-        f.sync_all().map_err(err)?;
+        f.flush().map_err(err)?;
         self.runs += 1;
         self.batch.clear();
         self.batch_cap = self.batch.capacity();
         self.held = self.batch_cap * std::mem::size_of::<Item>();
-        self.passes = 1;
         Ok(())
     }
     pub(super) fn finish(mut self) -> Result<Sorted, Error> {
@@ -229,8 +267,8 @@ impl Sorter {
         let mut count = self.runs;
         let mut pass = 0u64;
         // Reserve two complete maximum-sized row heads, their vector overhead, and I/O space.
-        let per_head = MAX_FRAME + OVERHEAD + 256;
-        let fanin = (self.budget.saturating_sub(IO) / per_head).min(64);
+        let per_head = self.max_frame + OVERHEAD + IO;
+        let fanin = descriptor_fanin((self.budget.saturating_sub(IO) / per_head).min(64));
         if count > 1 && fanin < 2 {
             return Err(err(format!(
                 "merge needs at least {} bytes for two row heads; increase --mem-limit",
@@ -246,13 +284,19 @@ impl Sorter {
                 let n = (count - start).min(fanin as u64);
                 let mut readers = Vec::new();
                 for id in start..start + n {
-                    readers.push(RunReader::open(&run_path(self.dir.path(), pass - 1, id))?);
+                    readers.push(RunReader::open(
+                        &run_path(self.dir.path(), pass - 1, id),
+                        self.max_frame,
+                    )?);
                 }
                 let mut heads = Vec::new();
                 for r in &mut readers {
                     heads.push(r.next()?);
                 }
-                let mut out = File::create(run_path(self.dir.path(), pass, out_id)).map_err(err)?;
+                let mut out = BufWriter::with_capacity(
+                    IO,
+                    File::create(run_path(self.dir.path(), pass, out_id)).map_err(err)?,
+                );
                 loop {
                     cancelled()?;
                     let best = heads
@@ -262,13 +306,15 @@ impl Sorter {
                         .min_by(|a, b| cmp(a.1, b.1))
                         .map(|x| x.0);
                     let Some(i) = best else { break };
-                    write_item(&mut out, heads[i].as_ref().unwrap(), &mut self.written)?;
+                    let item = heads[i].take().unwrap();
+                    write_item(&mut out, &item, &mut self.written)?;
+                    drop(item);
                     heads[i] = readers[i].next()?;
                 }
                 for r in &readers {
                     self.read += r.bytes;
                 }
-                out.sync_all().map_err(err)?;
+                out.flush().map_err(err)?;
                 out_id += 1;
                 start += n;
             }
@@ -281,6 +327,8 @@ impl Sorter {
         Ok(Sorted {
             dir: Arc::new(self.dir),
             final_runs: count,
+            final_pass: pass,
+            max_frame: self.max_frame,
             stats: Stats {
                 runs: self.runs,
                 passes: self.passes,
@@ -293,20 +341,17 @@ impl Sorter {
 }
 impl Sorted {
     pub(super) fn cursor(&self) -> Result<Cursor, Error> {
-        let mut runs = Vec::new();
-        let mut heads = Vec::new();
-        if self.final_runs != 0 {
-            runs.push(RunReader::open(&run_path(
-                self.dir.path(),
-                self.stats.passes.saturating_sub(1),
-                0,
-            ))?);
-            heads.push(runs[0].next()?);
-        }
+        let reader = if self.final_runs != 0 {
+            Some(RunReader::open(
+                &run_path(self.dir.path(), self.final_pass, 0),
+                self.max_frame,
+            )?)
+        } else {
+            None
+        };
         Ok(Cursor {
             _dir: self.dir.clone(),
-            runs,
-            heads,
+            reader,
         })
     }
     pub(super) fn stats(&self) -> &Stats {
@@ -316,12 +361,10 @@ impl Sorted {
 impl Cursor {
     pub(super) fn next(&mut self) -> Result<Option<Row>, Error> {
         cancelled()?;
-        let Some(i) = self.heads.iter().position(Option::is_some) else {
-            return Ok(None);
-        };
-        let row = self.heads[i].take().unwrap().row;
-        self.heads[i] = self.runs[i].next()?;
-        Ok(Some(row))
+        match self.reader.as_mut() {
+            Some(reader) => reader.next().map(|item| item.map(|item| item.row)),
+            None => Ok(None),
+        }
     }
 }
 
@@ -360,6 +403,33 @@ mod tests {
     }
 
     #[test]
+    fn many_runs_sort_with_small_budget_and_correct_final_pass() {
+        let parent = tempfile::tempdir().unwrap();
+        let mut sorter = Sorter::new(parent.path(), 32768, 1).unwrap();
+        for i in (0..4096u32).rev() {
+            sorter
+                .push(i.to_be_bytes().to_vec(), i.to_le_bytes().to_vec())
+                .unwrap();
+        }
+        let sorted = sorter.finish().unwrap();
+        assert!(sorted.stats().runs > 3);
+        assert!(sorted.stats().passes > 0);
+        assert!(sorted.stats().bytes_written >= 4096 * (HEADER as u64 + 8));
+        assert!(sorted.stats().bytes_read >= 4096 * (HEADER as u64 + 8));
+        assert_eq!(sorted.stats().workers, 1);
+        let mut cursor = sorted.cursor().unwrap();
+        drop(sorted);
+        for i in 0..4096u32 {
+            let row = cursor.next().unwrap().unwrap();
+            assert_eq!(row.key, i.to_be_bytes());
+            assert_eq!(row.value, i.to_le_bytes());
+        }
+        assert!(cursor.next().unwrap().is_none());
+        drop(cursor);
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+    }
+
+    #[test]
     fn rejects_oversized_atomic_row_with_budget_guidance() {
         let parent = tempfile::tempdir().unwrap();
         let mut s = Sorter::new(parent.path(), 4096, 1).unwrap();
@@ -373,10 +443,28 @@ mod tests {
         let path = parent.path().join("bad");
         let mut f = File::create(&path).unwrap();
         f.write_all(b"LCS1").unwrap();
-        let mut r = RunReader::open(&path).unwrap();
+        let mut r = RunReader::open(&path, MAX_FRAME).unwrap();
         match r.next() {
             Err(e) => assert!(e.message.contains("truncated")),
             Ok(_) => panic!("truncated frame accepted"),
         }
     }
+}
+
+fn descriptor_fanin(proposed: usize) -> usize {
+    #[cfg(unix)]
+    {
+        let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: getrlimit initializes one valid rlimit on success.
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } == 0 {
+            // SAFETY: successful getrlimit initialized the value.
+            let soft = unsafe { limit.assume_init() }.rlim_cur;
+            return proposed.min(
+                usize::try_from(soft)
+                    .unwrap_or(usize::MAX)
+                    .saturating_sub(8),
+            );
+        }
+    }
+    proposed.min(32)
 }

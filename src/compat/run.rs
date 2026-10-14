@@ -21,6 +21,9 @@ mod merge;
 mod policy;
 #[path = "record.rs"]
 mod record;
+#[cfg(test)]
+#[path = "sort.rs"]
+mod sort;
 #[path = "source.rs"]
 mod source;
 use policy::{
