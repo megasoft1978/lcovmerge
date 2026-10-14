@@ -1,7 +1,7 @@
 //! Bounded DA and function compatibility executor.
 use super::{
     branch_check, branch_spill, function_check, function_spill, line_spill, mcdc_spill, policy,
-    sort, Request, StopOnCancel,
+    sort, version_spill, Request, StopOnCancel,
 };
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
@@ -98,11 +98,9 @@ fn scan(req: &Request) -> Result<bool, Error> {
                     return Ok(false);
                 }
                 open = false;
-            } else if s.starts_with("VER:") {
-                return Ok(false);
             } else if [
                 "DA:", "FN:", "FNDA:", "FNL:", "FNA:", "LF:", "LH:", "FNF:", "FNH:", "MCDC:",
-                "MCF:", "MCH:", "BRDA:", "BRF:", "BRH:",
+                "MCF:", "MCH:", "BRDA:", "BRF:", "BRH:", "VER:",
             ]
             .iter()
             .any(|p| s.starts_with(p))
@@ -128,7 +126,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let o = &req.resources;
     // Reserve input lines/readers and divide the remainder among concurrently live sorters.
     let reserve = 3 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
-    let slots = (3 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
+    let slots = (4 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
         if req.check_data_consistency && o.function_data {
             4
         } else {
@@ -145,6 +143,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
     let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_sources = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut versions = version_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut saw_function_data = false;
     let mut branches = if o.branch_coverage {
         Some(branch_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
     } else {
@@ -247,11 +247,11 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             let Some(src) = source.as_ref() else {
                 continue;
             };
-            if let Some(v) = s.strip_prefix("VER:") {
-                let _ = v;
+            if !selected {
                 continue;
             }
-            if !selected {
+            if let Some(v) = s.strip_prefix("VER:") {
+                versions.push(src, input_id as u64, section, line_no, v, &label, line_no)?;
                 continue;
             }
             if let Some(payload) = s.strip_prefix("BRDA:") {
@@ -288,6 +288,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 .iter()
                 .any(|prefix| s.starts_with(prefix))
             {
+                saw_function_data = true;
                 let mut source_key = Vec::new();
                 push_str(&mut source_key, src)?;
                 function_sources.push(source_key, Vec::new())?;
@@ -486,6 +487,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
     }
+    let version_rows = versions.finish(req)?;
     let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
@@ -765,6 +767,9 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let mut function_sources = function_sources_sorted.cursor()?;
     drop(function_sources_sorted);
     let mut function_source = function_sources.next()?;
+    let mut versions = version_rows.cursor()?;
+    drop(version_rows);
+    let mut version = versions.next()?;
     let mut lr = BufReader::new(File::open(&line_path).map_err(|e| Error::new(3, e.to_string()))?);
     let mut row = line_spill::read_next_public(&mut lr)?;
     while let Some(first) = row.take() {
@@ -781,6 +786,14 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             .is_some_and(|p| p.key == profile_key);
         let mut source_only = Vec::new();
         push_str(&mut source_only, &src)?;
+        while version.as_ref().is_some_and(|v| v.key < source_only) {
+            version = versions.next()?;
+        }
+        if let Some(v) = version.as_ref().filter(|v| v.key == source_only) {
+            let mut key = key_prefix(&src, &tc)?;
+            key.push(0);
+            final_sort.push(key, v.value.clone())?;
+        }
         while function_source
             .as_ref()
             .is_some_and(|p| p.key < source_only)
@@ -836,6 +849,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     drop(function_sources);
     drop(function_profile);
     drop(function_source);
+    drop(version);
+    drop(versions);
     let normalized = normalized.finish()?;
     let mut end_map = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut map_input = normalized.cursor()?;
@@ -1075,6 +1090,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     }
     super::check_family_coverpoints(
         req,
+        saw_function_data,
         has_functions,
         has_branch_coverpoints,
         has_mcdc_coverpoints,
@@ -1172,7 +1188,12 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result
             active = Some(identity);
         }
         match rank {
-            0 => {}
+            0 => writeln!(
+                out,
+                "VER:{}",
+                String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid version row"))?
+            )
+            .map_err(ioerr)?,
             1 | 3 | 5 => writeln!(
                 out,
                 "{}",

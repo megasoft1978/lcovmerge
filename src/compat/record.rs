@@ -34,6 +34,9 @@ pub struct Section {
     pub modern: bool,
     pub version: Option<String>,
     pub saw_coverpoint: bool,
+    pub saw_function_data: bool,
+    /// Input master data from a testcase removed because it has no DA rows.
+    pub discarded_testcase: bool,
     pub selected: bool,
 }
 

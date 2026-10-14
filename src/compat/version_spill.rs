@@ -1,40 +1,42 @@
 //! Bounded, source-wide reduction of VER records.
 //!
-//! Output keys use a 4-byte big-endian UTF-8 byte length followed by the source
-//! bytes. Values are the selected UTF-8 version. Decode with [`decode_source`].
+//! Output keys use UTF-8 source bytes followed by a NUL terminator. Values are the selected UTF-8 version. Decode with [`decode_source`].
 use super::{policy, sort};
 use crate::common::Error;
 use std::path::Path;
 
-const SOURCE_PREFIX: usize = 4;
 const PRODUCER: usize = 24;
 
 /// Decode the source portion of a row key produced by [`Reducer::finish`].
 pub(super) fn decode_source(key: &[u8]) -> Result<&str, Error> {
-    if key.len() < SOURCE_PREFIX {
+    let Some(source) = key.strip_suffix(&[0]) else {
+        return Err(Error::new(3, "invalid version reducer source key"));
+    };
+    if source.contains(&0) {
         return Err(Error::new(3, "invalid version reducer source key"));
     }
-    let n = u32::from_be_bytes(key[..4].try_into().unwrap()) as usize;
-    if key.len() != SOURCE_PREFIX + n || key[SOURCE_PREFIX..].contains(&0) {
-        return Err(Error::new(3, "invalid version reducer source key"));
-    }
-    std::str::from_utf8(&key[SOURCE_PREFIX..])
+    std::str::from_utf8(source)
         .map_err(|_| Error::new(3, "version reducer source key is not UTF-8"))
 }
 
 /// Collect versions using external sorting, retaining no source-indexed map.
 pub(super) struct Reducer {
     sorter: sort::Sorter,
+    budget: usize,
+    jobs: usize,
 }
 
 impl Reducer {
     pub(super) fn new(tmpdir: &Path, budget: usize, jobs: usize) -> Result<Self, Error> {
         Ok(Self {
             sorter: sort::Sorter::new(tmpdir, budget, jobs)?,
+            budget,
+            jobs,
         })
     }
 
     /// Producer coordinates are compared lexicographically as `(input, section, ordinal)`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push(
         &mut self,
         source: &str,
@@ -46,11 +48,12 @@ impl Reducer {
         line_no: u64,
     ) -> Result<(), Error> {
         let source = source.as_bytes();
-        let len = u32::try_from(source.len())
-            .map_err(|_| Error::new(2, "source path too long for version reducer"))?;
-        let mut key = Vec::with_capacity(SOURCE_PREFIX + source.len() + PRODUCER);
-        key.extend_from_slice(&len.to_be_bytes());
+        if source.contains(&0) {
+            return Err(Error::at(2, label, line_no, "NUL in version source path"));
+        }
+        let mut key = Vec::with_capacity(source.len() + 1 + PRODUCER);
         key.extend_from_slice(source);
+        key.push(0);
         for n in [input, section, ordinal] {
             key.extend_from_slice(&n.to_be_bytes());
         }
@@ -73,20 +76,15 @@ impl Reducer {
     pub(super) fn finish(self, req: &super::Request) -> Result<sort::Sorted, Error> {
         let sorted = self.sorter.finish()?;
         let mut cursor = sorted.cursor()?;
-        let mut reduced = sort::Sorter::new(
-            &req.resources.tmpdir,
-            req.resources.mem_limit,
-            req.resources.jobs,
-        )?;
+        let mut reduced = sort::Sorter::new(&req.resources.tmpdir, self.budget, self.jobs)?;
         let mut group: Option<(Vec<u8>, Vec<u8>)> = None;
         while let Some(row) = cursor.next()? {
-            if row.key.len() < SOURCE_PREFIX + PRODUCER {
-                return Err(Error::new(3, "invalid version reducer row key"));
-            }
-            let source_len = u32::from_be_bytes(row.key[..4].try_into().unwrap()) as usize;
-            let end = SOURCE_PREFIX
-                .checked_add(source_len)
-                .ok_or_else(|| Error::new(3, "version key overflow"))?;
+            let end = row
+                .key
+                .iter()
+                .position(|b| *b == 0)
+                .ok_or_else(|| Error::new(3, "invalid version reducer row key"))?
+                + 1;
             if end + PRODUCER != row.key.len() {
                 return Err(Error::new(3, "invalid version reducer row key"));
             }

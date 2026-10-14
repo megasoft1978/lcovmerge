@@ -43,7 +43,6 @@ mod signature_store;
 mod sort;
 #[path = "source.rs"]
 mod source;
-#[allow(dead_code)] // Root integration consumes this reducer from function_runtime.rs.
 #[path = "version_spill.rs"]
 mod version_spill;
 use policy::{
@@ -66,6 +65,7 @@ impl<R: Read> Read for StopOnCancel<R> {
 
 fn check_family_coverpoints(
     req: &Request,
+    saw_function_data: bool,
     functions: bool,
     branches: bool,
     mcdc: bool,
@@ -79,7 +79,11 @@ fn check_family_coverpoints(
         return Ok(());
     }
     for (required, present, family) in [
-        (req.require_function_coverpoints, functions, "function"),
+        (
+            req.require_function_coverpoints || saw_function_data,
+            functions,
+            "function",
+        ),
         (req.resources.branch_coverage, branches, "branch"),
         (req.mcdc_coverage, mcdc, "MC/DC"),
     ] {
@@ -299,6 +303,7 @@ fn run_inputs(request: Request) -> Result<(), Error> {
     policy::derive_function_ends(&mut sections, &request)?;
     check_family_coverpoints(
         &request,
+        sections.iter().any(|s| s.saw_function_data),
         sections.iter().any(|s| !s.functions.is_empty()),
         sections
             .iter()
@@ -960,6 +965,34 @@ fn parse_input(
         &mut local_held,
         local_limit,
     )?;
+    // LCOV drops an entire input source without DA, then removes its empty
+    // testcase maps. Keep removed testcase master data separate from output.
+    let eligibility_bytes = local
+        .iter()
+        .filter(|s| !s.lines.is_empty())
+        .fold(0usize, |bytes, s| bytes.saturating_add(s.source.len() + 64));
+    if local_held.saturating_add(eligibility_bytes) > local_limit {
+        return Err(Error::new(3, "LCOV input eligibility exceeds --mem-limit"));
+    }
+    let valid_sources: std::collections::HashSet<String> = local
+        .iter()
+        .filter(|s| !s.lines.is_empty())
+        .map(|s| s.source.clone())
+        .collect();
+    local.retain(|s| valid_sources.contains(&s.source));
+    drop(valid_sources);
+    if local.is_empty()
+        && !req.keep_going
+        && !req
+            .ignore_errors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case("empty"))
+    {
+        return Err(Error::at(2, label, 0, "empty LCOV input: no valid records"));
+    }
+    for section in &mut local {
+        section.discarded_testcase = section.lines.is_empty();
+    }
     check_functions(
         &mut local,
         req,
@@ -1179,6 +1212,9 @@ fn parse_input_sections(
         {
             continue;
         }
+        section.saw_function_data |= ["FN:", "FNDA:", "FNL:", "FNA:"]
+            .iter()
+            .any(|prefix| s.starts_with(prefix));
         if let Some(x) = s.strip_prefix("FN:") {
             let (start, end, name) = match parse_fn(x, label, line_no) {
                 Ok(v) => v,
@@ -1329,7 +1365,11 @@ fn finish_section(
     req: &Request,
 ) -> Result<(), Error> {
     if s.selected {
-        let branch_lines: Vec<_> = s.branches.iter().map(|(&ln, b)| (ln, b.clone())).collect();
+        let branch_lines: Vec<_> = if s.lines.is_empty() || s.discarded_testcase {
+            Vec::new()
+        } else {
+            s.branches.iter().map(|(&ln, b)| (ln, b.clone())).collect()
+        };
         for (branch_line, blocks) in branch_lines {
             let hits = blocks
                 .iter()
@@ -1437,6 +1477,16 @@ fn finish_section(
         }
     }
     if !s.saw_coverpoint || !s.selected {
+        return Ok(());
+    }
+    if s.discarded_testcase {
+        // Its source master may affect family totals, but it must never merge
+        // into a retained testcase from another input.
+        *held = held.saturating_add(s.memory_size());
+        if *held > limit {
+            return Err(Error::new(3, "LCOV master metadata exceeds --mem-limit"));
+        }
+        sections.push(s);
         return Ok(());
     }
     let key = (s.testcase.clone(), s.source.clone());
@@ -1609,7 +1659,7 @@ mod tests {
 
     #[test]
     fn ignored_branch_line_inconsistency_synthesizes_da_from_taken_branches() {
-        let input = b"TN:x\nSF:x.c\nBRDA:4,0,0,7\nBRDA:4,0,1,0\nend_of_record\n";
+        let input = b"TN:x\nSF:x.c\nDA:1,0\nBRDA:4,0,0,7\nBRDA:4,0,1,0\nend_of_record\n";
         let mut req = Request::default();
         req.resources.branch_coverage = true;
         req.ignore_errors.insert("inconsistent".into());

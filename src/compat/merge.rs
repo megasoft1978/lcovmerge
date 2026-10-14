@@ -27,6 +27,7 @@ fn add_branch(a: &mut Branch, b: &Branch, file: &str) -> Result<(), Error> {
     Ok(())
 }
 pub fn merge_into(dst: &mut Section, src: Section, file: &str) -> Result<(), Error> {
+    dst.saw_function_data |= src.saw_function_data;
     for (line, (count, checksum)) in src.lines {
         let e = dst.lines.entry(line).or_insert((0, None));
         e.0 = checked_add(e.0, count, file, "DA")?;
@@ -132,7 +133,7 @@ pub fn write_sections(
         .collect();
     for s in sections {
         check_cancelled()?;
-        if !s.saw_coverpoint {
+        if !s.saw_coverpoint || s.discarded_testcase {
             continue;
         }
         writeln!(out, "TN:{}\nSF:{}", s.testcase, s.source).map_err(io_error)?;

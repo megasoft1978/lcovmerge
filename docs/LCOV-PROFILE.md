@@ -88,8 +88,9 @@ claim is made before the implementation's release gates pass.
 DA/function inputs, branch sections containing DA, and MC/DC sections containing
 DA use external sort runs. Branch blocks use streamed, exact signature ranking
 and bounded joins; sparse block IDs do not allocate sparse arrays. A sole stdin input is staged to disk with fixed-size buffers and then uses the
-same eligible executors as a regular file. Branch sections without DA, checksums,
-version metadata, mixed stdin/file inputs, and MC/DC-only sections still use the
+same eligible executors as a regular file. Source versions use bounded producer-order
+reduction and propagate across retained testcases. Branch sections without DA, checksums,
+mixed stdin/file inputs, and MC/DC-only sections still use the
 collector; large working sets can exceed its record budget. Completing those
 bounded paths and the remaining semantic audit is part of the release work. The experimental profile should be
 compared with upstream LCOV on the intended input before adopting it.
