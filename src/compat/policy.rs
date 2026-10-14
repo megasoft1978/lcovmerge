@@ -35,6 +35,7 @@ pub(super) fn parse_branch(
     payload: &str,
     file: &str,
     line: u64,
+    req: &Request,
 ) -> Result<(), Error> {
     let mut f = payload.splitn(4, ',');
     let ln = num(f.next(), file, line)?;
@@ -74,7 +75,11 @@ pub(super) fn parse_branch(
     let hits = if count == "-" {
         None
     } else {
-        Some(parse_count(count, file, line)?)
+        Some(match parse_count(count, file, line) {
+            Ok(hits) => hits,
+            Err(e) if e.message.ends_with("negative coverage count") && can_recover(req, &e) => 0,
+            Err(e) => return Err(e),
+        })
     };
     let blocks = s.branches.entry(ln).or_default();
     let bi = usize::try_from(block)

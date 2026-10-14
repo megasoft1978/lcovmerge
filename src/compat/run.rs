@@ -1260,7 +1260,7 @@ fn parse_input_sections(
         }
         if let Some(x) = s.strip_prefix("BRDA:") {
             if req.resources.branch_coverage {
-                recover_line!(parse_branch(section, x, label, line_no));
+                recover_line!(parse_branch(section, x, label, line_no, req));
                 recover_line!(ensure_budget(section, *held, limit, label, line_no));
             }
             continue;
@@ -1515,6 +1515,36 @@ mod tests {
         assert!(out.contains("TN:b\nSF:x.c\nDA:1,3\n"));
         assert!(!out.contains("LF:99"));
     }
+    #[test]
+    fn collector_keeps_recovered_negative_branch_in_its_signature() {
+        let input = b"TN:a\nSF:x.c\nVER:v1\nDA:1,0\nBRDA:1,eU7,first,-1\nBRDA:1,eU7,second,0\nend_of_record\n";
+        let mut req = Request::default();
+        req.resources.branch_coverage = true;
+        req.ignore_errors.insert("negative".into());
+        let mut sections = Vec::new();
+        let mut indexes = HashMap::new();
+        let mut held = 0;
+        parse_input(
+            Box::new(&input[..]),
+            "negative-branch",
+            &req,
+            &mut sections,
+            &mut indexes,
+            &mut held,
+            1 << 20,
+        )
+        .unwrap();
+        let block = sections[0].branches[&1]
+            .iter()
+            .find(|b| !b.is_empty())
+            .unwrap();
+        assert_eq!(block.len(), 2);
+        assert_eq!(block[0].expr, "first");
+        assert_eq!(block[0].hits, Some(0));
+        assert_eq!(block[0].kind, 'e');
+        assert!(block[0].unreachable);
+    }
+
     #[test]
     fn checksum_preserves_first_available() {
         let mut a = Section::default();
