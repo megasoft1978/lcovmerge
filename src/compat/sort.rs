@@ -287,24 +287,42 @@ impl Sorter {
         let max_workers = self.max_workers.clone();
         self.held = 0;
         self.batch_cap = 0;
-        self.handles.push(thread::spawn(move || {
-            let now = active.fetch_add(1, AtomicOrdering::Relaxed) + 1;
-            max_workers.fetch_max(now, AtomicOrdering::Relaxed);
-            let result = (|| {
-                cancelled()?;
-                let mut batch = batch;
-                batch.sort_unstable_by(cmp);
-                let mut bytes = 0;
-                let mut f = BufWriter::with_capacity(IO, File::create(path).map_err(err)?);
-                for item in &batch {
-                    write_item(&mut f, item, &mut bytes)?;
-                }
-                f.flush().map_err(err)?;
-                Ok(bytes)
-            })();
-            active.fetch_sub(1, AtomicOrdering::Relaxed);
-            result
-        }));
+        if self.requested == 1 {
+            let mut batch = batch;
+            batch.sort_unstable_by(cmp);
+            let mut bytes = 0;
+            let mut out = BufWriter::with_capacity(IO, File::create(path).map_err(err)?);
+            for item in &batch {
+                write_item(&mut out, item, &mut bytes)?;
+            }
+            out.flush().map_err(err)?;
+            self.written = self.written.saturating_add(bytes);
+            self.max_workers.fetch_max(1, AtomicOrdering::Relaxed);
+            return Ok(());
+        }
+        self.handles.push(
+            thread::Builder::new()
+                .name("lcov-sort".into())
+                .spawn(move || {
+                    let now = active.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+                    max_workers.fetch_max(now, AtomicOrdering::Relaxed);
+                    let result = (|| {
+                        cancelled()?;
+                        let mut batch = batch;
+                        batch.sort_unstable_by(cmp);
+                        let mut bytes = 0;
+                        let mut f = BufWriter::with_capacity(IO, File::create(path).map_err(err)?);
+                        for item in &batch {
+                            write_item(&mut f, item, &mut bytes)?;
+                        }
+                        f.flush().map_err(err)?;
+                        Ok(bytes)
+                    })();
+                    active.fetch_sub(1, AtomicOrdering::Relaxed);
+                    result
+                })
+                .map_err(err)?,
+        );
         self.workers = self.max_workers.load(AtomicOrdering::Relaxed);
         Ok(())
     }
@@ -433,6 +451,23 @@ impl Cursor {
         }
     }
 }
+fn descriptor_fanin(proposed: usize) -> usize {
+    #[cfg(unix)]
+    {
+        let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+        // SAFETY: getrlimit initializes one valid rlimit on success.
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } == 0 {
+            // SAFETY: successful getrlimit initialized the value.
+            let soft = unsafe { limit.assume_init() }.rlim_cur;
+            return proposed.min(
+                usize::try_from(soft)
+                    .unwrap_or(usize::MAX)
+                    .saturating_sub(8),
+            );
+        }
+    }
+    proposed.min(32)
+}
 
 #[cfg(test)]
 mod tests {
@@ -553,22 +588,4 @@ mod tests {
         assert!(sorter.finish().is_err());
         assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
     }
-}
-
-fn descriptor_fanin(proposed: usize) -> usize {
-    #[cfg(unix)]
-    {
-        let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
-        // SAFETY: getrlimit initializes one valid rlimit on success.
-        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } == 0 {
-            // SAFETY: successful getrlimit initialized the value.
-            let soft = unsafe { limit.assume_init() }.rlim_cur;
-            return proposed.min(
-                usize::try_from(soft)
-                    .unwrap_or(usize::MAX)
-                    .saturating_sub(8),
-            );
-        }
-    }
-    proposed.min(32)
 }
