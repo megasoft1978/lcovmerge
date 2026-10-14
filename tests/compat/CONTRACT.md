@@ -51,6 +51,21 @@ multiple testcases can retain it only in the source summary. Disabling
 consistency checks leaves missing DA records absent. Perl accepts a positive
 line with no positive branch hit; a positive branch with a zero line still fails.
 
+MC/DC fake DA follows the same single- versus multi-testcase split. For a
+single testcase, positive MC/DC outcomes on a missing line synthesize DA on
+that line. When two testcases have live DA, the serialized MC/DC records each
+receive the source-wide synthesized line count. MC/DC in a testcase with no
+DA contributes to the source master but is removed from output; if its
+positive MC/DC outcome supplies the missing line, the kept testcase receives
+an MC/DC `DA:line,0` even when its own outcome is zero. This private fake DA
+does not turn a true no-DA testcase into a DA-bearing testcase. All-positive
+`U` outcomes on a missing line synthesize count zero. MC/DC fake DA also
+participates in branch consistency: it can satisfy a missing branch line,
+while a positive fake DA can conflict with a branch line whose outcomes are
+all zero. Function range consistency checks each input before MC/DC generates
+fake DA, then checks the merged source after generation; the targeted range
+case captures that order-dependent failure.
+
 Explicitly enabling a coverage family with no corresponding coverpoints raises
 `empty`; default automatic function handling does not. Ignoring that category
 retains valid DA data and emits zero function summaries for explicit function
@@ -126,6 +141,12 @@ its status is retained, without claiming that it proves a branch mismatch.
 | `mcdc-expression-strict` | Cross-testcase MC/DC expression conflict | error |
 | `mcdc-expression-recovery` | Recover cross-testcase MC/DC expression conflict | success |
 | `mcdc-layout-summary` | MC/DC layout, unreachable records, and summary counts | success |
+| `mcdc-missing-line-single` | Positive MC/DC on a missing line synthesizes DA for one testcase | success |
+| `mcdc-missing-line-split` | Source-wide fake DA is serialized on MC/DC lines in each live testcase | success |
+| `mcdc-ghost-no-da-private-da` | True no-DA testcase is dropped while its MC/DC fake DA remains private to the source master | success |
+| `mcdc-u-no-line-recovery` | Positive all-`U` MC/DC on a missing line synthesizes zero-count DA | success |
+| `mcdc-fake-da-branch-conflict` | Positive MC/DC fake DA conflicts with a zero-hit branch line | error |
+| `fn-range-generated-mcdc-line` | Input function-range checks precede MC/DC fake DA, while merged checks follow generation | error |
 | `mcdc-duplicate-permuted` | Duplicate MC/DC expressions merged from inputs in permuted order | success |
 | `source-version-split` | Conflicting source versions across testcases | error |
 | `source-version-recovery` | Recover conflicting source versions | success |

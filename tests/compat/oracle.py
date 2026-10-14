@@ -189,6 +189,12 @@ def fixtures(directory):
         # These fixtures intentionally contain no DA records in the named testcases.
         "branch-no-da.info": f"TN:alpha\nSF:{srcname}\nBRDA:2,7,0,1\nend_of_record\n",
         "mcdc-no-da.info": f"TN:alpha\nSF:{srcname}\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "mcdc-missing-line-single.info": f"TN:single\nSF:{srcname}\nDA:1,1\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "mcdc-missing-line-split.info": f"TN:a\nSF:{srcname}\nDA:1,1\nMCDC:2,2,t,1,0,expr\nend_of_record\nTN:b\nSF:{srcname}\nDA:1,1\nMCDC:2,2,f,1,0,expr\nend_of_record\n",
+        "mcdc-ghost-no-da.info": f"TN:ghost\nSF:{srcname}\nMCDC:2,2,t,1,0,expr\nend_of_record\nTN:keep\nSF:{srcname}\nDA:2,1\nMCDC:2,2,f,1,0,expr\nend_of_record\n",
+        "mcdc-u-no-line.info": f"TN:alpha\nSF:{srcname}\nDA:1,0\nMCDC:2,U2,t,1,0,expr\nend_of_record\n",
+        "mcdc-branch-conflict.info": f"TN:alpha\nSF:{srcname}\nDA:1,0\nBRDA:2,7,0,0\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
+        "fn-range-generated-line.info": f"TN:alpha\nSF:{srcname}\nDA:1,0\nFNL:0,2,2\nFNA:0,0,range_fn\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
         "removed-no-da.info": f"TN:keep\nSF:{srcname}\nDA:1,1\nend_of_record\nTN:removed\nSF:{srcname}\nBRDA:2,7,0,1\nMCDC:2,2,t,1,0,expr\nend_of_record\n",
         # A no-DA section from one input is rejected as an empty input even
         # when a later input supplies usable data for the same source.
@@ -303,6 +309,12 @@ CASES = [
     ("mcdc-expression-strict", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-conflict-a.info", "-a", "mcdc-conflict-b.info"], 1),
     ("mcdc-expression-recovery", ["--ignore-errors", "inconsistent", "--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-conflict-a.info", "-a", "mcdc-conflict-b.info"], 0),
     ("mcdc-layout-summary", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-layout.info"], 0),
+    ("mcdc-missing-line-single", ["--mcdc-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "mcdc-missing-line-single.info"], 0),
+    ("mcdc-missing-line-split", ["--mcdc-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "mcdc-missing-line-split.info"], 0),
+    ("mcdc-ghost-no-da-private-da", ["--mcdc-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "mcdc-ghost-no-da.info"], 0),
+    ("mcdc-u-no-line-recovery", ["--mcdc-coverage", "--no-function-coverage", "--ignore-errors", "inconsistent", "-a", "mcdc-u-no-line.info"], 0),
+    ("mcdc-fake-da-branch-conflict", ["--mcdc-coverage", "--branch-coverage", "--no-function-coverage", "-a", "mcdc-branch-conflict.info"], 1),
+    ("fn-range-generated-mcdc-line", ["--mcdc-coverage", "--function-coverage", "-a", "fn-range-generated-line.info"], 1),
     ("mcdc-duplicate-permuted", ["--mcdc-coverage", "--no-function-coverage", "-a", "mcdc-duplicate-b.info", "-a", "mcdc-duplicate-a.info"], 0),
     ("source-version-split", ["--no-function-coverage", "-a", "version-a.info", "-a", "version-b.info"], 1),
     ("source-version-recovery", ["--ignore-errors", "version", "--no-function-coverage", "-a", "version-a.info", "-a", "version-b.info"], 0),
