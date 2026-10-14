@@ -1,5 +1,6 @@
 //! Bounded BRDA signature ranking and canonical folding pipeline.
 use super::branch_fold::Fold;
+use super::policy;
 use super::signature_store;
 use super::sort::{self, Sorted};
 use super::Request;
@@ -42,13 +43,17 @@ impl Reducer {
         payload: &str,
         label: &str,
         line_no: u64,
-        _req: &Request,
-    ) -> Result<(), Error> {
+        req: &Request,
+    ) -> Result<Option<(u64, bool)>, Error> {
         check_cancelled()?;
         if source.as_bytes().contains(&0) || tc.as_bytes().contains(&0) {
             return Err(Error::at(2, label, line_no, "NUL in BRDA identity"));
         }
-        let parsed = parse(payload, label, line_no)?;
+        let parsed = match parse(payload, label, line_no, req) {
+            Ok(parsed) => parsed,
+            Err(error) if policy::can_recover(req, &error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
         let mut key = Vec::with_capacity(source.len() + tc.len() + 42);
         key.extend_from_slice(source.as_bytes());
         key.push(0);
@@ -71,7 +76,11 @@ impl Reducer {
             }
         }
         value.extend_from_slice(parsed.expression.as_bytes());
-        self.raw.push(key, value)
+        self.raw.push(key, value)?;
+        Ok(Some((
+            parsed.line,
+            parsed.hits.is_some_and(|hits| hits > 0),
+        )))
     }
 
     pub(super) fn finish(self, _req: &Request) -> Result<Sorted, Error> {
@@ -326,7 +335,7 @@ struct Tagged {
     expression: String,
 }
 
-fn parse(payload: &str, label: &str, line_no: u64) -> Result<Parsed, Error> {
+fn parse(payload: &str, label: &str, line_no: u64, req: &Request) -> Result<Parsed, Error> {
     let mut fields = payload.splitn(4, ',');
     let line = number(fields.next().unwrap_or(""), label, line_no)?;
     let block_field = fields
@@ -362,7 +371,18 @@ fn parse(payload: &str, label: &str, line_no: u64) -> Result<Parsed, Error> {
     let hits = if count == "-" {
         None
     } else {
-        Some(count_value(count, label, line_no)?)
+        match count_value(count, label, line_no) {
+            Ok(value) => Some(value),
+            Err(error)
+                if error.message.contains("negative coverage count")
+                    && policy::can_recover(req, &error) =>
+            {
+                // The pinned oracle normalizes negative values to zero after
+                // reporting an ignorable negative-count diagnostic.
+                Some(0)
+            }
+            Err(error) => return Err(error),
+        }
     };
     Ok(Parsed {
         line,
@@ -656,7 +676,7 @@ mod tests {
         ];
         for (index, (input, block, payload)) in rows.into_iter().enumerate() {
             let payload = payload.replace("BLOCK", &block.to_string());
-            reducer
+            let metadata = reducer
                 .push(
                     "x.c",
                     "tc",
@@ -669,6 +689,7 @@ mod tests {
                     &req,
                 )
                 .unwrap();
+            assert!(metadata.is_some());
         }
         let sorted = reducer.finish(&req).unwrap();
         assert_eq!(
@@ -762,6 +783,59 @@ mod tests {
                 b"BRDA:1,0,unknown,expr,3".to_vec(),
                 b"BRDA:1,fU1,exception,expr,9223372036854775807".to_vec(),
                 b"1,1".to_vec(),
+            ]
+        );
+    }
+
+    #[test]
+    fn returns_consistency_metadata_and_recovers_negative_counts_as_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut req = Request::default();
+        req.ignore_errors.insert("negative".to_owned());
+        req.ignore_errors.insert("format".to_owned());
+        let mut reducer = Reducer::new(tmp.path(), 1 << 20, 1).unwrap();
+        assert_eq!(
+            reducer
+                .push(
+                    "x.c",
+                    "tc",
+                    0,
+                    0,
+                    0,
+                    "8,U900000,x,-2",
+                    "trace.info",
+                    1,
+                    &req
+                )
+                .unwrap(),
+            Some((8, false))
+        );
+        assert_eq!(
+            reducer
+                .push("x.c", "tc", 0, 0, 1, "8,1,x,3", "trace.info", 2, &req)
+                .unwrap(),
+            Some((8, true))
+        );
+        assert_eq!(
+            reducer
+                .push("x.c", "tc", 0, 0, 2, "8,2,x,-", "trace.info", 3, &req)
+                .unwrap(),
+            Some((8, false))
+        );
+        assert_eq!(
+            reducer
+                .push("x.c", "tc", 0, 0, 3, "8,0", "trace.info", 4, &req)
+                .unwrap(),
+            None
+        );
+        let sorted = reducer.finish(&req).unwrap();
+        assert_eq!(
+            values(&sorted),
+            [
+                b"BRDA:8,0,x,3".to_vec(),
+                b"BRDA:8,1,x,-".to_vec(),
+                b"BRDA:8,U2,x,0".to_vec(),
+                b"2,1".to_vec(),
             ]
         );
     }
