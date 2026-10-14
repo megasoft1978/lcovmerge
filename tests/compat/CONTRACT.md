@@ -103,6 +103,39 @@ expected oracle exit classes, checked before candidate results are counted.
 | `derive-endline-cross-testcase` | Derive function end line using that testcase's line data | success |
 | `lambda-cpp-no-inference` | Do not infer lambda end line in C++ source | success |
 | `function-aliases-cross-testcase` | Source-wide function aliases retain testcase-local identity | success |
+| `function-name-commas` | Legacy function names preserve embedded commas | success |
+| `modern-reused-id-input-order` | Reused sparse modern IDs retain per-input alias ordering | success |
+| `modern-alias-same-start-different-end` | Conflicting function end lines at one start | error |
+| `modern-alias-same-start-different-end-recovery` | Recover conflicting function end lines | success |
+| `modern-missing-end-cross-input` | Merge function definitions with and without end lines across inputs | success |
+| `orphan-function-hit-strict` | Reject FNDA without a matching FN definition | error |
+| `orphan-function-hit-recovery` | Recover orphan FNDA with mismatch and empty handling | success |
+
+The seven function cases above are required in both pinned backends. The
+end-line conflict is an observed agreement: XS and pure Perl both exit 1 in
+strict mode and succeed with `--ignore-errors inconsistent`. Orphan hits need
+both `mismatch` and `empty` recovery categories; `mismatch` alone reports the
+orphan but then fails because no function coverpoints remain.
+
+## Bounded runtime gates
+
+Run the large synthetic gates separately from the tiny differential matrix:
+
+```sh
+python3 tests/compat_bounded.py --binary /absolute/path/to/lcovmerge \
+  --workdir .cache/compat-bounded
+```
+
+The runner makes three single-source tracefiles with more than 24 million
+records each, at least three times the 8 million record budget, then invokes
+the candidate with `--mem-limit 8M`. The shapes cover DA plus modern function
+aliases, distinct legacy functions, and sparse modern function IDs. It checks
+the emitted tracefile in a streaming pass: one section, exact FNL/FNA/FN/FNDA
+and DA counts, every DA hit value and line range, and exact LF/LH totals. The
+default per-command timeout is 240 seconds and can be changed with
+`--timeout`. The generated inputs, commands, stdout/stderr logs, outputs, and
+`report.json` stay in `--workdir`; failures are recorded rather than skipped.
+These runs do not invoke LCOV or genhtml on the large files.
 
 ## Comparison rules and limits
 

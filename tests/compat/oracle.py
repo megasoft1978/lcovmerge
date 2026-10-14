@@ -136,6 +136,13 @@ def fixtures(directory):
         "lambda-python.info": f"TN:alpha\nSF:{str((directory/'lambda.py').resolve())}\nDA:2,1\nFN:2,outer.<locals>.inner\nFNDA:1,outer.<locals>.inner\nend_of_record\n",
         "aliases-cross-a.info": f"TN:alpha\nSF:{srcname}\nDA:3,1\nFN:3,short_name\nFNDA:2,short_name\nend_of_record\n",
         "aliases-cross-b.info": f"TN:beta\nSF:{srcname}\nDA:3,1\nFN:3,long_name\nFNDA:3,long_name\nend_of_record\n",
+        "fn-comma.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFN:1,name,with,commas\nFNDA:2,name,with,commas\nend_of_record\n",
+        "modern-reused-id-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:9,1,1\nFNA:9,2,first_alias\nFNL:3,1,1\nFNA:3,1,third_alias\nend_of_record\n",
+        "modern-reused-id-b.info": f"TN:beta\nSF:{srcname}\nDA:1,1\nFNL:3,1,1\nFNA:3,4,reused_alias\nFNL:9,1,1\nFNA:9,3,last_alias\nend_of_record\n",
+        "same-start-different-end.info": f"TN:alpha\nSF:{srcname}\nDA:2,1\nDA:5,1\nFNL:0,2,5\nFNA:0,1,short_end\nFNL:1,2,7\nFNA:1,1,long_end\nend_of_record\n",
+        "missing-ends-a.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNL:4,1\nFNA:4,1,without_end\nend_of_record\n",
+        "missing-ends-b.info": f"TN:beta\nSF:{srcname}\nDA:2,1\nFNL:8,2,3\nFNA:8,1,with_end\nend_of_record\n",
+        "orphan-function-hit.info": f"TN:alpha\nSF:{srcname}\nDA:1,1\nFNDA:3,orphan_name\nend_of_record\n",
         "other.info": f"TN:alpha\nSF:{othername}\nDA:1,1\nend_of_record\n",
     }
     for name, content in rows.items():
@@ -219,6 +226,13 @@ CASES = [
     ("derive-endline-cross-testcase", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "derive-cross-a.info", "-a", "derive-cross-b.info"], 0),
     ("lambda-cpp-no-inference", ["--function-coverage", "--rc", "derive_function_end_line=1", "-a", "lambda-cpp.info"], 0),
     ("function-aliases-cross-testcase", ["--function-coverage", "-a", "aliases-cross-a.info", "-a", "aliases-cross-b.info"], 0),
+    ("function-name-commas", ["--function-coverage", "-a", "fn-comma.info"], 0),
+    ("modern-reused-id-input-order", ["--function-coverage", "-a", "modern-reused-id-a.info", "-a", "modern-reused-id-b.info"], 0),
+    ("modern-alias-same-start-different-end", ["--function-coverage", "-a", "same-start-different-end.info"], 1),
+    ("modern-alias-same-start-different-end-recovery", ["--function-coverage", "--ignore-errors", "inconsistent", "-a", "same-start-different-end.info"], 0),
+    ("modern-missing-end-cross-input", ["--function-coverage", "-a", "missing-ends-a.info", "-a", "missing-ends-b.info"], 0),
+    ("orphan-function-hit-strict", ["--function-coverage", "-a", "orphan-function-hit.info"], 1),
+    ("orphan-function-hit-recovery", ["--function-coverage", "--ignore-errors", "mismatch,empty", "-a", "orphan-function-hit.info"], 0),
 ]
 
 
@@ -266,6 +280,7 @@ def main():
     ap.add_argument("--source-root", default=str(DEFAULT_SOURCE))
     ap.add_argument("--genhtml", help="genhtml executable; defaults beside selected lcov or on PATH")
     ap.add_argument("--timeout", type=int, default=TIMEOUT)
+    ap.add_argument("--case", action="append", help="run only this required case (repeatable)")
     args = ap.parse_args()
     if not args.oracle_only and not args.binary:
         ap.error("use --binary PATH or --oracle-only")
@@ -289,6 +304,11 @@ def main():
         return 2
     identity = json.loads(identity_run.stdout)
 
+    selected_cases = [case for case in CASES if not args.case or case[0] in args.case]
+    unknown_cases = sorted(set(args.case or ()) - {case[0] for case in CASES})
+    if unknown_cases:
+        ap.error("unknown --case: " + ", ".join(unknown_cases))
+
     workdir = pathlib.Path(args.workdir)
     if not workdir.is_absolute():
         workdir = ROOT / workdir
@@ -296,11 +316,11 @@ def main():
     manifest = {"identity": identity, "source_root": str(source), "oracle_executable": str(oracle_exe),
                 "candidate_executable": str(candidate) if candidate else None,
                 "genhtml_executable": str(genhtml), "timeout_seconds": args.timeout,
-                "required_cases": len(CASES), "cases": []}
+                "required_cases": len(selected_cases), "cases": []}
     failures = 0
     reference_differences = 0
     backends = (("xs", None), ("pure-perl", "1"))
-    for case in CASES:
+    for case in selected_cases:
         name, opts, expected = case[:3]
         mode = case[3] if len(case) == 4 else "file"
         case_dir = workdir / name
@@ -460,7 +480,7 @@ def main():
     manifest["integer_policy"] = "Exact integer parsing; pure-Perl reference applies to the documented XS input-rounding fixture."
     manifest_path = workdir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"workdir": str(workdir), "required_cases": len(CASES), "backend_runs": len(CASES) * 2, "expected_reference_differences": reference_differences,
+    print(json.dumps({"workdir": str(workdir), "required_cases": len(selected_cases), "backend_runs": len(selected_cases) * 2, "expected_reference_differences": reference_differences,
                       "failures": failures, "manifest": str(manifest_path)}, indent=2))
     return 1 if failures else 0
 
