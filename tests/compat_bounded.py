@@ -28,6 +28,11 @@ def expected_records(spec: dict):
         yield "FNL:0,1,1\n"
         for i in range(spec["aliases"]):
             yield f"FNA:0,{spec['hits']},alias_{i:08d}\n"
+    elif shape == "mcdc":
+        for i in range(spec["mcdc_conditions"]):
+            group = f"{'U' if i % 5 == 0 else ''}{spec['mcdc_conditions']}"
+            yield f"MCDC:1,{group},t,{spec['hits']},{i},condition_{i:08d}\n"
+            yield f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n"
     elif shape != "lines":
         raise AssertionError(shape)
     yield from (f"DA:{i},{spec['hits']}\n" for i in range(1, spec["lines"] + 1))
@@ -56,11 +61,11 @@ def verify_output(path: Path, spec: dict) -> None:
                 source_seen = True
             elif key == "TN":
                 continue
-            elif key in ("LF", "LH", "FNF", "FNH"):
+            elif key in ("LF", "LH", "FNF", "FNH", "MCF", "MCH"):
                 if key in got_summary:
                     raise AssertionError(f"duplicate summary {key}")
                 got_summary[key] = int(value)
-            elif key in ("DA", "FNL", "FNA", "FNDA", "FN"):
+            elif key in ("DA", "FNL", "FNA", "FNDA", "FN", "MCDC"):
                 # LCOV 2.6 normalizes FN to FNL/FNA. Legacy input is checked
                 # through the normalized function records declared in spec.
                 want = next(records, None)
@@ -76,6 +81,8 @@ def verify_output(path: Path, spec: dict) -> None:
         raise AssertionError(f"truncated output; next expected record {extra[:100]!r}")
     wanted = {"LF": spec["lines"], "LH": spec["lines"] if spec["hits"] else 0,
               "FNF": spec["function_count"], "FNH": spec["function_count"] if spec["hits"] else 0}
+    if spec.get("mcdc_conditions"):
+        wanted.update(MCF=2 * spec["mcdc_conditions"], MCH=spec["mcdc_conditions"])
     # Some LCOV outputs omit function summaries when no function records exist.
     wanted = {k: v for k, v in wanted.items() if v or k in got_summary}
     if got_summary != wanted:
@@ -110,7 +117,7 @@ def validator_self_test() -> None:
 
 def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     hits = 2
-    functions = aliases = lines = 0
+    functions = aliases = lines = conditions = 0
     with path.open("wt", encoding="utf-8", newline="\n") as out:
         out.write(f"TN:bounded\nSF:{source}\n")
         if shape == "lines":
@@ -138,6 +145,13 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
             for i in range(aliases):
                 out.write(f"FNA:17,{hits},alias_{i:08d}\n")
             lines = 1
+        elif shape == "mcdc":
+            conditions = size
+            for i in range(conditions):
+                group = f"{'U' if i % 5 == 0 else ''}{conditions}"
+                out.write(f"MCDC:1,{group},t,{hits},{i},condition_{i:08d}\n")
+                out.write(f"MCDC:1,{group},f,0,{i},condition_{i:08d}\n")
+            lines = 1
         if shape != "lines":
             for i in range(1, lines + 1):
                 out.write(f"DA:{i},{hits}\n")
@@ -148,6 +162,7 @@ def write_case(path: Path, source: Path, shape: str, size: int) -> dict:
     # Each function has line 1 covered; DA shape uses its full line sequence.
     return {"source": str(source), "shape": shape, "hits": hits, "lines": lines,
             "functions": functions, "aliases": aliases,
+            "mcdc_conditions": conditions,
             "function_count": functions or int(bool(aliases)), "bytes": byte_size}
 
 
@@ -195,8 +210,10 @@ def run_case(binary: Path, root: Path, config: Path, tempdir: Path,
     command = [str(binary), "--lcov-compat=2.6", "--quiet", "--config-file", str(config),
                "--mem-limit", "8M", "--tempdir", str(tempdir), "-a",
                str(root / f"{name}.info"), "-o", str(output)]
-    if spec["shape"] == "lines":
+    if spec["shape"] in ("lines", "mcdc"):
         command.append("--no-function-coverage")
+    if spec["shape"] == "mcdc":
+        command.append("--mcdc-coverage")
     started = time.monotonic()
     meter = TempMeter(tempdir)
     status, timed_out, rss, rss_note = None, False, None, "not measured"
@@ -272,7 +289,8 @@ def main() -> int:
     cases = (("lines", "lines", args.target_bytes // 10),
              ("function-ids", "functions", args.target_bytes // 55),
              ("legacy-functions", "legacy", args.target_bytes // 50),
-             ("alias-group", "aliases", args.target_bytes // 21))
+             ("alias-group", "aliases", args.target_bytes // 21),
+             ("mcdc-group", "mcdc", args.target_bytes // 70))
     results, failures = [], []
     for name, shape, size in cases:
         source = root / f"{name}.c"; source.write_text("int x;\n")

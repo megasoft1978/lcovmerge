@@ -75,3 +75,10 @@ measurements do not establish this profile's speed. See the
 
 Development validation is still in progress. No stable drop-in or performance
 claim is made before the implementation's release gates pass.
+
+DA/function inputs and MC/DC sections containing DA records use external sort
+runs. Branch-bearing inputs, checksums, version metadata, stdin, and MC/DC-only
+sections still use the collector; large working sets can exceed its record
+budget. Completing those bounded paths and strict function/line consistency
+checks remains part of the release work. The experimental profile should be
+compared with upstream LCOV on the intended input before adopting it.

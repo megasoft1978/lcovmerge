@@ -179,6 +179,7 @@ impl Reducer {
         }
         drop(ec);
         drop(expr_sorted);
+        drop(last);
         let sorted = self.rows.finish()?;
         let mut cur = sorted.cursor()?;
         let mut out = Sorter::new(&tmpdir, budget / 2, jobs)?;
@@ -271,8 +272,51 @@ impl Reducer {
             }
             Ok(())
         };
+        let mut previous_condition: Option<Vec<u8>> = None;
+        let mut emit_complete = |row: (Vec<u8>, Vec<u8>),
+                                 next: Option<&[u8]>,
+                                 out: &mut Sorter,
+                                 summary: &mut Option<Vec<u8>>,
+                                 found: &mut i64,
+                                 hit: &mut i64,
+                                 group: &mut Option<(Vec<u8>, u64, u64)>,
+                                 normalized: &mut u64|
+         -> Result<(), Error> {
+            let sense = split_key(&row.0)?.5;
+            let condition = row.0[..row.0.len() - 8].to_vec();
+            let next_is_false = next.is_some_and(|k| {
+                k.len() == condition.len() + 8
+                    && k.starts_with(&condition)
+                    && k[condition.len()..] == 1u64.to_be_bytes()
+            });
+            let absent_true = sense == 1 && previous_condition.as_ref() != Some(&condition);
+            let zero = if absent_true || (sense == 0 && !next_is_false) {
+                let mut key = row.0.clone();
+                let mut value = row.1.clone();
+                let start = key.len() - 8;
+                key[start..].copy_from_slice(&(1 - sense).to_be_bytes());
+                value[..8].fill(0);
+                Some((key, value))
+            } else {
+                None
+            };
+            if absent_true {
+                emit(zero.unwrap(), out, summary, found, hit, group, normalized)?;
+                emit(row, out, summary, found, hit, group, normalized)?;
+            } else {
+                emit(row, out, summary, found, hit, group, normalized)?;
+                if let Some(zero) = zero {
+                    emit(zero, out, summary, found, hit, group, normalized)?;
+                }
+            }
+            previous_condition = Some(condition);
+            Ok(())
+        };
         while let Some(r) = cur.next()? {
             check_cancelled()?;
+            if r.value.len() < 9 {
+                return Err(Error::new(3, "corrupt MC/DC value"));
+            }
             if let Some((pk, mut pv)) = pending.take() {
                 if pk == r.key {
                     if &pv[9..]
@@ -306,8 +350,9 @@ impl Reducer {
                     pending = Some((pk, pv));
                     continue;
                 }
-                emit(
+                emit_complete(
                     (pk, pv),
+                    Some(&r.key),
                     &mut out,
                     &mut summary_key,
                     &mut found,
@@ -322,8 +367,9 @@ impl Reducer {
             pending = Some((r.key, r.value));
         }
         if let Some(r) = pending {
-            emit(
+            emit_complete(
                 r,
+                None,
                 &mut out,
                 &mut summary_key,
                 &mut found,
@@ -464,7 +510,7 @@ mod tests {
         r.push("x.c", "a", "4,3,t,1,0,C", "fixture", 4, &Request::default())
             .unwrap();
         let rows = collect(r.finish(&Request::default()).unwrap());
-        assert_eq!(rows.iter().filter(|(k, _)| rank(k) == 5).count(), 4);
+        assert_eq!(rows.iter().filter(|(k, _)| rank(k) == 5).count(), 6);
         assert!(rows.iter().any(|(_, v)| v.ends_with(b",A")));
     }
 
@@ -525,8 +571,18 @@ mod tests {
             .unwrap();
         }
         let rows = collect(r.finish(&Request::default()).unwrap());
-        assert_eq!(rows.len(), 91);
-        assert_eq!(rows.iter().filter(|(k, _)| rank(k) == 5).count(), 90);
+        assert_eq!(rows.len(), 181);
+        for i in 0..90 {
+            assert_eq!(
+                rows[2 * i].1,
+                format!("MCDC:4,90,t,1,{i},{}", "e".repeat(1500)).as_bytes()
+            );
+            assert_eq!(
+                rows[2 * i + 1].1,
+                format!("MCDC:4,90,f,0,{i},{}", "e".repeat(1500)).as_bytes()
+            );
+        }
+        assert_eq!(rows[180].1, b"180,90");
         drop(rows);
         assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 0);
     }

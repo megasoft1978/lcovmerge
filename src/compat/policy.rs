@@ -147,10 +147,7 @@ pub(super) fn parse_mcdc(
         if old.expr != item.expr {
             return Err(Error::at(2, file, line, "inconsistent MC/DC expression"));
         }
-        old.hits = old
-            .hits
-            .checked_add(item.hits)
-            .ok_or_else(|| Error::at(2, file, line, "MC/DC count overflow"))?;
+        old.hits = old.hits.saturating_add(item.hits).min(i64::MAX as u64);
         old.unreachable |= item.unreachable;
     } else {
         s.mcdc.entry(ln).or_default().insert(key, item);

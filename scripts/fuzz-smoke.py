@@ -82,6 +82,12 @@ def main() -> int:
                 command += ["--lcov-compat=2.6", "--quiet", "--config-file", os.fspath(root / "lcovrc"), "-a"]
                 (root / "lcovrc").write_bytes(b"")
             command += [os.fspath(source), "-o", os.fspath(output)]
+            if args.profile == "compat":
+                # Exercise active family parsers as well as their disabled paths.
+                if cases % 2 == 0:
+                    command.append("--branch-coverage")
+                if cases % 3 == 0:
+                    command.append("--mcdc-coverage")
             try:
                 result = subprocess.run(command, capture_output=True, timeout=2, check=False)
             except subprocess.TimeoutExpired as exc:

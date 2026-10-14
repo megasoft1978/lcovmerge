@@ -103,11 +103,28 @@ def main():
             r = subprocess.run(prefix + ["-a", str(a), "-o", str(dest)], capture_output=True, timeout=8, preexec_fn=fsize_limit)
             check(r.returncode != 0 and dest.read_bytes() == b"keep-me", "RLIMIT_FSIZE write failure did not preserve destination")
             # Interrupt while stdin is open but blocked; timeout is the guard against failed cancellation.
-            proc = subprocess.Popen(prefix + ["-a", "-", "-o", str(root / "cancel.info")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.Popen([p for p in prefix if p != "--quiet"] + ["--verbose", "-a", "-", "-o", str(root / "cancel.info")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
-                time.sleep(0.15)
+                # The input diagnostic is emitted after handler installation.
+                # Slow sanitizer startup must not turn this into an uncaught signal.
+                import select
+                deadline = time.monotonic() + 8
+                ready_output = bytearray()
+                marker = b"lcovmerge: reading LCOV input -\n"
+                while marker not in ready_output:
+                    remaining = deadline - time.monotonic()
+                    check(remaining > 0, "blocked-stdin input readiness timed out")
+                    readable, _, _ = select.select([proc.stderr], [], [], remaining)
+                    check(bool(readable), "blocked-stdin input readiness timed out")
+                    chunk = os.read(proc.stderr.fileno(), 4096)
+                    check(bool(chunk), f"blocked-stdin exited before readiness: {bytes(ready_output)!r}")
+                    ready_output.extend(chunk)
                 proc.send_signal(signal.SIGINT)
-                _, err = proc.communicate(timeout=4)
+                # Keep stdin open until cancellation completes. communicate()
+                # would close it and could hide an interrupted-read retry bug.
+                proc.wait(timeout=4)
+                _, err = proc.communicate(timeout=2)
+                err = bytes(ready_output) + err
                 check(proc.returncode == 1 and b"interrupted" in err, f"blocked-stdin signal was not caught cleanly: {proc.returncode} {err!r}")
                 check(not list(tmpdir.iterdir()), "interruption left temporary runs")
             finally:

@@ -1,5 +1,5 @@
 //! Bounded DA and function compatibility executor.
-use super::{function_spill, line_spill, policy, sort, Request, StopOnCancel};
+use super::{function_spill, line_spill, mcdc_spill, policy, sort, Request, StopOnCancel};
 use crate::common::{check_cancelled, Error, MAX_LINE};
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -42,6 +42,8 @@ fn scan(req: &Request) -> Result<bool, Error> {
         let mut reader = BufReader::new(StopOnCancel(reader));
         let mut bytes = Vec::with_capacity(4096);
         let mut open = false;
+        let mut saw_da = false;
+        let mut saw_mcdc = false;
         let mut line = 0u64;
         loop {
             check_cancelled()?;
@@ -79,24 +81,33 @@ fn scan(req: &Request) -> Result<bool, Error> {
                     return Ok(false);
                 }
                 open = true;
+                saw_da = false;
+                saw_mcdc = false;
             } else if s == "end_of_record" {
                 if !open {
+                    return Ok(false);
+                }
+                // Sections without DA currently require the collector's
+                // source/testcase metadata propagation path.
+                if saw_mcdc && !saw_da {
                     return Ok(false);
                 }
                 open = false;
             } else if s.starts_with("VER:") {
                 return Ok(false);
             } else if [
-                "DA:", "FN:", "FNDA:", "FNL:", "FNA:", "LF:", "LH:", "FNF:", "FNH:",
+                "DA:", "FN:", "FNDA:", "FNL:", "FNA:", "LF:", "LH:", "FNF:", "FNH:", "MCDC:",
+                "MCF:", "MCH:",
             ]
             .iter()
             .any(|p| s.starts_with(p))
                 || (!req.resources.branch_coverage && s.starts_with("BRDA:"))
-                || (!req.mcdc_coverage && s.starts_with("MCDC:"))
             {
                 if !open {
                     return Ok(false);
                 }
+                saw_da |= s.starts_with("DA:");
+                saw_mcdc |= req.mcdc_coverage && s.starts_with("MCDC:");
             } else {
                 return Ok(false);
             }
@@ -115,13 +126,19 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
     let shared = memory
         .saturating_sub(reserve)
         .max(3 * (crate::common::IO_BLOCK + 4096));
-    let each = (shared / 3).max(crate::common::IO_BLOCK + 4096);
+    let slots = if req.mcdc_coverage { 4 } else { 3 };
+    let each = (shared / slots).max(crate::common::IO_BLOCK + 4096);
     let fanin = super::descriptor_fanin(
         (memory / (3 * (MAX_LINE + crate::common::IO_BLOCK + 4096))).clamp(2, 32),
     )?;
     let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
     let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut function_sources = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut mcdc = if req.mcdc_coverage {
+        Some(mcdc_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
+    } else {
+        None
+    };
     for (input_id, path) in o.inputs.iter().enumerate() {
         check_cancelled()?;
         let label = path.display().to_string();
@@ -221,6 +238,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             if !selected {
                 continue;
             }
+            if let Some(payload) = s.strip_prefix("MCDC:") {
+                if let Some(reducer) = &mut mcdc {
+                    reducer.push(src, &section_tc, payload, &label, line_no, req)?;
+                }
+                continue;
+            }
             if !o.function_data
                 && ["FN:", "FNDA:", "FNL:", "FNA:"]
                     .iter()
@@ -275,8 +298,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                         input: input_id as u64,
                         section,
                         ordinal,
-                        label: label.clone(),
-                        line_no,
+                        // DA validation already reported its original input
+                        // location; the count-only join cannot fail semantically.
+                        label: String::new(),
+                        line_no: 0,
                     })?;
                     continue;
                 }
@@ -296,8 +321,8 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                         input: input_id as u64,
                         section,
                         ordinal,
-                        label: label.clone(),
-                        line_no,
+                        label: String::new(),
+                        line_no: 0,
                     })?;
                 }
                 continue;
@@ -428,6 +453,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
     }
+    let mcdc_rows = mcdc.map(|r| r.finish(req)).transpose()?;
     // Release the DA batch before opening the three normalization sorters.
     // The spill directory stays alive until all line cursors have finished.
     let line_path = lines.finish()?;
@@ -466,6 +492,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         val.extend_from_slice(&row.hits.to_be_bytes());
         functions.push(key, val)?;
     }
+    drop(linked);
     let mut names = functions.finish()?.cursor()?;
     let mut normalized = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut pending = names.next()?;
@@ -499,7 +526,14 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         push_str(&mut key, &name)?;
         normalized.push(key, hits.to_be_bytes().to_vec())?;
     }
+    drop(names);
     let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    if let Some(rows) = mcdc_rows {
+        let mut cursor = rows.cursor()?;
+        while let Some(row) = cursor.next()? {
+            final_sort.push(row.key, row.value)?;
+        }
+    }
     let mut function_profiles = function_profiles.finish()?.cursor()?;
     let mut function_profile = function_profiles.next()?;
     let mut function_sources = function_sources.finish()?.cursor()?;
@@ -546,7 +580,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
                 row = line_spill::read_next_public(&mut lr)?;
             }
             let mut k = key_prefix(&src, &tc)?;
-            k.push(3);
+            k.push(7);
             k.extend_from_slice(&line.to_be_bytes());
             final_sort.push(k, count.to_be_bytes().to_vec())?;
             if count > 0 {
@@ -561,7 +595,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             }
         }
         let mut k = key_prefix(&src, &tc)?;
-        k.push(4);
+        k.push(8);
         final_sort.push(k, format!("{lf},{lh}").into_bytes())?;
         if has_source_functions && !has_functions {
             let mut k = key_prefix(&src, &tc)?;
@@ -569,6 +603,11 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
             final_sort.push(k, b"0,0".to_vec())?;
         }
     }
+    drop(lr);
+    drop(function_profiles);
+    drop(function_sources);
+    drop(function_profile);
+    drop(function_source);
     let normalized = normalized.finish()?;
     let mut end_map = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut map_input = normalized.cursor()?;
@@ -603,6 +642,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         value[8] = u8::from(chosen.is_some());
         end_map.push(key, value)?;
     }
+    drop(map_input);
     let end_map = end_map.finish()?;
     let mut end_cursor = end_map.cursor()?;
     let mut end_row = end_cursor.next()?;
@@ -633,6 +673,10 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         canonical.push(key, row.value)?;
         nrow = normalized.next()?;
     }
+    drop(normalized);
+    drop(end_cursor);
+    drop(end_row);
+    drop(end_map);
     let mut ordered = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
     let mut normalized = canonical.finish()?.cursor()?;
     let mut nrow = normalized.next()?;
@@ -654,6 +698,7 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         ordered.push(key, row.value)?;
         nrow = normalized.next()?;
     }
+    drop(normalized);
     let ordered = ordered.finish()?;
     let mut ordered_cursor = ordered.cursor()?;
     let mut ahead_cursor = ordered.cursor()?;
@@ -745,6 +790,12 @@ fn execute(req: &Request, memory: usize) -> Result<(), Error> {
         k.push(2);
         final_sort.push(k, format!("{fnf},{fnh}").into_bytes())?;
     }
+    drop(line_ends);
+    drop(lines);
+    drop(ordered_cursor);
+    drop(ahead_cursor);
+    drop(ahead_row);
+    drop(ordered);
     let final_rows = final_sort.finish()?;
     if o.verbose && !o.quiet {
         let stats = final_rows.stats();
@@ -818,7 +869,7 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, _req: &Request) -> Resul
         }
         match rank {
             0 => {}
-            1 => writeln!(
+            1 | 5 => writeln!(
                 out,
                 "{}",
                 String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid function row"))?
@@ -832,12 +883,20 @@ fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, _req: &Request) -> Resul
                 let nh = p.next().unwrap_or("0");
                 writeln!(out, "FNF:{nf}\nFNH:{nh}").map_err(ioerr)?;
             }
-            3 => {
+            6 => {
+                let x = String::from_utf8(row.value)
+                    .map_err(|_| Error::new(3, "invalid MC/DC summary"))?;
+                let mut p = x.split(',');
+                let found = p.next().unwrap_or("0");
+                let hit = p.next().unwrap_or("0");
+                writeln!(out, "MCF:{found}\nMCH:{hit}").map_err(ioerr)?;
+            }
+            7 => {
                 let line = read_u64(&row.key, row.key.len() - 8)?;
                 let hits = read_u64(&row.value, 0)?;
                 writeln!(out, "DA:{line},{hits}").map_err(ioerr)?;
             }
-            4 => {
+            8 => {
                 let x = String::from_utf8(row.value)
                     .map_err(|_| Error::new(3, "invalid line summary"))?;
                 let mut p = x.split(',');

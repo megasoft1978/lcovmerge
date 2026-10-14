@@ -19,12 +19,17 @@ mod function_runtime;
 mod function_spill;
 #[path = "line_spill.rs"]
 mod line_spill;
+#[path = "mcdc_spill.rs"]
+mod mcdc_spill;
 #[path = "merge.rs"]
 mod merge;
 #[path = "policy.rs"]
 mod policy;
 #[path = "record.rs"]
 mod record;
+#[cfg(test)]
+#[path = "signature_store.rs"]
+mod signature_store;
 #[path = "sort.rs"]
 mod sort;
 #[path = "source.rs"]
@@ -116,6 +121,9 @@ pub fn run(request: Request) -> Result<(), Error> {
         } else {
             path.display().to_string()
         };
+        if opt.verbose && !opt.quiet {
+            eprintln!("lcovmerge: reading LCOV input {label}");
+        }
         let reader: Box<dyn Read> = if path.as_os_str() == "-" {
             stdin_reader().map_err(|e| Error::new(3, format!("cannot read stdin: {e}")))?
         } else {
@@ -1215,6 +1223,22 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::path::PathBuf;
+    #[test]
+    fn bounded_mcdc_executor_synthesizes_missing_senses_and_merges_counts() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("mcdc.info");
+        let output = root.path().join("output.info");
+        std::fs::write(&input, "TN:case\nSF:x.c\nDA:1,1\nMCDC:1,2,t,1,7,A\nMCDC:1,2,t,2,7,A\nMCDC:1,U2,f,4,19,B\nend_of_record\n").unwrap();
+        let mut req = Request::default();
+        req.resources.inputs = vec![input];
+        req.resources.output = output.clone();
+        req.resources.tmpdir = root.path().to_path_buf();
+        req.resources.function_data = false;
+        req.mcdc_coverage = true;
+        assert!(function_runtime::try_run(&req).unwrap().unwrap().is_ok());
+        assert_eq!(std::fs::read_to_string(&output).unwrap(), "TN:case\nSF:x.c\nMCDC:1,2,t,3,0,A\nMCDC:1,2,f,0,0,A\nMCDC:1,U2,t,0,1,B\nMCDC:1,U2,f,4,1,B\nMCF:4\nMCH:2\nDA:1,1\nLF:1\nLH:1\nend_of_record\n");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+    }
     #[test]
     fn request_merges_tn_separately_and_regenerates_summary() {
         let mut r = Request::default();

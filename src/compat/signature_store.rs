@@ -9,7 +9,9 @@ use std::sync::Arc;
 const IO: usize = 1024;
 const WRITE_BUF: usize = 1024;
 const DESC: usize = 32;
-const MIN_BUDGET: usize = DESC * 2 + IO * 2 + WRITE_BUF;
+const OVERHEAD: usize = 512;
+const HEAD_BYTES: usize = DESC + std::mem::size_of::<Option<D>>() + std::mem::size_of::<File>();
+const MIN_BUDGET: usize = IO * 2 + WRITE_BUF + OVERHEAD + HEAD_BYTES * 2;
 
 #[derive(Clone, Copy, Default)]
 struct D {
@@ -82,10 +84,11 @@ fn cmp_sig(file: &mut File, a: D, b: D, x: &mut [u8], y: &mut [u8]) -> Result<Or
     Ok(a.len.cmp(&b.len))
 }
 fn cmp_order(file: &mut File, a: D, b: D, x: &mut [u8], y: &mut [u8]) -> Result<Ordering, Error> {
-    Ok(a.len
-        .cmp(&b.len)
-        .then(cmp_sig(file, a, b, x, y)?)
-        .then(a.ordinal.cmp(&b.ordinal)))
+    let length = a.len.cmp(&b.len);
+    if length != Ordering::Equal {
+        return Ok(length);
+    }
+    Ok(cmp_sig(file, a, b, x, y)?.then(a.ordinal.cmp(&b.ordinal)))
 }
 
 pub struct Store {
@@ -208,7 +211,8 @@ impl Store {
         }
         self.data.flush().map_err(err)?;
         self.meta.flush().map_err(err)?;
-        let cap = (self.budget - IO * 2 - WRITE_BUF) / (DESC * 2);
+        let available = self.budget - IO * 2 - WRITE_BUF - OVERHEAD;
+        let cap = available / (DESC * 2);
         if cap == 0 {
             return Err(err(
                 "budget cannot hold descriptor chunks and comparison buffers",
@@ -236,24 +240,30 @@ impl Store {
             let mut tmp = vec![D::default(); v.len()];
             let mut x = vec![0; IO];
             let mut y = vec![0; IO];
-            merge_sort(&mut v, &mut tmp, &mut self.data, &mut x, &mut y)?;
+            merge_sort(&mut v, &mut tmp, self.data.get_mut(), &mut x, &mut y)?;
             let mut out = File::create(path(self.dir.path(), 0, runs)).map_err(err)?;
             for d in v {
                 write_d(&mut out, d)?
             }
             runs += 1;
         }
-        let mut fan = ((self.budget - IO * 2 - WRITE_BUF)
-            / (DESC + std::mem::size_of::<Option<D>>() + std::mem::size_of::<File>()))
-        .min(32)
-        .max(2);
+        let mut fan = (available / HEAD_BYTES).clamp(2, 32);
         #[cfg(unix)]
         {
             let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+            // SAFETY: getrlimit initializes the provided valid rlimit on success.
             if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } == 0 {
+                // SAFETY: successful getrlimit initialized this value.
                 let soft = unsafe { limit.assume_init().rlim_cur };
-                fan = fan.min((soft as usize).saturating_sub(16).max(2));
+                fan = fan.min(
+                    usize::try_from(soft)
+                        .unwrap_or(usize::MAX)
+                        .saturating_sub(16),
+                );
             }
+        }
+        if fan < 2 {
+            return Err(err("descriptor limit cannot support signature merge"));
         }
         let mut pass = 0;
         while runs > 1 {
@@ -262,8 +272,8 @@ impl Store {
             let mut start = 0;
             while start < runs {
                 let end = (start + fan as u64).min(runs);
-                let mut readers = Vec::new();
-                let mut heads = Vec::new();
+                let mut readers = Vec::with_capacity(fan);
+                let mut heads = Vec::with_capacity(fan);
                 for i in start..end {
                     let mut f = File::open(path(self.dir.path(), pass, i)).map_err(err)?;
                     heads.push(read_d(&mut f)?);
@@ -392,7 +402,7 @@ impl Cursor {
         if end > size {
             return Err(err("truncated signature range"));
         }
-        if self.prev.is_none() || self.prev.is_some() {
+        {
             let mut left = d.len;
             self.data.seek(SeekFrom::Start(d.off)).map_err(err)?;
             let mut buf = [0; IO];
@@ -430,7 +440,7 @@ mod tests {
     #[test]
     fn long_exact_rank_and_cursor_lifetime() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 3136).unwrap();
+        let mut s = Store::new(p.path(), 8192).unwrap();
         let a = vec![b'e'; 30000];
         for (id, bytes) in [
             (1, a.clone()),
@@ -462,16 +472,19 @@ mod tests {
                 .filter(|x| x.id == 1 || x.id == 2)
                 .map(|x| x.rank)
                 .collect::<Vec<_>>(),
-            [1, 1]
+            [2, 2]
         );
-        assert_ne!(got.iter().find(|x| x.id == 3).unwrap().rank, 1);
+        assert_eq!(
+            got.iter().map(|r| (r.id, r.rank)).collect::<Vec<_>>(),
+            [(5, 0), (4, 1), (1, 2), (2, 2), (3, 3)]
+        );
         drop(c);
         assert_eq!(p.path().read_dir().unwrap().count(), 0);
     }
     #[test]
     fn normalize_and_truncated_data_is_rejected() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 3136).unwrap();
+        let mut s = Store::new(p.path(), 8192).unwrap();
         for (id, k) in [(1, b'v'), (2, b'b')] {
             s.begin(id).unwrap();
             s.push_kind(k).unwrap();
@@ -481,14 +494,13 @@ mod tests {
         let mut c = r.cursor().unwrap();
         let f = OpenOptions::new().write(true).open(&r.data).unwrap();
         f.set_len(0).unwrap();
-        c.next().unwrap().unwrap();
         assert!(c.next().is_err());
     }
     #[test]
     fn many_runs_and_mixed_lengths() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 3136).unwrap();
-        for i in (0..500u64).rev() {
+        let mut s = Store::new(p.path(), 8192).unwrap();
+        for i in (0..5000u64).rev() {
             s.begin(i).unwrap();
             for b in 0..(i % 13) {
                 s.push_kind(if b % 2 == 0 { b'e' } else { b'f' }).unwrap()
@@ -501,12 +513,12 @@ mod tests {
         while c.next().unwrap().is_some() {
             n += 1
         }
-        assert_eq!(n, 500);
+        assert_eq!(n, 5000);
     }
     #[test]
     fn shorter_signature_sorts_first_and_nested_begin_fails() {
         let p = tempfile::tempdir().unwrap();
-        let mut s = Store::new(p.path(), 3136).unwrap();
+        let mut s = Store::new(p.path(), 8192).unwrap();
         s.begin(1).unwrap();
         assert!(s.begin(9).is_err());
         for b in b"fff" {
