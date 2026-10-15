@@ -35,6 +35,7 @@ test: $(BIN) $(PTEST_BIN)
 	$(PYTHON) tests/test_native_confirmation.py
 	$(PYTHON) tests/test_native_promotion.py
 	$(PYTHON) tests/test_published_release.py
+	$(PYTHON) tests/test_packaging_update.py
 	$(PYTHON) tests/test_profile_fixtures.py
 	$(PYTHON) tests/compat_operations.py --binary $(BIN)
 	sh tests/doc-consistency.sh $(BIN)

@@ -10,7 +10,7 @@ on:
       release_version:
         description: Published lcovmerge version to install (without the leading v)
         required: true
-        default: '1.1.0'
+        default: '1.2.0'
         type: string
 
 permissions:
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LCOVMERGE_VERSION: ${{ github.event.inputs.release_version || '1.1.0' }}
+  LCOVMERGE_VERSION: ${{ github.event.inputs.release_version || '1.2.0' }}
   TMPDIR: ${{ github.workspace }}/.cache/ci
   TMP: ${{ github.workspace }}/.cache/ci
   TEMP: ${{ github.workspace }}/.cache/ci

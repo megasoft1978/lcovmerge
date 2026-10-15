@@ -6,6 +6,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Regenerate concrete Homebrew and Scoop manifest versions, URLs, and hashes from the release checksum file.
+
 ## [1.2.0] - 2026-10-15
 
 ### Changed
