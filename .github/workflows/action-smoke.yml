@@ -10,7 +10,7 @@ on:
         description: Published binary version to verify
         required: true
         type: string
-        default: '1.1.0'
+        default: '1.2.0'
 
 permissions:
   contents: read
@@ -83,7 +83,7 @@ jobs:
           output: coverage/action-merged.info
           mem-limit: 8M
           extra-args: --branch-coverage on
-          version: ${{ inputs.release_version || '1.1.0' }}
+          version: ${{ inputs.release_version || '1.2.0' }}
 
       - name: Assert output, CLI parity, and summary
         env:
@@ -97,7 +97,7 @@ jobs:
         with:
           files: ""
           output: coverage/missing-files.info
-          version: ${{ inputs.release_version || '1.1.0' }}
+          version: ${{ inputs.release_version || '1.2.0' }}
 
       - name: Assert missing files input failed
         if: always()
@@ -113,7 +113,7 @@ jobs:
         with:
           files: coverage/bad.info
           output: coverage/malformed-output.info
-          version: ${{ inputs.release_version || '1.1.0' }}
+          version: ${{ inputs.release_version || '1.2.0' }}
 
       - name: Assert malformed LCOV input failed
         if: always()
