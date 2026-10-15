@@ -1,6 +1,6 @@
 # Compatibility with LCOV 2.6
 
-lcovmerge merges already-exported LCOV `.info` files. This page documents native mode's selected merge-policy differences against upstream LCOV 2.6. Native mode has different merge policies from `lcov -a`; the separate experimental `--lcov-compat=2.6` profile is version-pinned and limited to its documented merge surface. Its validation is in progress. See the [profile contract and validation status](LCOV-PROFILE.md). Neither mode collects coverage or replaces the `lcov` toolchain. LCOV options and configuration can change how it handles inconsistent input; the examples below call out strict behavior and diagnostic recovery where relevant.
+lcovmerge merges already-exported LCOV `.info` files. This page documents native mode's selected merge-policy differences against upstream LCOV 2.6. Native mode has different merge policies from `lcov -a`; the separate experimental `--lcov-compat=2.6` profile is version-pinned and limited to its documented merge surface. See the [profile contract and validation status](LCOV-PROFILE.md). Neither mode collects coverage or replaces the `lcov` toolchain. LCOV options and configuration can change how it handles inconsistent input; the examples below call out strict behavior and diagnostic recovery where relevant.
 
 ## What has been verified
 

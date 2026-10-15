@@ -129,7 +129,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
         </div>
         <div>
           <h2>Limits</h2>
-          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Native policies differ from <code>lcov -a</code>; the experimental 2.6 profile remains under validation.</p>
+          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Native policies differ from <code>lcov -a</code>; the experimental 2.6 profile has a version-pinned merge contract.</p>
           <pre class="code-block" data-copy-label="Copy LCOV profile merge command"><code>./bin/lcovmerge --lcov-compat=2.6 -a 'coverage/shard-*.info' -o coverage/merged.info</code></pre>
           <p>Merge only: no capture, reset, extract, genhtml, Perl callbacks, or automatic <code>lcov</code> replacement. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LCOV-PROFILE.md">Profile scope and status ↗</a></p>
           <p class="home-doc-links"><a href="docs.html">Usage and workflow guide ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Share a safe workload measurement ↗</a></p>

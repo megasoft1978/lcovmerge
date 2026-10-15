@@ -2,7 +2,7 @@
 
 Merge LCOV `.info` shards for a local report or upload.
 
-This Rust CLI and library preserve established behavior in native mode. Version 1.2.0 is the first Rust release.
+This Rust CLI and library preserve native behavior. Version 1.2.0 is the first Rust release.
 
 ## Is it a fit?
 
@@ -40,7 +40,7 @@ Outputs matched byte for byte in every run. One host and these fixtures do not p
 
 ## Before switching
 
-Native mode has documented policy differences from `lcov -a`; the experimental profile remains under validation. Compare outputs and reports first. See the [migration checklist](docs/MIGRATING-FROM-LCOV.md) and [compatibility notes](docs/COMPATIBILITY.md).
+Native mode has documented policy differences from `lcov -a`; the experimental profile has a version-pinned merge contract. Compare outputs and reports first. See the [migration checklist](docs/MIGRATING-FROM-LCOV.md) and [compatibility notes](docs/COMPATIBILITY.md).
 
 Build details: [quick start](docs/USAGE.md) · [release requirements](docs/RELEASING.md#rust-cross-build-requirements) · [benchmarks](docs/BENCHMARKS.md) · [private workload measurements](docs/REAL-WORKLOADS.md).
 

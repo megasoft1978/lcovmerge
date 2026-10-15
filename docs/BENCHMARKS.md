@@ -122,6 +122,24 @@ pooled with the original samples nor stopped early; all three new rows must pass
 the unchanged rule. This follows the sampling design's allowance for additional
 precision after inconclusive measurements.
 
+The fixed confirmation completed on 2026-10-15. Both unsorted rows passed:
+0.98245 [0.97726, 0.98774] at one job and 0.98335 [0.97843, 0.98759]
+at four jobs. Sorted four-job input remained inconclusive after all 2,001
+pairs: 0.99832 [0.99326, 1.00300]. Together with the original five passes,
+seven of eight comparisons pass; the native release gate remains unmet.
+[The complete confirmation reports](../data/native-parity-confirmation-4fa9427.json)
+retain both cases, raw paired ratios, provenance, artifact identities and setup
+diagnostics. No samples were pooled or discarded and no boundary was relaxed.
+
+The unsorted RSS increase versus C1 is a storage-layout trade-off: the former
+byte arena becomes a capacity-sized Rust record vector with separately owned
+strings. The external-sort path retains vector capacity across flushes; string
+allocations and allocator/runtime overhead also contribute to resident memory.
+The record budget accounts for vector capacity and string storage, rather than
+capping process RSS. Sorted parallel merging also spends additional CPU on
+workers and staged output assembly to reduce elapsed time. These costs remain
+part of the comparison; an allocation-level attribution has not been measured.
+
 ## LCOV profile comparison
 
 The opt-in merge profile requires separate measurements from native mode. Use

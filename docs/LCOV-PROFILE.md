@@ -103,8 +103,9 @@ The [isolated Linux comparison](BENCHMARKS.md#isolated-linux-characterization-20
 reports six synthetic workloads against XS and pure Perl, including slower cases,
 uncertainty intervals, resource metrics and exact build/input provenance.
 
-Development validation is still in progress. No stable drop-in or performance
-claim is made before the implementation's release gates pass.
+The profile is experimental. Its pinned-oracle tests and measurements cover the
+documented merge surface and environments; they do not establish compatibility
+with every producer, option or report consumer.
 
 DA/function, branch, and MC/DC inputs use external sort runs. Branch blocks use streamed, exact signature ranking
 and bounded joins; sparse block IDs do not allocate sparse arrays. Stdin, including
@@ -122,6 +123,5 @@ Regular inputs, including malformed sections recovered with `--ignore-errors for
 stay on the bounded executor. It retains earlier sections when recovering
 missing terminators and ignores misplaced TN records. Trailing ASCII whitespace
 is removed before record dispatch. Oversized records retain the 1 MiB cap; recovery
-discards the entire physical line using bounded buffers. The remaining semantic
-audit and release validation are still in progress. The experimental profile should be
-compared with upstream LCOV on the intended input before adopting it.
+discards the entire physical line using bounded buffers. Compare the experimental profile with upstream LCOV on the intended input
+before adopting it.

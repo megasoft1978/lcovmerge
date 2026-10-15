@@ -77,6 +77,7 @@ published version, without its leading `v`:
 
 ```sh
 gh workflow run published-release.yml --ref main -f version=1.2.0
+gh workflow run action-smoke.yml --ref main -f release_version=1.2.0
 ```
 
 It checks out the release tag, downloads and verifies each platform's archive,
@@ -84,6 +85,8 @@ runs the CLI and compatibility operational suites against that executable, and
 verifies archive and checksum-manifest attestations. The Linux x86-64 job also
 verifies the published checksum signature and SBOM attestation. Review all five
 jobs and their retained reports before completing the release.
+The second workflow exercises the Action itself on Linux, macOS and Windows
+against the selected published version.
 
 ## Scoop release validation
 

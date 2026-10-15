@@ -1,6 +1,6 @@
 # lcovmerge GitHub Action
 
-For the upcoming Rust-based 1.2.0 release, use `megasoft1978/lcovmerge@v1.2.0` to merge LCOV tracefiles in a workflow. Once published, the action will download the matching release archive and check it against that release's `SHA256SUMS` before running it. Until the v1.2.0 assets are published, pin `@v1.1.0` explicitly.
+Use `megasoft1978/lcovmerge@v1.2.0` to merge LCOV tracefiles with the Rust CLI. The Action downloads the matching release archive and verifies it against that release's `SHA256SUMS` before running it.
 
 ```yaml
 - name: Merge coverage
@@ -26,7 +26,7 @@ See the [CLI usage reference](../docs/USAGE.md) for exact prefix rules, branch d
 
 ## LCOV merge profile
 
-The v1.2.0 Action is intended to use the Rust CLI and retains the native CLI's
+The v1.2.0 Action uses the Rust CLI and retains the native CLI's
 deduplicated input-list and summary contract. The experimental
 `--lcov-compat=2.6` profile is not supported through this Action: it accepts
 repeated tracefile arguments, while this Action supplies a native `@listfile`.
@@ -43,11 +43,10 @@ and invoke its CLI directly in a workflow step:
 
 The profile supports only the operations and settings listed in its
 [command and validation contract](../docs/LCOV-PROFILE.md); capture, report
-generation, and unsupported merge settings remain outside that surface. Its
-validation is still in progress, with no stable drop-in or performance claim.
+generation, and unsupported merge settings remain outside that surface. The profile is experimental; its tests and measurements cover the documented merge contract.
 Compare results with LCOV on your pipeline's inputs before changing reports or
 coverage gates.
 
-The action selects release assets for Linux and macOS x86_64/arm64 runners and Windows x86_64. These are supported asset targets; this README makes no claim that every operating-system version or environment has been independently verified. Historical evidence for the published C v1.1.0 release is recorded in the repository's release and benchmark documentation. The merge summary comes from `lcovmerge --stats`.
+The action selects release assets for Linux and macOS x86_64/arm64 runners and Windows x86_64. Runtime CI exercises these targets; see [platform limits](../docs/LIMITATIONS.md#verification-status) for the verification scope. The merge summary comes from `lcovmerge --stats`.
 
-The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. Until v1.2.0 assets are published, it explicitly uses the published C v1.1.0 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. These checks cover action integration for v1.1.0.
+The `Action smoke` workflow runs on pull requests and pushes to `main` on Ubuntu, macOS, and Windows. Prepublication CI explicitly selects the existing v1.1.0 assets, compares the result byte-for-byte with the locally built CLI, checks the `summary` output, and asserts failure for empty file input and malformed LCOV. After publication, dispatch it with `release_version=1.2.0` to verify the Rust release through the Action on all three operating systems.
