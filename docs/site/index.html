@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f2e9">
-  <meta name="description" content="Native Rust CLI for merging LCOV coverage shards with bounded memory, deterministic output, and measured performance.">
+  <meta name="theme-color" content="#f1f5f4">
+  <meta name="description" content="Join the LCOV files from parallel CI test jobs into one deterministic report input. Use the native Rust CLI or verified GitHub Action.">
   <meta name="robots" content="index,follow">
   <title>LCOV file merger for parallel CI tests | lcovmerge</title>
   <link rel="canonical" href="https://megasoft1978.github.io/lcovmerge/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="site.css?v=rust-results-1">
+  <link rel="stylesheet" href="site.css?v=handoff-1">
   <script src="site.js" defer></script>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="lcovmerge">
   <meta property="og:title" content="LCOV file merger for parallel CI tests | lcovmerge">
-  <meta property="og:description" content="Native Rust CLI for merging LCOV coverage shards with bounded memory, deterministic output, and measured performance.">
+  <meta property="og:description" content="Join the LCOV files from parallel CI test jobs into one deterministic report input. Use the native Rust CLI or verified GitHub Action.">
   <meta property="og:url" content="https://megasoft1978.github.io/lcovmerge/">
   <meta property="og:image" content="https://megasoft1978.github.io/lcovmerge/og-image.png?v=rust-1">
   <meta property="og:image:alt" content="lcovmerge combines exported LCOV files">
@@ -40,18 +40,19 @@
   <main id="main" class="home-main">
     <header class="home-hero" aria-labelledby="hero-title">
       <div class="shell">
-        <p class="eyebrow"><span class="signal-dot" aria-hidden="true"></span> For parallel test suites</p>
+        <p class="eyebrow"><span class="signal-dot" aria-hidden="true"></span> For CI shards</p>
         <div class="home-story">
           <div class="home-story-copy">
-            <h1 id="hero-title">Many shards.<br><em>One report.</em></h1>
-            <p class="home-intro">A native Rust CLI for joining exported LCOV <code>.info</code> shards when a local report needs one file.</p>
-            <div class="home-actions"><a class="home-primary" href="#fit">Check fit <span aria-hidden="true">↓</span></a><a class="home-secondary" href="docs.html#github-actions">Use the GitHub Action <span aria-hidden="true">↗</span></a></div>
+            <h1 id="hero-title">Parallel tests.<br><em>One merged file.</em></h1>
+            <p class="home-intro">Join exported <code>.info</code> shards into one report-ready LCOV file.</p>
+            <div class="home-actions"><a class="home-primary" href="docs.html#install-binaries">Get a verified binary <span aria-hidden="true">↗</span></a><a class="home-secondary" href="docs.html#github-actions">Use the GitHub Action <span aria-hidden="true">↗</span></a></div>
+            <p class="hero-fit-link"><a href="#fit">Need a merge?</a></p>
           </div>
-          <div class="shard-art" role="img" aria-label="Several LCOV shard files flow into one merged coverage report">
-            <div class="shard-stack" aria-hidden="true"><span>01</span><span>02</span><span>03</span><span class="shard-more">+ 125</span></div>
+          <div class="shard-art" role="img" aria-label="Several LCOV shard files flow into one merged file for a report job">
+            <div class="shard-stack" aria-hidden="true"><span>unit.info</span><span>api.info</span><span>ui.info</span><span class="shard-more">more shards</span></div>
             <div class="shard-connector" aria-hidden="true"><i></i><i></i><i></i><i></i><b>merge</b><i></i></div>
-            <div class="report-sheet" aria-hidden="true"><span class="report-mark">LC</span><strong>coverage.info</strong><small>one report-ready file</small><div class="report-lines"><i></i><i></i><i></i><i></i><i></i></div><span class="report-check">✓</span></div>
-            <p class="art-caption">128 shards <span>→</span> one report</p>
+            <div class="report-sheet" aria-hidden="true"><span class="report-mark">LC</span><strong>merged.info</strong><small>one input for the next job</small><div class="report-lines"><i></i><i></i><i></i><i></i><i></i></div><span class="report-check">✓</span></div>
+            <p class="art-caption">parallel test jobs <span>→</span> one report input</p>
           </div>
         </div>
       </div>
@@ -59,49 +60,52 @@
 
     <section class="fit-section" id="fit" aria-labelledby="fit-title">
       <div class="shell">
-        <p class="eyebrow">A quick decision</p>
-        <h2 id="fit-title">Do you need a local merge?</h2>
+        <p class="eyebrow">Where it fits</p>
+        <h2 id="fit-title">Tests to report</h2>
+        <p class="fit-lede">Merge exported shards before reporting.</p>
         <div class="fit-grid">
           <article class="fit-card fit-card-yes">
-            <h3>Use it when</h3>
-            <p>Separate jobs leave costly LCOV shards; a local consumer needs one file.</p>
+            <h3>One file for the next job</h3>
+            <p>One file for reports and uploads.</p>
           </article>
           <article class="fit-card">
-            <h3>Keep your path when</h3>
-            <p>Your service accepts shards or native merging fits.</p>
+            <h3>Same result every time</h3>
+            <p>Same output across input order and job count.</p>
+          </article>
+          <article class="fit-card">
+            <h3>Choose the merge budget</h3>
+            <p>Stream sorted files; configure sorting memory, workers, and temp space.</p>
           </article>
         </div>
-        <p class="fit-links"><a href="docs.html#workflow-fit">Compare workflow options ↗</a> · <a href="docs.html#compatibility">Compare before switching ↗</a></p>
+        <p class="fit-links"><a href="docs.html#workflow-fit">Compare workflows ↗</a> · <a href="docs.html#compatibility">Compatibility ↗</a></p>
       </div>
     </section>
 
     <section class="home-start" id="install" aria-labelledby="start-title">
       <div class="shell">
-        <h2 id="start-title">Add it to your pipeline</h2>
+        <h2 id="start-title">Install, then merge</h2>
+        <p class="start-lede">GitHub Action or local binary.</p>
         <div class="home-columns">
           <div>
-            <h3><span class="step-number">01</span> Build · Rust</h3>
-            <pre class="code-block" data-copy-label="Copy Rust build commands"><code>set -eu
-git clone https://github.com/megasoft1978/lcovmerge.git
-cd lcovmerge &amp;&amp; make</code></pre>
-            <p class="home-note">Stable Rust, Python 3.11+, Make. <a href="docs.html#first-run">Build and download guide</a>.</p>
+            <h3><span class="step-number">01</span> Run a release binary</h3>
+            <p>Download a checksum-verified release.</p>
+            <p class="home-note"><a href="docs.html#install-binaries">Choose platform</a> · <a href="https://github.com/megasoft1978/lcovmerge/releases/tag/v1.2.0">v1.2.0 release</a>.</p>
           </div>
           <div>
             <h3><span class="step-number">02</span> Merge, then report</h3>
-            <pre class="code-block" data-copy-label="Copy merge and report commands"><code># The shell expands this pattern; lcovmerge does not.
-./bin/lcovmerge coverage/shard-*.info -o coverage/merged.info
+            <pre class="code-block" data-copy-label="Copy merge and report commands"><code>./lcovmerge coverage/shards/*.info -o coverage/merged.info
 genhtml coverage/merged.info --output-directory coverage/html</code></pre>
           </div>
         </div>
         <div class="home-action-guide">
           <h3>GitHub Actions</h3>
-          <p>Merge downloaded LCOV shards in your final job.</p>
+            <p>Merge downloaded artifacts in the final job.</p>
           <pre class="code-block" data-copy-label="Copy GitHub Action step"><code>- name: Merge LCOV shards
   uses: megasoft1978/lcovmerge@v1.2.0
   with:
     files: coverage/shards/*.info
     output: coverage/merged.info</code></pre>
-          <p class="fit-links"><a href="docs.html#github-actions">Read the complete Action recipe ↗</a></p>
+          <p class="fit-links"><a href="docs.html#github-actions">Action recipe ↗</a> · <a href="docs.html#first-run">Build from source ↗</a></p>
         </div>
       </div>
     </section>
@@ -124,15 +128,15 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
     <section class="home-limits" aria-labelledby="limits-title">
       <div class="shell home-columns">
         <div>
-          <h2 id="limits-title">Built for this handoff</h2>
-          <p>Exported LCOV shards · one local file · measurable merge cost.</p>
+          <h2 id="limits-title">Report format</h2>
+          <p>LCOV output works with your existing <code>genhtml</code> or upload step.</p>
         </div>
         <div>
           <h2>Limits</h2>
-          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Native policies differ from <code>lcov -a</code>; the experimental 2.6 profile has a version-pinned merge contract.</p>
-          <pre class="code-block" data-copy-label="Copy LCOV profile merge command"><code>./bin/lcovmerge --lcov-compat=2.6 -a 'coverage/shard-*.info' -o coverage/merged.info</code></pre>
-          <p>Merge only: no capture, reset, extract, genhtml, Perl callbacks, or automatic <code>lcov</code> replacement. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LCOV-PROFILE.md">Profile scope and status ↗</a></p>
-          <p class="home-doc-links"><a href="docs.html">Usage and workflow guide ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Share a safe workload measurement ↗</a></p>
+          <p>Exported <code>.info</code> only; no <code>.gcda</code>, <code>.profraw</code>, capture, reset, or reports. Native differs from <code>lcov -a</code>; profile 2.6 is experimental.</p>
+          <pre class="code-block" data-copy-label="Copy LCOV profile merge command"><code>./lcovmerge --lcov-compat=2.6 -a 'coverage/shard-*.info' -o coverage/merged.info</code></pre>
+          <p>See the <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LCOV-PROFILE.md">profile contract</a> and <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">full limits</a>.</p>
+          <p class="home-doc-links"><a href="docs.html">Usage ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Share a workload ↗</a></p>
         </div>
       </div>
     </section>
