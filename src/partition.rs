@@ -24,6 +24,15 @@ type Marker = (u64, u64, Vec<u8>, bool);
 fn next_marker<R: BufRead>(r: &mut R, offset: &mut u64) -> Result<Option<Marker>, Error> {
     loop {
         check_cancelled()?;
+        let buf = r.fill_buf().map_err(io_error)?;
+        if !buf.is_empty() && !matches!(buf[0], b'S' | b'K' | b'e' | b'T') {
+            if let Some(end) = memchr::memchr(b'\n', buf) {
+                let take = end + 1;
+                *offset += take as u64;
+                r.consume(take);
+                continue;
+            }
+        }
         let start = *offset;
         let mut prefix = [0u8; 20];
         let mut prefix_len = 0;
@@ -323,6 +332,51 @@ pub fn plan(options: &Options, want: usize) -> Result<Option<Plan>, Error> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn marker_scan_offsets_match_across_reader_capacities() {
+        // At capacity 64, the second buffer starts with a marker-looking continuation.
+        let mut data = format!("DA:{}SF:fake\n", "x".repeat(61)).into_bytes();
+        let mut expected = Vec::new();
+        for (line, marker) in [
+            (b"\n".as_slice(), false),
+            (b"DA:1,1\r\n", false),
+            (b"BRDA:1,2,3,4\n", false),
+            (b"# ordinary\n", false),
+            (b"S-no\n", false),
+            (b"K-no\n", false),
+            (b"e-no\n", false),
+            (b"T-no\n", false),
+            (b"SF:/a\r\n", true),
+            (b"KF:/b\n", true),
+            (b"TN:name\n", true),
+            (b"end_of_record\n", true),
+            (b"end_of_recordSF:/c\n", true),
+            (b"end_of_recordKF:/d\n", true),
+            (b"TN:last", true),
+        ] {
+            let start = data.len() as u64;
+            data.extend_from_slice(line);
+            if marker {
+                expected.push((
+                    start,
+                    data.len() as u64,
+                    line.strip_suffix(b"\n").unwrap_or(line).to_vec(),
+                    false,
+                ));
+            }
+        }
+        for capacity in [1, 2, 3, 7, 20, 64, 4096] {
+            let mut reader = BufReader::with_capacity(capacity, &data[..]);
+            let mut offset = 0;
+            let mut markers = Vec::new();
+            while let Some(marker) = next_marker(&mut reader, &mut offset).unwrap() {
+                markers.push(marker);
+            }
+            assert_eq!(markers, expected, "capacity {capacity}");
+            assert_eq!(offset, data.len() as u64, "capacity {capacity}");
+        }
+    }
 
     fn options(data: &[&[u8]]) -> (Options, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();

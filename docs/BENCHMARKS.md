@@ -16,7 +16,7 @@ On 2026-10-14, the actual default `make` binary was compared on an Apple M5 Max 
 
 Values are medians of 19 measured runs per variant after one warm-up, interleaved in seeded order with warm filesystem caches, `--mem-limit 64M`, and named output files. Every output was byte-identical across implementations and job counts; temporary directories were empty after each run. Maximum measured resident memory for sorted input was 2.47/2.94 MiB (C PGO/Rust, one job) and 2.47/4.86 MiB (four jobs). For unsorted input it was 18.81/38.75 MiB (one job) and 18.53/38.73 MiB (four jobs). Child CPU and peak memory came from `wait4`; wall time used Python's monotonic clock.
 
-Rust matched C's single-job sorted performance within normal timing variation, reduced four-job sorted elapsed time by 31%, and reduced unsorted elapsed time by 9%. It also beat the rebuilt `-O3` baseline's medians on both fixtures. Unsorted Rust uses more resident memory. Initial unprofiled `cargo build --release` measurements were slower; use `make` for the optimized build. This comparison does not establish a universal speed or memory improvement. [Raw measurements, hashes, fixture parameters, and validation scope](../data/rust-port-validation.json) identify the measured build and its limits.
+The single-job sorted medians are close; those medians alone do not establish performance parity under the uncertainty gate below. Rust reduced the four-job sorted median by 31% and the unsorted median by 9%. It also beat the rebuilt `-O3` baseline's medians on both fixtures. Unsorted Rust uses more resident memory. Initial unprofiled `cargo build --release` measurements were slower; use `make` for the optimized build. This comparison does not establish a universal speed or memory improvement. [Raw measurements, hashes, fixture parameters, and validation scope](../data/rust-port-validation.json) identify the measured build and its limits.
 
 To repeat the performance gate with two binaries and your own inputs, run:
 
@@ -26,7 +26,227 @@ python3 bench/compare-builds.py --baseline /path/to/c-lcovmerge \
   --workdir .cache/comparison -- input1.info input2.info
 ```
 
-The gate interleaves runs, checks every output hash and temporary-run cleanup, saves raw results under `.cache/`, and fails if any candidate median exceeds the baseline. Run it on an idle machine; rerun close results to distinguish noise. `--max-ratio` can set an explicit tolerance, with strict parity as the default.
+The gate interleaves paired runs, checks every output hash and temporary-run cleanup, and saves raw samples, hashes, resource measurements, and seeded bootstrap uncertainty under `.cache/`. Its acceptance boundary is a candidate/baseline timing ratio of 1. An interval wholly below 1 is an observed pass; one wholly above 1 is a regression; one spanning 1 is inconclusive. Regression and inconclusive results return nonzero. Run on an idle machine and investigate close results; 3% is a diagnostic noise band, not a regression allowance. These intervals describe the measured binaries and workloads, and do not account for arbitrary code layouts or prove universal parity. The earlier `--max-ratio` tolerance switch is removed.
+
+### Clean macOS runner
+
+The manual `bench-windows.yml` workflow also supports `mode=native-macos`.
+It builds the candidate on `macos-15` and uses a SHA-256-pinned bundle containing
+the original frozen Rust executable from commit `12bf1ec` and the byte-identical
+held-out inputs above. C1 commit `33ced0b` is rebuilt on the runner with native
+PGO and a recorded seed-42 training set. This is a reconstructed C1 baseline;
+the historical executable was tuned for the original host and is not assumed
+portable to another CPU.
+
+The disposable macOS benchmark VM disables Spotlight indexing before building;
+the setup log is retained. The job checks an idle-runner preflight after
+compilation. It allows up to 30
+preflight attempts for build activity to settle, retaining every diagnostic log;
+the last two CPU samples must both show at least 90% idle before any timing starts.
+It then runs 99 seeded
+paired measurements for each baseline, sorted/unsorted workload and worker count
+(1 and 4). This higher sample count is selected before measurement to improve
+precision after earlier inconclusive comparisons. The acceptance rule is unchanged.
+Reports retain binaries, input hashes/bundle, training inputs/profile, compiler and
+host identities, raw samples, resource metrics and uncertainty intervals for 90 days.
+A separate compact reports artifact makes results available without downloading
+the retained binaries and input bundle.
+The temporary unpublished transport release is removed after those artifacts are
+retained. Results on a different host are reported separately from earlier local
+measurements, including inconclusive or losing results.
+
+### Isolated native parity, 2026-10-14
+
+Candidate `9c3421c` was measured on an Apple M1 virtual macOS runner using the
+original frozen Rust binary and held-out inputs, plus a runner-native PGO rebuild
+of C1. Five preflight attempts were retained; only the fifth met the unchanged
+90% idle requirement. Each combination then used 99 seeded paired runs. Ratios
+are candidate elapsed time divided by baseline elapsed time; the acceptance
+rule requires the entire 95% interval to be strictly below 1. A bound exactly
+at 1 remains inconclusive, matching the comparison harness.
+
+| Baseline | Input | Jobs | Rust / baseline (95% interval) | Result |
+| --- | --- | ---: | ---: | --- |
+| C1 | sorted | 1 | 0.990 [0.984, 0.997] | observed-pass |
+| C1 | sorted | 4 | 0.697 [0.689, 0.711] | observed-pass |
+| C1 | unsorted | 1 | 0.848 [0.844, 0.852] | observed-pass |
+| C1 | unsorted | 4 | 0.854 [0.849, 0.862] | observed-pass |
+| Frozen Rust | sorted | 1 | 1.009 [0.997, 1.015] | inconclusive |
+| Frozen Rust | sorted | 4 | 1.016 [1.007, 1.024] | regression |
+| Frozen Rust | unsorted | 1 | 0.987 [0.982, 0.992] | observed-pass |
+| Frozen Rust | unsorted | 4 | 0.985 [0.981, 0.992] | observed-pass |
+
+All C1 comparisons passed. Frozen-Rust sorted single-job parity remains
+inconclusive, and sorted four-job performance regressed by about 1.6%; the
+candidate therefore did not pass the full native release gate. Unsorted Rust
+median RSS was about 44 MiB versus C1's 18 MiB. Four-job sorted merging used
+about 0.50 CPU seconds versus C1's 0.37 while reducing elapsed time. These are
+measured trade-offs, not universal speed or memory guarantees.
+
+[Raw comparison reports, paired ratios, metrics, build/input/profile hashes and
+preflight history](../data/native-parity-validation.json) retain the evidence.
+The [full artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/38635325400)
+include binaries, training data, logs and per-invocation measurements. Temporary
+disk metrics sample the selected temporary directory only; output-parent staging
+files are excluded, and short-lived peaks can be missed.
+
+The subsequent `ec8dac0` candidate also missed the gate. Its frozen-Rust sorted
+one-job ratio was 1.022 [1.008, 1.033]; the four-job sorted comparison and both
+unsorted comparisons were inconclusive. Against C1, one-job sorted parity was
+inconclusive, while the other three comparisons passed. All outputs matched.
+[The complete retained report](../data/native-parity-ec8dac0.json) includes every
+comparison. Further runs control Spotlight indexing explicitly; these earlier
+results remain part of the record.
+
+With Spotlight disabled, `92cbd7a` passed all four C1 comparisons and both
+unsorted frozen-Rust comparisons. The frozen-Rust sorted ratios still missed
+the gate: 1.005 [1.001, 1.011] at one job and 1.018 [1.006, 1.039] at four jobs.
+All outputs matched. [The controlled-run report](../data/native-parity-92cbd7a.json)
+retains all eight results and the indexing/preflight diagnostics; the release
+gate remains unmet.
+
+The `4fa9427` byte-search candidate had paired median ratios below 1 in all eight
+comparisons. All four C1 comparisons and frozen-Rust sorted one-job comparison
+passed. Frozen-Rust sorted four-job and both unsorted comparisons remained
+inconclusive. [Every result and interval](../data/native-parity-4fa9427.json) is
+retained; this is not a completed native gate.
+
+Before collecting further timings, a fixed precision confirmation is specified
+for those three inconclusive rows: 2,001 new pairs for sorted four-job input and
+1,001 new pairs for each unsorted job count. Two independent macOS VMs run these
+cases in parallel. They reuse the exact candidate, frozen baseline, profiles and
+held-out input bundle from the original artifact, verifying their hashes and the
+unchanged Rust/build sources. There is no rebuild or profile training. The other
+five comparisons retain their original passing evidence. New samples are neither
+pooled with the original samples nor stopped early; all three new rows must pass
+the unchanged rule. This follows the sampling design's allowance for additional
+precision after inconclusive measurements.
+
+The fixed confirmation completed on 2026-10-15. Both unsorted rows passed:
+0.98245 [0.97726, 0.98774] at one job and 0.98335 [0.97843, 0.98759]
+at four jobs. Sorted four-job input remained inconclusive after all 2,001
+pairs: 0.99832 [0.99326, 1.00300]. Together with the original five passes,
+seven of eight comparisons pass; the native release gate remains unmet.
+[The complete confirmation reports](../data/native-parity-confirmation-4fa9427.json)
+retain both cases, raw paired ratios, provenance, artifact identities and setup
+diagnostics. No samples were pooled or discarded and no boundary was relaxed.
+
+The next candidate, `90d2d07`, added a buffered-line fast path to the native
+partition planner. Its original, predeclared 99-pair run passed all eight
+comparisons. Against C1, median elapsed-time ratios were 0.9697 and 0.6621 for
+sorted jobs 1 and 4, and 0.8445 and 0.8419 for unsorted jobs 1 and 4. Against
+the frozen Rust 1.1.0 binary, the ratios were 0.9838 and 0.9567 sorted, and
+0.9791 and 0.9816 unsorted. Every 95% interval was strictly below 1, and output
+hashes matched between both baselines for each workload. The exact candidate
+SHA-256 is `d5545a93f5fe7b1560a421ce33975b309ff198ca2b06d48caa884e4c8303d245`.
+[The reports, raw paired samples, build manifest and provenance](../data/native-parity-90d2d07.json)
+retain the complete run (GitHub Actions run `38685796544`).
+
+On this macOS ARM virtual host, median peak RSS for unsorted Rust runs was about
+43.8 MiB versus 18.2 MiB for C1; sorted candidate RSS was about 2.5–4.7 MiB.
+These measurements describe these binaries, generated inputs, host and warm
+cache conditions. The speed results do not establish performance on other
+hosts or workloads.
+
+The unsorted RSS increase versus C1 is a storage-layout trade-off: the former
+byte arena becomes a capacity-sized Rust record vector with separately owned
+strings. The external-sort path retains vector capacity across flushes; string
+allocations and allocator/runtime overhead also contribute to resident memory.
+The record budget accounts for vector capacity and string storage, rather than
+capping process RSS. Sorted parallel merging also spends additional CPU on
+workers and staged output assembly to reduce elapsed time. These costs remain
+part of the comparison; an allocation-level attribution has not been measured.
+
+## LCOV profile comparison
+
+The opt-in merge profile requires separate measurements from native mode. Use
+the pinned LCOV source/install identity described in
+[the conformance contract](../tests/compat/CONTRACT.md), valid synthetic inputs,
+and an idle host:
+
+```sh
+python3 bench/profile-comparison.py --binary bin/lcovmerge --lcov lcov \
+  --source-root .cache/lcov-compat-implementation/oracle-source \
+  --workdir .cache/profile-comparison-j1 --jobs 1 --runs 19 \
+  --input /absolute/path/to/synthetic.info
+```
+
+Repeat `--input` for multiple tracefiles. Add `--branch-coverage` or
+`--mcdc-coverage` when measuring those families. The harness compares every
+warmup and seeded paired run with confirmed XS and pure-Perl LCOV backends,
+preserving testcase, function, branch, MC/DC, checksum, version, and summary
+semantics. LCOV emits profiling JSON on each invocation so backend selection
+can be verified; its exact command is retained. Both tools use an explicit
+empty configuration and the requested worker count.
+
+Use `--no-function-coverage` for line-only datasets so LCOV does not require
+absent function coverpoints. The option is passed to both tools and recorded.
+The manual workflow's `profile-linux` mode generates six cases: line-only,
+mixed records, testcase-heavy, large single source, 64-shard single source, and
+gzip-compressed mixed records. It characterizes all six with 19 paired runs at
+one and four workers against XS and pure Perl. `profile-extra` selects only the
+last two cases. `all-performance` runs all six Linux cases alongside the native
+macOS job on separate runners. Fixture smoke checks with a single sample verify
+semantics only and are excluded from performance evidence.
+
+Reports retain commands, input/binary hashes, output hashes, process RSS,
+temporary disk peaks, and bootstrap intervals for median log timing ratios.
+Inputs and per-run outputs/logs remain under the supplied work directory.
+One-run functional smoke checks do not establish performance; the report marks
+sample counts below 19 accordingly. This comparison does not replace the
+native C1 and frozen-Rust gates or establish universal speed parity.
+
+For deterministic sort work and I/O counters, run the ignored Rust probe:
+
+```sh
+cargo test compat::run::sort::tests::metadata_single_source_io_probe -- --ignored --nocapture
+```
+
+It sorts 100,000 descending rows with a 16-byte source prefix plus 8-byte line
+key and 256-byte value, using a 1 MiB component budget and one and four jobs.
+The JSON output reports runs, passes, merge bytes read, bytes written, fan-in,
+and workers. Read counters cover sort I/O and exclude the consumer's final
+cursor reads. This deterministic probe is not timing evidence.
+
+### Isolated Linux characterization, 2026-10-14
+
+Rust commit `31be2d8` was measured on an otherwise idle four-core Linux Azure
+runner against pinned LCOV 2.6 XS and pure Perl. Each row uses 19 seeded paired
+runs after warmup, with matching normalized output and verified backend selection
+on every invocation. Ratios are Rust elapsed time divided by reference elapsed
+time; below 1 is faster. Brackets are 95% bootstrap intervals for the median
+paired ratio.
+
+| Workload | Jobs | Rust / XS (95% interval) | Rust / Perl (95% interval) |
+| --- | ---: | ---: | ---: |
+| lines | 1 | 0.534 [0.530, 0.542] | 0.290 [0.287, 0.293] |
+| lines | 4 | 0.783 [0.777, 0.797] | 0.374 [0.368, 0.377] |
+| mixed | 1 | 1.956 [1.943, 1.978] | 0.822 [0.813, 0.835] |
+| mixed | 4 | 2.441 [2.426, 2.469] | 0.970 [0.967, 0.979] |
+| testcases | 1 | 0.331 [0.326, 0.335] | 0.175 [0.172, 0.177] |
+| testcases | 4 | 0.326 [0.324, 0.331] | 0.173 [0.173, 0.175] |
+| single-source | 1 | 0.697 [0.685, 0.701] | 0.301 [0.298, 0.306] |
+| single-source | 4 | 1.239 [1.231, 1.254] | 0.462 [0.459, 0.469] |
+| many-shards | 1 | 0.336 [0.334, 0.340] | 0.214 [0.212, 0.218] |
+| many-shards | 4 | 0.381 [0.374, 0.388] | 0.280 [0.278, 0.284] |
+| gzip | 1 | 1.769 [1.763, 1.787] | 0.770 [0.760, 0.781] |
+| gzip | 4 | 2.329 [2.307, 2.345] | 0.947 [0.945, 0.962] |
+
+Rust was faster than pure Perl in these measured cases. XS was faster for mixed
+records and gzip at both job counts, and for the large single source at four
+jobs. These results characterize these synthetic inputs and this runner; they
+establish neither universal superiority nor native-mode parity with C1.
+
+[Measured samples, input/binary/profile hashes, commands, resource metrics and
+oracle identity](../data/lcov-profile-validation.json) preserve the provenance.
+Wall and CPU measurements include CLI startup; RSS is `wait4`'s `ru_maxrss`,
+not the simultaneous sum of a process tree. Temporary disk peaks sample only the selected
+temporary directory every 20 ms; output-parent staging files are excluded, and
+shorter peaks can be missed. The
+[workflow artifacts](https://github.com/megasoft1978/lcovmerge/actions/runs/38633742948)
+retain full outputs, logs, source fixtures and PGO feedback for 90 days.
+
+## Historical measurements
 
 The C lcovmerge 1.1.0 benchmark run on 2026-10-12 used `bench/run.py`; its JSON, text reports, LLVM profile, PGO binary, and per-workload reports are retained under ignored `.cache/bench-1.1.0/`. Comparator values not rerun in that run come from the earlier recorded 2026-10-11 run and before, as the caveats below state.
 

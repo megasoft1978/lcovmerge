@@ -429,7 +429,7 @@ def featured_readme():
             f'{seconds_display(unsorted_runs["rust-pgo-jobs1"]["median_wall_seconds"])} (1 job), '
             f'{seconds_display(unsorted_runs["rust-pgo-jobs4"]["median_wall_seconds"])} (4 jobs).\n\n'
             'Outputs matched byte for byte in every run. One host and these fixtures do not predict every workload. '
-            'Published v1.1.0 downloads predate the Rust migration. See the '
+            'Version 1.2.0 is the first Rust release. See the '
             '[Rust comparison and raw measurements](docs/BENCHMARKS.md#rust-port-comparison).')
 
 
@@ -442,7 +442,7 @@ def featured_site():
         f'<h2 id="home-title" class="home-stats"><span class="home-stat"><strong>{vals["sorted"][0]}</strong><small>sorted · 1 job</small></span><span class="home-stat"><strong>{vals["sorted"][1]}</strong><small>sorted · 4 jobs</small></span></h2>',
         f'<p class="featured-meta">Native Rust · sorted 104.6 MB; unsorted 11.7 MB · 19-run medians · {RUST_DATA["date"]}</p>',
         f'<p class="generated-note">Unsorted: {vals["unsorted"][0]} (1 job), {vals["unsorted"][1]} (4 jobs). Output bytes matched every run. One macOS arm64 host; results vary by workload.</p>',
-        '<p class="generated-note">Published v1.1.0 downloads predate the Rust migration.</p>',
+        '<p class="generated-note">Version 1.2.0 is the first Rust release.</p>',
         '<a class="text-link" href="benchmarks.html">Rust results &amp; methodology ↗</a>',
     ])
 

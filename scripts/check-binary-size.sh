@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Rust standard-library builds are larger than the former C binaries; retain a
-# 1 MiB ceiling to catch accidental debug or unstripped release artifacts.
-limit_bytes=1048576
+# Native and compatibility mergers share one Rust CLI, including gzip and
+# source verification. Enforce a 2 MiB release ceiling across all targets.
+limit_bytes=2097152
 
 if [ "$#" -eq 0 ]; then
   # Inspect installed release outputs, never Cargo's debug/test executables.

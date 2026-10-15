@@ -18,6 +18,8 @@ The current CLI and library are Rust. v1.1.0 release files, the matching source 
 
 Install stable Rust through rustup. For Linux/macOS cross builds, install `cargo-zigbuild` with `cargo install cargo-zigbuild --locked` and install Zig. macOS cross-linking needs an Apple SDK; use a macOS host or configure an SDK on Linux. Release CI builds each target on a matching native runner, with static CRT linking for the Windows MSVC executable. On Unix, supply `WINDOWS_BINARY` from that Windows build when assembling all five local release targets. Set `BUILD_TARGETS` to select only Linux/macOS targets.
 
+For exactly `v1.2.0`, the `macos-arm64` release job promotes the immutable candidate from benchmark run `38685796544` on a matching macOS ARM runner. Before copying it into `dist/`, `scripts/promote-native-candidate.py` reuses the native artifact preparation checks and requires all eight original comparisons to pass. It verifies the pinned candidate, source files, build manifest, PGO profile, frozen baseline, C1 binary, held-out inputs, reports and output hashes; it does not rerun benchmarks. The promoted binary retains embedded commit `90d2d072a3cc`, preserving the exact binary reviewed in the benchmark report. Promotion provenance is kept at `.cache/native-promotion/provenance.json`, outside the release binary glob, and uploaded with its supporting manifests and reports as `release-native-promotion-RUN-ATTEMPT` for 90 days. Every other tag and target uses the normal native release builder.
+
 The Homebrew formula installs a macOS binary from the published release archive. The checked-in formula still points to v1.1.0, whose archive predates the Rust port; regenerate its URLs and checksums after publishing the first Rust release. Native optimized builds use `python3 scripts/build-optimized.py --output bin/lcovmerge` (also invoked by Make), with Python 3.11+ and Rust `llvm-tools`. Synthetic PGO inputs, feedback, build logs, and binary hashes remain in `.cache/optimized/`; unchanged sources reuse the profile. Plain `cargo build --release` builds without PGO. Cross builds do not train PGO because target binaries must run on a matching host. Ordinary development and tests do not need Zig or cross-target components.
 
 ## Before tagging
@@ -26,18 +28,21 @@ The Homebrew formula installs a macOS binary from the published release archive.
 - [ ] Review all CLI behavior against `man/lcovmerge.1` and `docs/USAGE.md`.
 - [ ] Confirm the documented limits, especially MC/DC, supported job count, path/line sizes, checksum
 behavior, and memory accounting.
-- [ ] Refresh benchmark results only from a recorded run; update `data/benchmarks.json` and regenerate both
-tables with `python3 tools/render_benchmarks.py`.
+- [ ] Refresh benchmark results only from a recorded run. Preserve historical `data/benchmarks.json`;
+  native Rust and LCOV-profile measurements use separate JSON reports with their exact build provenance.
+  Keep documentation tables consistent with their source reports; `python3 tools/render_benchmarks.py`
+  regenerates the historical tables without changing the underlying measurements.
 - [ ] Review benchmark caveats and ensure no values outside the JSON were copied into documentation without a
 `<!-- BENCH -->` marker.
 - [ ] Run parser tests, sanitizer/fuzz checks, and the documented regression suite in the code repository.
 - [ ] Verify Rust runtime CI on Linux x86-64, Linux aarch64, macOS arm64, macOS x86-64, and Windows x86-64;
   confirm the release-target size budget job and the Windows release-binary job pass on the final commit.
-- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the published v1.1.0 download and checks byte-for-byte output against the CLI.
+- [ ] Run the Action smoke workflow on Linux, macOS, and Windows; confirm it verifies the currently
+  published download and checks byte-for-byte output against the CLI. Rerun against the new version after publication.
 - [ ] Run `actionlint` and confirm the action references remain SHA-pinned and match `docs/validation/action-pins.txt`.
 - [ ] Verify Linux binaries are static musl builds and macOS/Windows artifacts match their target
 architecture.
-- [ ] Confirm the release binary size meets the project's stated limit and that archives contain only intended
+- [ ] Confirm the release binary size meets the 2 MiB ceiling enforced by `scripts/check-binary-size.sh` and that archives contain only intended
 files.
 - [ ] Check the release assets' names and regenerate `SHA256SUMS` from the final archives.
 - [ ] Generate `RELEASE_NOTES.md` with `scripts/package-release.sh VERSION`; inspect the three-line summary, highlights, install examples, checksum and provenance commands, and changelog section.
@@ -64,6 +69,24 @@ files.
 - [ ] Regenerate the Homebrew formula and Scoop manifest from the published release checksums, then run the
   Scoop smoke workflow for that release. See [Scoop packaging](../packaging/scoop/README.md).
 - [ ] Record any known issues and open follow-up tasks for unsupported features.
+
+## Published archive validation
+
+After publication, dispatch the five-platform validation workflow with the
+published version, without its leading `v`:
+
+```sh
+gh workflow run published-release.yml --ref main -f version=1.2.0
+gh workflow run action-smoke.yml --ref main -f release_version=1.2.0
+```
+
+It checks out the release tag, downloads and verifies each platform's archive,
+runs the CLI and compatibility operational suites against that executable, and
+verifies archive and checksum-manifest attestations. The Linux x86-64 job also
+verifies the published checksum signature and SBOM attestation. Review all five
+jobs and their retained reports before completing the release.
+The second workflow exercises the Action itself on Linux, macOS and Windows
+against the selected published version.
 
 ## Scoop release validation
 

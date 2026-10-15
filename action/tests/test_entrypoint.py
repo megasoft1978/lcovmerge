@@ -50,11 +50,15 @@ class ReleaseCoordinatesTests(unittest.TestCase):
                     "https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0",
                 )
 
-    def test_defaults_to_v1_0_2_when_version_input_is_unset(self) -> None:
+    def test_defaults_to_v1_2_0_when_version_input_is_unset(self) -> None:
         with patch.dict(os.environ, {"RUNNER_OS": "Linux", "RUNNER_ARCH": "X64"}, clear=True):
-            version, asset, _ = entrypoint.release_coordinates()
-        self.assertEqual(version, "1.1.0")
-        self.assertEqual(asset, "lcovmerge-1.1.0-linux-x86_64.tar.gz")
+            version, asset, base_url = entrypoint.release_coordinates()
+        self.assertEqual(version, "1.2.0")
+        self.assertEqual(asset, "lcovmerge-1.2.0-linux-x86_64.tar.gz")
+        self.assertEqual(
+            base_url,
+            "https://github.com/megasoft1978/lcovmerge/releases/download/v1.2.0",
+        )
 
     def test_rejects_invalid_version_and_unsupported_runner(self) -> None:
         with self.assertRaises(SystemExit):

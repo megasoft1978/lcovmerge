@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run bounded random LCOV parser inputs against the CLI for a fixed interval."""
+"""Bounded deterministic CLI mutation smoke for native and LCOV 2.6 modes."""
 
 from __future__ import annotations
 
@@ -11,105 +11,92 @@ import tempfile
 import time
 from pathlib import Path
 
-
-RECORDS = [
-    b"TN:ci-fuzz",
-    b"SF:src/fuzz.c",
-    b"FN:1,fuzz_entry",
-    b"FNDA:1,fuzz_entry",
-    b"DA:1,1",
-    b"BRDA:1,0,0,1",
-    b"end_of_record",
-    b"VER:revision",
-    b"LF:1",
-    b"LH:1",
-    b"unknown:record",
-    b"",
-]
+RECORDS = [b"TN:fuzz", b"SF:src/fuzz.c", b"FN:1,fuzz_entry", b"FNL:1,1,2",
+           b"FNA:1,1,fuzz_entry", b"FNDA:1,fuzz_entry", b"DA:1,1",
+           b"BRDA:1,0,0,1", b"MCDC:1,2,t,1,0,A", b"end_of_record",
+           b"VER:revision", b"LF:1", b"LH:1", b"unknown:record", b""]
 
 
 def make_input(rng: random.Random) -> bytes:
     if rng.randrange(4) == 0:
-        return rng.randbytes(rng.randrange(0, 4097))
-
-    lines: list[bytes] = []
-    for _ in range(rng.randrange(1, 80)):
-        if rng.randrange(5) == 0:
-            lines.append(rng.randbytes(rng.randrange(0, 128)))
-        else:
-            record = rng.choice(RECORDS)
-            if record.startswith((b"DA:", b"BRDA:", b"FNDA:")) and rng.randrange(2):
-                record = record + b"," + str(rng.randrange(0, 2**32)).encode()
-            lines.append(record)
+        return rng.randbytes(rng.randrange(0, 2049))
+    lines = []
+    for _ in range(rng.randrange(1, 35)):
+        if rng.randrange(6) == 0:
+            lines.append(rng.randbytes(rng.randrange(0, 64)))
+            continue
+        record = rng.choice(RECORDS)
+        if record.startswith((b"DA:", b"BRDA:", b"FNDA:", b"FNA:", b"MCDC:")) and rng.randrange(2):
+            record += b"," + str(rng.randrange(0, 1 << 20)).encode()
+        lines.append(record)
     return b"\n".join(lines) + b"\n"
 
 
 def mutate_seed(rng: random.Random, seeds: list[bytes]) -> bytes:
-    """Apply bounded edits to an actual parser regression seed."""
     data = bytearray(rng.choice(seeds))
-    for _ in range(rng.randrange(1, 9)):
-        operation = rng.randrange(4)
-        if operation == 0 and data:
-            offset = rng.randrange(len(data))
-            del data[offset : offset + 1]
-        elif operation == 1:
-            offset = rng.randrange(len(data) + 1)
-            data[offset:offset] = rng.randbytes(rng.randrange(1, 16))
-        elif operation == 2 and data:
+    for _ in range(rng.randrange(1, 7)):
+        op = rng.randrange(4)
+        if op == 0 and data:
+            pos = rng.randrange(len(data))
+            del data[pos:pos + 1]
+        elif op == 1:
+            pos = rng.randrange(len(data) + 1)
+            data[pos:pos] = rng.randbytes(rng.randrange(1, 8))
+        elif op == 2 and data:
             data[rng.randrange(len(data))] = rng.randrange(256)
         else:
-            data.extend(rng.choice(RECORDS))
-            data.append(10)
-    return bytes(data[: 1 << 20])
+            data.extend(rng.choice(RECORDS) + b"\n")
+    return bytes(data[:1 << 16])
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("binary", type=Path)
-    parser.add_argument("--seconds", type=int, default=300)
-    parser.add_argument(
-        "--corpus", type=Path, default=Path(__file__).resolve().parents[1] / "tests" / "fuzz-corpus"
-    )
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("binary", type=Path)
+    ap.add_argument("--seconds", type=int, default=300)
+    ap.add_argument("--profile", choices=("native", "compat"), default="native")
+    ap.add_argument("--corpus", type=Path, default=Path(__file__).resolve().parents[1] / "tests" / "fuzz-corpus")
+    args = ap.parse_args()
     if args.seconds < 1:
-        parser.error("--seconds must be positive")
-
-    rng = random.Random(0x1C0A6)
-    seeds = [path.read_bytes() for path in sorted(args.corpus.glob("*.info"))]
+        ap.error("--seconds must be positive")
+    seeds = [p.read_bytes() for p in sorted(args.corpus.glob("*.info"))]
     if not seeds:
-        parser.error(f"no .info seed files found in {args.corpus}")
-    deadline = time.monotonic() + args.seconds
-    cases = 0
-    last_report = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="lcovmerge-fuzz-") as temp_name:
-        temp_dir = Path(temp_name)
+        ap.error(f"no .info seed files found in {args.corpus}")
+    rng = random.Random(0x1C0A6)
+    deadline, cases = time.monotonic() + args.seconds, 0
+    with tempfile.TemporaryDirectory(prefix="lcovmerge-fuzz-") as td:
+        root = Path(td)
+        def retain(data: bytes, command: list[str], detail: str) -> None:
+            evidence = Path(__file__).resolve().parents[1] / ".cache" / "fuzz-smoke" / args.profile
+            evidence.mkdir(parents=True, exist_ok=True)
+            seed_path = evidence / "failure-seed.bin"
+            seed_path.write_bytes(data)
+            (evidence / "failure-command.txt").write_text(" ".join(command) + "\n" + detail + "\n", encoding="utf-8")
+            raise SystemExit(f"fuzz {args.profile} case={cases} failed; seed={seed_path}; command={command!r}; {detail}")
         while time.monotonic() < deadline:
-            inputs: list[Path] = []
-            for index in range(rng.randrange(1, 5)):
-                input_path = temp_dir / f"case-{cases}-{index}.info"
-                input_path.write_bytes(
-                    mutate_seed(rng, seeds) if rng.randrange(2) else make_input(rng)
-                )
-                inputs.append(input_path)
-
-            output_path = temp_dir / f"out-{cases}.info"
-            command = [os.fspath(args.binary), *(os.fspath(item) for item in inputs), "-o", os.fspath(output_path)]
+            data = mutate_seed(rng, seeds) if rng.randrange(2) else make_input(rng)
+            source = root / f"case-{cases}.info"
+            source.write_bytes(data)
+            output = root / f"out-{cases}.info"
+            command = [os.fspath(args.binary)]
+            if args.profile == "compat":
+                command += ["--lcov-compat=2.6", "--quiet", "--config-file", os.fspath(root / "lcovrc"), "-a"]
+                (root / "lcovrc").write_bytes(b"")
+            command += [os.fspath(source), "-o", os.fspath(output)]
+            if args.profile == "compat":
+                # Exercise active family parsers as well as their disabled paths.
+                if cases % 2 == 0:
+                    command.append("--branch-coverage")
+                if cases % 3 == 0:
+                    command.append("--mcdc-coverage")
             try:
-                result = subprocess.run(command, capture_output=True, timeout=3, check=False)
+                result = subprocess.run(command, capture_output=True, timeout=2, check=False)
             except subprocess.TimeoutExpired as exc:
-                raise SystemExit(f"fuzz smoke timed out on case {cases}: {exc}") from exc
-            if result.returncode not in (0, 2):
-                raise SystemExit(
-                    f"fuzz smoke failed on case {cases} with exit {result.returncode}\n"
-                    f"stderr: {result.stderr.decode(errors='replace')}"
-                )
+                retain(data, command, f"timeout: {exc}")
+            allowed = (0, 1) if args.profile == "compat" else (0, 2)
+            if result.returncode not in allowed:
+                retain(data, command, f"exit={result.returncode}; stderr={result.stderr.decode(errors='replace')}")
             cases += 1
-            now = time.monotonic()
-            if now - last_report >= 30:
-                print(f"Fuzz smoke: {cases} cases completed", flush=True)
-                last_report = now
-
-    print(f"Fuzz smoke passed: {cases} cases in {args.seconds} seconds")
+    print(f"Fuzz smoke {args.profile} passed: {cases} cases in {args.seconds} seconds")
     return 0
 
 

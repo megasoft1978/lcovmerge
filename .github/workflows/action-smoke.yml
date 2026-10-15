@@ -4,6 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Published binary version to verify
+        required: true
+        type: string
+        default: '1.1.0'
 
 permissions:
   contents: read
@@ -65,7 +72,7 @@ jobs:
       - name: Run CLI oracle
         run: ${{ env.LCOVMERGE_PYTHON }} action/tests/run_oracle.py
 
-      - name: Merge with the published v1.1.0 Action
+      - name: Merge with the published Action
         id: merge
         uses: ./
         with:
@@ -76,7 +83,7 @@ jobs:
           output: coverage/action-merged.info
           mem-limit: 8M
           extra-args: --branch-coverage on
-          version: v1.1.0
+          version: ${{ inputs.release_version || '1.1.0' }}
 
       - name: Assert output, CLI parity, and summary
         env:
@@ -90,7 +97,7 @@ jobs:
         with:
           files: ""
           output: coverage/missing-files.info
-          version: v1.1.0
+          version: ${{ inputs.release_version || '1.1.0' }}
 
       - name: Assert missing files input failed
         if: always()
@@ -106,7 +113,7 @@ jobs:
         with:
           files: coverage/bad.info
           output: coverage/malformed-output.info
-          version: v1.1.0
+          version: ${{ inputs.release_version || '1.1.0' }}
 
       - name: Assert malformed LCOV input failed
         if: always()

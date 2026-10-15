@@ -1,6 +1,6 @@
 # Repository settings checklist
 
-This checklist is for an owner with admin access to `megasoft1978/lcovmerge`. The commands below change GitHub settings; review each command and run it yourself only when ready. They have not been run as part of this repository change.
+This checklist is for an owner with admin access to `megasoft1978/lcovmerge`. The commands below show recommended GitHub settings; review the current settings before changing them.
 
 First confirm the target and your authentication:
 
@@ -32,15 +32,24 @@ gh api --method PUT repos/megasoft1978/lcovmerge/branches/main/protection --inpu
       "Build and test (macos-arm64)",
       "Build and test (macos-x86_64)",
       "Build and test (windows-x86_64)",
-      "ASan and UBSan",
-      "Five-minute fuzz smoke",
+      "Rust AddressSanitizer tests",
+      "Rust ThreadSanitizer tests",
+      "Rust parser mutation fuzz smoke",
       "Differential check against lcov",
+      "LCOV 2.6 merge conformance (XS and Perl)",
+      "LCOV profile bounded-memory workloads",
       "Reproducible build",
       "ShellCheck",
-      "Analyze C and C++",
+      "Analyze Rust",
       "Smoke test (ubuntu-24.04)",
       "Smoke test (macos-latest)",
-      "Smoke test (windows-latest)"
+      "Smoke test (windows-latest)",
+      "Release target (linux-x86_64)",
+      "Release target (linux-aarch64)",
+      "Release target (macos-arm64)",
+      "Release target (macos-x86_64)",
+      "Release target (windows-x86_64)",
+      "Windows release binary (native Rust target)"
     ]
   },
   "enforce_admins": true,

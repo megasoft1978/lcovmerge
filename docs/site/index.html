@@ -64,11 +64,11 @@
         <div class="fit-grid">
           <article class="fit-card fit-card-yes">
             <h3>Use it when</h3>
-            <p>Separate jobs leave LCOV shards, one local file is required, and merging costs time.</p>
+            <p>Separate jobs leave costly LCOV shards; a local consumer needs one file.</p>
           </article>
           <article class="fit-card">
             <h3>Keep your path when</h3>
-            <p>Your service accepts shards, native merging fits, or <code>lcov -a</code> is fast enough.</p>
+            <p>Your service accepts shards or native merging fits.</p>
           </article>
         </div>
         <p class="fit-links"><a href="docs.html#workflow-fit">Compare workflow options ↗</a> · <a href="docs.html#compatibility">Compare before switching ↗</a></p>
@@ -97,7 +97,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
           <h3>GitHub Actions</h3>
           <p>Merge downloaded LCOV shards in your final job.</p>
           <pre class="code-block" data-copy-label="Copy GitHub Action step"><code>- name: Merge LCOV shards
-  uses: megasoft1978/lcovmerge@v1.1.0
+  uses: megasoft1978/lcovmerge@v1.2.0
   with:
     files: coverage/shards/*.info
     output: coverage/merged.info</code></pre>
@@ -114,7 +114,7 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
 <h2 id="home-title" class="home-stats"><span class="home-stat"><strong>207 ms</strong><small>sorted · 1 job</small></span><span class="home-stat"><strong>145 ms</strong><small>sorted · 4 jobs</small></span></h2>
 <p class="featured-meta">Native Rust · sorted 104.6 MB; unsorted 11.7 MB · 19-run medians · 2026-10-14</p>
 <p class="generated-note">Unsorted: 65 ms (1 job), 64 ms (4 jobs). Output bytes matched every run. One macOS arm64 host; results vary by workload.</p>
-<p class="generated-note">Published v1.1.0 downloads predate the Rust migration.</p>
+<p class="generated-note">Version 1.2.0 is the first Rust release.</p>
 <a class="text-link" href="benchmarks.html">Rust results &amp; methodology ↗</a>
 <!-- HOME-BENCHMARK:END -->
         </div>
@@ -129,7 +129,9 @@ genhtml coverage/merged.info --output-directory coverage/html</code></pre>
         </div>
         <div>
           <h2>Limits</h2>
-          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Records can differ from <code>lcov -a</code>.</p>
+          <p>LCOV only. No <code>.gcda</code> or <code>.profraw</code>. Native policies differ from <code>lcov -a</code>; the experimental 2.6 profile has a version-pinned merge contract.</p>
+          <pre class="code-block" data-copy-label="Copy LCOV profile merge command"><code>./bin/lcovmerge --lcov-compat=2.6 -a 'coverage/shard-*.info' -o coverage/merged.info</code></pre>
+          <p>Merge only: no capture, reset, extract, genhtml, Perl callbacks, or automatic <code>lcov</code> replacement. <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LCOV-PROFILE.md">Profile scope and status ↗</a></p>
           <p class="home-doc-links"><a href="docs.html">Usage and workflow guide ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/LIMITATIONS.md">Limits ↗</a> · <a href="https://github.com/megasoft1978/lcovmerge/blob/main/docs/REAL-WORKLOADS.md">Share a safe workload measurement ↗</a></p>
         </div>
       </div>

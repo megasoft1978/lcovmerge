@@ -6,18 +6,26 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-15
+
 ### Changed
 
-- Port the CLI and library from C to native Rust, retaining v1.1.0 command-line and tracefile behavior, bounded external sorting, and opt-in threaded sorted-input merging. Replace C build, packaging, and CI steps with locked Cargo builds for all five release targets.
-- Add Rust parser/model property tests and in-process corpus mutation fuzzing alongside the full CLI, oracle, LCOV, determinism, partition, and cleanup suites. AddressSanitizer and ThreadSanitizer targets exercise the Rust implementation.
-- Build portable PGO binaries by default with `make`, using cached synthetic training feedback. Add a reproducible PGO build check and a byte-equivalence/performance gate in `bench/compare-builds.py`. Held-out local fixtures match C 1.1's single-job sorted speed and improve threaded and unsorted elapsed time; document the unsorted memory trade-off.
-- Update README, website, architecture, and release documentation. Keep published C measurements separate from the [Rust port comparison](docs/BENCHMARKS.md#rust-port-comparison), which records both speed and memory trade-offs.
+- Port the CLI and library to native Rust while retaining established native command-line and tracefile policies, bounded external sorting, and opt-in threaded sorted-input merging. Use locked Cargo builds for all five release targets.
+- Add experimental `--lcov-compat=2.6` for the documented LCOV merge surface: configuration, quoted `-a` globs, testcase normalization, function aliases and inferred ends, branch/MC/DC records, checksums, source versions, and diagnostic recovery. Collection, report generation, callbacks, and unsupported settings remain outside this profile; see [the contract](docs/LCOV-PROFILE.md).
+- Use bounded sort runs, exact disk-backed indexes and streamed joins for compatibility metadata, including groups larger than memory. Stage sole or mixed stdin at its original producer position. Retain record limits, staged output replacement, and temporary cleanup on success, errors, and catchable POSIX interruption.
+- Build portable PGO binaries by default with `make`, caching synthetic training feedback by source and toolchain identity. Retain reproducible-build and binary-size checks. Plain `cargo build --release` remains unprofiled.
+- Speed up native partition planning by skipping ordinary complete lines before marker classification; the measured macOS ARM candidate passed all eight predeclared timing comparisons against C 1.1.0 and the prior Rust build. See the [native benchmark report](docs/BENCHMARKS.md#rust-port-comparison).
+- Add Rust unit/property tests, structured mutations, CLI fuzzing, pinned XS/pure-Perl conformance, bounded-memory workloads, and Rust AddressSanitizer/ThreadSanitizer CI. Verify downloaded release binaries on all five platforms, with checksums, signatures and attestations.
+- Add isolated native and LCOV-profile comparisons with fixed paired sampling, output equivalence, uncertainty intervals, resource metrics and exact binary/input/profile provenance. Preserve every historical measurement and report slower or inconclusive cases; see [benchmarks](docs/BENCHMARKS.md).
+- Update the README, website, CLI/man references, architecture and packaging guides for Rust. Default the versioned Action and installers to 1.2.0. Promote the exact measured macOS ARM binary after verifying its source identity and all eight passing comparisons.
 
 ### Fixed
 
-- Configure CodeQL's supported Rust extraction mode, preserve shell-command failures when exporting build flags, and use a portable filename for the embedded-NUL regression fixture on Windows.
-- Synchronize partition interruption tests with live worker stages through a bounded test-only hold, replacing large timing-sensitive fixtures. Use modest optimization in AddressSanitizer builds to keep the full instrumented suite practical on CI runners.
-- Ensure caught POSIX termination signals interrupt blocked stdin and stdout operations and clean staged output and temporary sort runs. Add a blocked-stdout cleanup regression.
+- Match profile collector policies for globally required function coverpoints, DA-only zero function summaries, aliases from removed testcases, ghost master functions, inferred function ends, consistency recovery, and the lambda exception. Honor `--no-function-coverage`.
+- Preserve negative branch-count recovery as zero, branch expressions and exception kinds, sparse block IDs, source-wide checksum selection, source-version propagation, and separate MC/DC reachability flags and synthesized line counts.
+- Recover malformed profile sections without buffering an entire source: retain earlier sections, ignore misplaced records, trim padding, accept KF aliases and suffixed end markers, and drain oversized physical lines within the 1 MiB cap. Reject repeated stdin before reading. Classify recovery errors independently of filenames and function names.
+- Interrupt blocked POSIX stdin/stdout operations on caught termination signals and remove staged output and temporary runs. Keep Windows blocking-I/O limitations explicit.
+- Make partition interruption tests synchronize with live worker stages, correct Windows fixture/path-identity checks, configure supported Rust CodeQL extraction, and preserve shell build failures. Derive Docker validation filenames from the Cargo version.
 
 ## [1.1.0] - 2026-10-12
 

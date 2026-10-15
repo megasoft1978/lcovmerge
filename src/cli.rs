@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 pub const HELP: &str = "usage: lcovmerge [options] a.info b.info ... -o out.info
+  --lcov-compat=2.6           select the separate LCOV 2.6 merge CLI; use with --help
   -o, --output FILE           output file, or - for stdout
   --mem-limit SIZE            arena cap; bytes or binary K/M/G, case-insensitive
                               default 64M; minimum 8M per external-sort job

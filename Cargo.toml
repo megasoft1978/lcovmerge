@@ -1,6 +1,6 @@
 [package]
 name = "lcovmerge"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Streaming LCOV tracefile merger"
@@ -23,6 +23,10 @@ libc = "0.2"
 tempfile = "3"
 itoa = "1"
 memchr = "2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+md5 = "0.8"
+base64 = "0.22"
+glob = "0.3"
 
 [profile.release]
 opt-level = 3

@@ -1,0 +1,1653 @@
+//! Bounded DA and function compatibility executor.
+use super::{
+    branch_check, branch_spill, checksum_spill, eligibility, function_check, function_spill,
+    line_spill, mcdc_input, mcdc_lines, policy, sort, version_spill, Request, StopOnCancel,
+};
+use crate::common::{check_cancelled, Error, MAX_LINE};
+use flate2::read::MultiGzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
+
+pub(super) fn try_run(req: &Request) -> Result<Option<Result<(), Error>>, Error> {
+    let o = &req.resources;
+    if o.inputs.iter().any(|p| p.as_os_str() == "-") {
+        return Ok(None);
+    }
+    if o.inputs
+        .iter()
+        .any(|p| !p.metadata().is_ok_and(|m| m.is_file()))
+    {
+        return Ok(None);
+    }
+    #[cfg(test)]
+    let budget = o.mem_limit;
+    #[cfg(not(test))]
+    let budget = o.mem_limit.max(crate::common::MIN_WORKER_BUDGET);
+    execute(req, budget).map(|()| Some(Ok(())))
+}
+
+fn execute(req: &Request, memory: usize) -> Result<(), Error> {
+    let o = &req.resources;
+    // Reserve input lines/readers and divide the remainder among concurrently live sorters.
+    let reserve = 5 * MAX_LINE + 3 * crate::common::IO_BLOCK + 64 * 1024;
+    // DA/checksum, function records, versions, and eligibility own parse buffers.
+    let slots = (4 + usize::from(req.mcdc_coverage) + usize::from(o.branch_coverage)).max(
+        if req.check_data_consistency && o.function_data {
+            4
+        } else {
+            3
+        },
+    );
+    let shared = memory
+        .saturating_sub(reserve)
+        .max(slots * 2 * (crate::common::IO_BLOCK + 4096));
+    let each = (shared / slots).max(crate::common::IO_BLOCK + 4096);
+    let fanin = super::descriptor_fanin(
+        (memory / (3 * (MAX_LINE + crate::common::IO_BLOCK + 4096))).clamp(2, 32),
+    )?;
+    let mut lines = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+    let mut eligibility = eligibility::Recorder::new(&o.tmpdir, each)?;
+    let checksums_enabled = req.checksum || o.strict_checksum;
+    let mut checksums = if checksums_enabled {
+        Some(checksum_spill::Processor::new(&o.tmpdir, each, fanin)?)
+    } else {
+        None
+    };
+    let mut raw_functions = function_spill::Records::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut versions = version_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut branches = if o.branch_coverage {
+        Some(branch_spill::Reducer::new(&o.tmpdir, each, o.jobs.max(1))?)
+    } else {
+        None
+    };
+    let mut mcdc = if req.mcdc_coverage {
+        Some(mcdc_input::Records::new(&o.tmpdir, each, o.jobs.max(1))?)
+    } else {
+        None
+    };
+    for (input_id, path) in o.inputs.iter().enumerate() {
+        check_cancelled()?;
+        let label = path.display().to_string();
+        let file =
+            File::open(path).map_err(|e| Error::new(3, format!("cannot open {label}: {e}")))?;
+        let reader: Box<dyn Read> = if super::is_gzip_path(path) {
+            Box::new(MultiGzDecoder::new(file))
+        } else {
+            Box::new(file)
+        };
+        let mut reader = BufReader::new(StopOnCancel(reader));
+        let mut buf = Vec::with_capacity(4096);
+        let mut tc = String::new();
+        let mut section_tc = String::new();
+        let mut source: Option<String> = None;
+        let mut selected = false;
+        let mut open = false;
+        let mut skip_section = false;
+        let mut section = 0u64;
+        let mut ordinal = 0u64;
+        let mut line_no = 0u64;
+        let mut section_has_da = false;
+        loop {
+            check_cancelled()?;
+            buf.clear();
+            let state = super::trace_input::next(&mut reader, &mut buf, &label, line_no + 1)?;
+            if state == super::trace_input::State::End {
+                break;
+            }
+            line_no += 1;
+            let error = |message: &str| {
+                super::policy::at(super::policy::Kind::Format, &label, line_no, message)
+            };
+            if state == super::trace_input::State::Overlong {
+                recover(req, error("line exceeds 1 MiB"))?;
+                continue;
+            }
+            let s = match std::str::from_utf8(&buf) {
+                Ok(s) => s,
+                Err(_) => {
+                    if recover(req, error("invalid UTF-8 tracefile record"))? {
+                        continue;
+                    } else {
+                        unreachable!()
+                    }
+                }
+            };
+            if buf.contains(&0) {
+                recover(req, error("NUL byte in tracefile record"))?;
+                continue;
+            }
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            if let Some(v) = s.strip_prefix("TN:") {
+                if open {
+                    recover(
+                        req,
+                        error("TN record must precede the SF record of its section"),
+                    )?;
+                    continue;
+                }
+                tc = policy::testcase_name(v);
+                continue;
+            }
+            if let Some(sf) = s.strip_prefix("SF:").or_else(|| s.strip_prefix("KF:")) {
+                if std::mem::replace(&mut open, false) {
+                    recover(
+                        req,
+                        error("file record found inside an open section - missing end_of_record"),
+                    )?;
+                    section_tc.clear();
+                }
+                open = true;
+                skip_section = sf.is_empty();
+                if skip_section && recover(req, error("unexpected empty file name in record"))? {
+                    source = None;
+                    selected = false;
+                    section += 1;
+                    ordinal = 0;
+                    section_has_da = false;
+                    continue;
+                }
+                let rewritten = match crate::path::rewrite_path(o, sf) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if recover(req, policy::path_error(e, &label, line_no))? {
+                            source = None;
+                            continue;
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                };
+                selected = crate::path::path_selected(o, &rewritten);
+                source = Some(rewritten);
+                section += 1;
+                ordinal = 0;
+                section_tc = if req.forget_test_names {
+                    String::new()
+                } else {
+                    tc.clone()
+                };
+                section_has_da = false;
+                if selected {
+                    eligibility.push(
+                        source.as_ref().unwrap(),
+                        input_id as u64,
+                        &section_tc,
+                        false,
+                    )?;
+                }
+                continue;
+            }
+            if s.starts_with("end_of_record") {
+                if !open {
+                    recover(req, error("end_of_record with no open section"))?;
+                    continue;
+                }
+                open = false;
+                source = None;
+                selected = false;
+                skip_section = false;
+                section_tc.clear();
+                continue;
+            }
+            if !open {
+                recover(req, error("unexpected record outside of a section"))?;
+                continue;
+            }
+            if skip_section {
+                continue;
+            }
+            let Some(src) = source.as_ref() else {
+                continue;
+            };
+            if !selected {
+                continue;
+            }
+            if ["LF:", "LH:", "FNF:", "FNH:", "BRF:", "BRH:", "MCF:", "MCH:"]
+                .iter()
+                .any(|prefix| s.starts_with(prefix))
+            {
+                continue;
+            }
+            if let Some(v) = s.strip_prefix("VER:") {
+                versions.push(src, input_id as u64, section, line_no, v, &label, line_no)?;
+                continue;
+            }
+            if let Some(payload) = s.strip_prefix("BRDA:") {
+                if let Some(reducer) = &mut branches {
+                    ordinal += 1;
+                    reducer.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        ordinal,
+                        payload,
+                        &label,
+                        line_no,
+                        req,
+                    )?;
+                }
+                continue;
+            }
+            if let Some(payload) = s.strip_prefix("MCDC:") {
+                if let Some(reducer) = &mut mcdc {
+                    reducer.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        payload,
+                        &label,
+                        line_no,
+                        req,
+                    )?;
+                }
+                continue;
+            }
+            let function_record = ["FN:", "FNDA:", "FNL:", "FNA:"]
+                .iter()
+                .any(|prefix| s.starts_with(prefix));
+            let line_record = s.starts_with("DA:");
+            if !function_record && !line_record {
+                recover(req, error("unexpected tracefile record inside a section"))?;
+                continue;
+            }
+            if function_record && !o.function_data {
+                continue;
+            }
+            ordinal += 1;
+            if let Some(x) = s.strip_prefix("DA:") {
+                let mut sec = super::record::Section::default();
+                match sec.add_line_with_checksums(x, &label, line_no, checksums_enabled) {
+                    Err(e)
+                        if e.message.ends_with("negative coverage count")
+                            && policy::can_recover(req, &e) =>
+                    {
+                        let mut fields = x.splitn(3, ',');
+                        let location = fields.next().unwrap_or("");
+                        let _ = fields.next();
+                        let sum = fields.next().map(|v| format!(",{v}")).unwrap_or_default();
+                        sec.add_line_with_checksums(
+                            &format!("{location},0{sum}"),
+                            &label,
+                            line_no,
+                            checksums_enabled,
+                        )?;
+                    }
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
+                        }
+                    }
+                    Ok(()) => {}
+                }
+                if let Some((ln, (count, sum))) = sec.lines.into_iter().next() {
+                    if !section_has_da {
+                        eligibility.push(src, input_id as u64, &section_tc, true)?;
+                        section_has_da = true;
+                    }
+                    let row = line_spill::Entry {
+                        kind: 1,
+                        source: src.clone(),
+                        testcase: section_tc.clone(),
+                        value: sum.unwrap_or_default(),
+                        line: ln,
+                        count,
+                        input: input_id as u64,
+                        section,
+                        ordinal,
+                        label: if checksums_enabled {
+                            label.clone()
+                        } else {
+                            String::new()
+                        },
+                        line_no: if checksums_enabled { line_no } else { 0 },
+                    };
+                    if let Some(processor) = checksums.as_mut() {
+                        processor.push(row)?;
+                    } else {
+                        lines.push(row)?;
+                    }
+                }
+                continue;
+            }
+            if let Some(x) = s.strip_prefix("FN:") {
+                match policy::parse_fn(x, &label, line_no) {
+                    Ok((start, end, name)) => raw_functions.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        function_spill::Family::Legacy,
+                        name.as_bytes(),
+                        ordinal,
+                        function_spill::Kind::Declaration,
+                        start,
+                        end,
+                        0,
+                        &name,
+                        &label,
+                        line_no,
+                    )?,
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
+                        }
+                    }
+                }
+            } else if let Some(x) = s.strip_prefix("FNDA:") {
+                match policy::parse_named_count(x, &label, line_no) {
+                    Ok((hits, name)) => raw_functions.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        function_spill::Family::Legacy,
+                        name.as_bytes(),
+                        ordinal,
+                        function_spill::Kind::Hit,
+                        0,
+                        None,
+                        hits,
+                        &name,
+                        &label,
+                        line_no,
+                    )?,
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
+                        }
+                    }
+                }
+            } else if let Some(x) = s.strip_prefix("FNL:") {
+                let result = (|| {
+                    let mut f = x.split(',');
+                    let idx = policy::num(f.next(), &label, line_no)?;
+                    let start = policy::num(f.next(), &label, line_no)?;
+                    let end = match f.next() {
+                        Some(v) => Some(policy::num(Some(v), &label, line_no)?),
+                        None => None,
+                    };
+                    if f.next().is_some() {
+                        return Err(error("invalid or duplicate FNL index"));
+                    }
+                    Ok((idx, start, end))
+                })();
+                match result {
+                    Ok((idx, start, end)) => raw_functions.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        function_spill::Family::Modern,
+                        &idx.to_be_bytes(),
+                        ordinal,
+                        function_spill::Kind::Declaration,
+                        start,
+                        end,
+                        0,
+                        "",
+                        &label,
+                        line_no,
+                    )?,
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
+                        }
+                    }
+                }
+            } else if let Some(x) = s.strip_prefix("FNA:") {
+                let result = (|| {
+                    let mut f = x.splitn(3, ',');
+                    let idx = policy::num(f.next(), &label, line_no)?;
+                    let hits =
+                        policy::function_count(req, f.next().unwrap_or(""), &label, line_no)?;
+                    let name = f
+                        .next()
+                        .filter(|v| !v.is_empty())
+                        .ok_or_else(|| error("malformed FNA record"))?;
+                    Ok((idx, hits, name.to_owned()))
+                })();
+                match result {
+                    Ok((idx, hits, name)) => raw_functions.push(
+                        src,
+                        &section_tc,
+                        input_id as u64,
+                        section,
+                        function_spill::Family::Modern,
+                        &idx.to_be_bytes(),
+                        ordinal,
+                        function_spill::Kind::Hit,
+                        0,
+                        None,
+                        hits,
+                        &name,
+                        &label,
+                        line_no,
+                    )?,
+                    Err(e) => {
+                        if recover(req, e)? {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        if open {
+            let eof_error = super::policy::at(
+                super::policy::Kind::Format,
+                &label,
+                line_no,
+                "unexpected end of file: missing end_of_record",
+            );
+            recover(req, eof_error)?;
+        }
+    }
+    let mut eligibility = eligibility.finish(req)?;
+    let version_rows = versions.finish_eligible(req, Some(&mut eligibility))?;
+    // Release the DA batch before opening the three normalization sorters.
+    // The spill directory stays alive until all line cursors have finished.
+    let (mut lines, mut line_path) = if let Some(processor) = checksums {
+        drop(lines);
+        processor.finish(req)?
+    } else {
+        let path = lines.finish()?;
+        (lines, path)
+    };
+    let mut mcdc_generated = None;
+    let mut has_master_mcdc_coverpoints = false;
+    let mcdc_rows = if let Some(records) = mcdc {
+        let reduced = records.finish(req, &mut eligibility)?;
+        let mut cursor = reduced.master.cursor()?;
+        while let Some(row) = cursor.next()? {
+            has_master_mcdc_coverpoints |= decode_output_key(&row.key)?.2 == 6;
+        }
+        drop(cursor);
+        if req.check_data_consistency {
+            mcdc_generated = Some(mcdc_lines::generate(
+                req,
+                each,
+                &reduced.master,
+                &reduced.members,
+                &line_path,
+            )?);
+        }
+        Some(reduced.public)
+    } else {
+        None
+    };
+    let mut input_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut linked = raw_functions.finish()?;
+    loop {
+        let row = match linked.next_linked() {
+            Ok(Some(row)) => row,
+            Ok(None) => break,
+            Err(e) => {
+                if recover(req, e)? {
+                    continue;
+                }
+                unreachable!()
+            }
+        };
+        if row.name.is_empty() {
+            continue;
+        }
+        if !eligibility.source(&row.source, row.input)?.alive {
+            continue;
+        }
+        if (row.start == 0 || row.end == Some(0))
+            && recover(
+                req,
+                super::policy::at(
+                    super::policy::Kind::Format,
+                    &row.label,
+                    row.line,
+                    "function line must be positive",
+                ),
+            )?
+        {
+            continue;
+        }
+        let mut key = function_check::prefix(&row.source, row.input)?;
+        key.extend_from_slice(&row.start.to_be_bytes());
+        push_str(&mut key, &row.testcase)?;
+        push_str(&mut key, &row.name)?;
+        let mut val = Vec::with_capacity(34 + row.label.len());
+        val.extend_from_slice(&row.start.to_be_bytes());
+        val.extend_from_slice(&row.end.unwrap_or(0).to_be_bytes());
+        val.push(u8::from(row.end.is_some()));
+        val.extend_from_slice(&row.hits.to_be_bytes());
+        val.extend_from_slice(&row.line.to_be_bytes());
+        push_str(&mut val, &row.label)?;
+        input_functions.push(key, val)?;
+    }
+    drop(linked);
+    // Resolve duplicate aliases within each input before applying a recovery
+    // addition. Applying it to raw declaration/hit rows would count it twice.
+    let mut input_rows = input_functions.finish()?.cursor()?;
+    let mut unique = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut pending = input_rows.next()?;
+    while let Some(mut first) = pending.take() {
+        let mut end = decode_end(&first.value)?;
+        let mut count = read_u64(&first.value, 17)?;
+        pending = input_rows.next()?;
+        while pending.as_ref().is_some_and(|row| row.key == first.key) {
+            let next = pending.take().unwrap();
+            if let Some(candidate) = decode_end(&next.value)? {
+                if end.is_some_and(|old| old != candidate) {
+                    recover(
+                        req,
+                        super::policy::new(
+                            super::policy::Kind::Inconsistent,
+                            "inconsistent function declaration within input",
+                        ),
+                    )?;
+                }
+                end = Some(end.map_or(candidate, |old| old.max(candidate)));
+            }
+            count = count
+                .saturating_add(read_u64(&next.value, 17)?)
+                .min(i64::MAX as u64);
+            pending = input_rows.next()?;
+        }
+        first.value[8..16].copy_from_slice(&end.unwrap_or(0).to_be_bytes());
+        first.value[16] = u8::from(end.is_some());
+        first.value[17..25].copy_from_slice(&count.to_be_bytes());
+        unique.push(first.key, first.value)?;
+    }
+    drop(input_rows);
+    let unique = unique.finish()?;
+    let mut aliases = unique.cursor()?;
+    let mut alias = aliases.next()?;
+    let corrections = if alias.is_some() {
+        let mut checker = function_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
+        let mut line_rows = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(line) = line_spill::read_next_public(&mut line_rows)? {
+            checker.push_line(&line.source, line.input, line.line, line.count)?;
+        }
+        drop(line_rows);
+        while let Some(row) = alias.take() {
+            let (src, input, start, _, name) = decode_input_function_key(&row.key)?;
+            let mut metadata = row
+                .value
+                .get(25..)
+                .ok_or_else(|| Error::new(3, "corrupt input function value"))?;
+            let line_no = read_u64(metadata, 0)?;
+            metadata = &metadata[8..];
+            let label = take_str(&mut metadata)?;
+            if !metadata.is_empty() {
+                return Err(Error::new(3, "corrupt input function value"));
+            }
+            checker.push_function(
+                &src,
+                input,
+                start,
+                decode_end(&row.value)?,
+                read_u64(&row.value, 17)?,
+                &name,
+                &label,
+                line_no,
+            )?;
+            alias = aliases.next()?;
+        }
+        drop(aliases);
+        checker.finish(req)?
+    } else {
+        drop(aliases);
+        sort::Sorter::new(&o.tmpdir, each, 1)?.finish()?
+    };
+    let mut corrections_cursor = corrections.cursor()?;
+    let mut correction = corrections_cursor.next()?;
+    let mut aliases = unique.cursor()?;
+    let mut functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut function_profiles = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut ghost_functions = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    while let Some(mut row) = aliases.next()? {
+        let (src, input, start, tc, name) = decode_input_function_key(&row.key)?;
+        let mut correction_key = function_check::prefix(&src, input)?;
+        correction_key.extend_from_slice(&start.to_be_bytes());
+        while correction.as_ref().is_some_and(|r| r.key < correction_key) {
+            correction = corrections_cursor.next()?;
+        }
+        let adjustment = correction.as_ref().filter(|r| r.key == correction_key);
+        if adjustment.is_some_and(|r| r.value.first() == Some(&0)) {
+            continue;
+        }
+        let addition = adjustment
+            .map(|r| {
+                if r.value.len() != 18 || r.value[0] != 1 {
+                    return Err(Error::new(3, "corrupt function recovery row"));
+                }
+                read_u64(&r.value, 1)
+            })
+            .transpose()?
+            .unwrap_or(0);
+        if let Some(adjustment) = adjustment {
+            if adjustment.value[9] == 1 {
+                row.value[8..16].copy_from_slice(&adjustment.value[10..18]);
+                row.value[16] = 1;
+            }
+        }
+        let count = read_u64(&row.value, 17)?
+            .saturating_add(addition)
+            .min(i64::MAX as u64);
+        row.value.truncate(25);
+        row.value[17..25].copy_from_slice(&count.to_be_bytes());
+        if !eligibility.testcase(&src, input, &tc)? {
+            // Retain removed-testcase aliases for source master checks, but
+            // exclude them before public testcase counts are combined.
+            ghost_functions.push(row.key, row.value)?;
+            continue;
+        }
+        let mut key = key_prefix(&src, &tc)?;
+        function_profiles.push(key.clone(), Vec::new())?;
+        push_str(&mut key, &name)?;
+        functions.push(key, row.value)?;
+    }
+    drop(aliases);
+    drop(unique);
+    drop(correction);
+    drop(corrections_cursor);
+    drop(corrections);
+    let functions = functions.finish()?;
+    let function_profiles_sorted = function_profiles.finish()?;
+    let ghost_functions = ghost_functions.finish()?;
+    if let Some(generated) = mcdc_generated.as_ref() {
+        let mut cursor = generated.testcases.cursor()?;
+        let mut row = cursor.next()?;
+        if row.is_some() {
+            let mut replaced = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+            let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+            while let Some(original) = line_spill::read_next_public(&mut reader)? {
+                replaced.push(original)?;
+            }
+            drop(reader);
+            while let Some(current) = row.take() {
+                let (source, input, line, count, testcase) = mcdc_lines::decode(&current)?;
+                replaced.push(line_spill::Entry {
+                    kind: 2,
+                    source,
+                    testcase: testcase
+                        .ok_or_else(|| Error::new(3, "missing MC/DC testcase projection"))?,
+                    value: String::new(),
+                    line,
+                    count,
+                    input,
+                    section: 0,
+                    ordinal: 0,
+                    label: String::new(),
+                    line_no: 0,
+                })?;
+                row = cursor.next()?;
+            }
+            line_path = replaced.finish()?;
+            lines = replaced;
+        }
+    }
+    let mut generated_lines = None;
+    let mut has_master_branch_coverpoints = false;
+    let branch_rows = if let Some(branches) = branches {
+        let mut checker = branch_check::Checker::new(&o.tmpdir, each, o.jobs.max(1))?;
+        let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(row) = line_spill::read_next_public(&mut reader)? {
+            if row.kind == 1 {
+                checker.push_line(&row.source, &row.testcase, row.input, row.line, row.count)?;
+            }
+        }
+        drop(reader);
+        if let Some(generated) = mcdc_generated.as_ref() {
+            let mut cursor = generated.master.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, input, line, count, _) = mcdc_lines::decode(&row)?;
+                if eligibility.source(&source, input)?.multiple {
+                    checker.mark_multiple(&source, input)?;
+                }
+                checker.push_summary_line(&source, input, line, count)?;
+            }
+        }
+        let rows = branches.finish_eligible(
+            req,
+            Some(&mut eligibility),
+            |src, tc, input, line, signature, occurrence, position, hit, unreachable, multiple| {
+                has_master_branch_coverpoints |= !unreachable;
+                if multiple {
+                    checker.mark_multiple(src, input)?;
+                }
+                checker.push_branch(src, tc, input, line, signature, occurrence, position, hit)?;
+                Ok(true)
+            },
+        )?;
+        let generated = checker.finish(req)?;
+        let mut cursor = generated.cursor()?;
+        let mut serialize = false;
+        while let Some(row) = cursor.next()? {
+            serialize |= branch_check::decode_generated(&row)?.3;
+        }
+        drop(cursor);
+        if serialize {
+            let mut replaced = line_spill::Spill::new(&o.tmpdir, each, fanin)?;
+            let mut reader = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+            while let Some(row) = line_spill::read_next_public(&mut reader)? {
+                replaced.push(row)?;
+            }
+            drop(reader);
+            let mut cursor = generated.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, input, line, serialize, count, testcase) =
+                    branch_check::decode_generated(&row)?;
+                if serialize {
+                    replaced.push(line_spill::Entry {
+                        kind: 1,
+                        source,
+                        testcase,
+                        value: String::new(),
+                        line,
+                        count,
+                        input,
+                        section: 0,
+                        ordinal: 0,
+                        label: String::new(),
+                        line_no: 0,
+                    })?;
+                }
+            }
+            drop(cursor);
+            line_path = replaced.finish()?;
+            drop(lines);
+            lines = replaced;
+        }
+        generated_lines = Some(generated);
+        Some(rows)
+    } else {
+        None
+    };
+    let mut names = functions.cursor()?;
+    drop(functions);
+
+    let mut normalized = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut pending = names.next()?;
+    while let Some(first) = pending.take() {
+        let (source, testcase, name) = decode_name_key(&first.key)?;
+        let start = read_u64(&first.value, 0)?;
+        let end = decode_end(&first.value)?;
+        let mut hits = read_u64(&first.value, 17)?;
+        pending = names.next()?;
+        while pending.as_ref().is_some_and(|r| {
+            decode_name_key(&r.key).is_ok_and(|(s, t, n)| s == source && t == testcase && n == name)
+        }) {
+            let row = pending.take().unwrap();
+            let st = read_u64(&row.value, 0)?;
+            let en = decode_end(&row.value)?;
+            if st != start || en != end {
+                let e = super::policy::new(
+                    super::policy::Kind::Inconsistent,
+                    format!("inconsistent function declaration for '{name}'"),
+                );
+                if !recover(req, e)? {
+                    unreachable!();
+                }
+            }
+            hits = hits
+                .saturating_add(read_u64(&row.value, 17)?)
+                .min(i64::MAX as u64);
+            pending = names.next()?;
+        }
+        let mut key = key_prefix(&source, &testcase)?;
+        key.extend_from_slice(&start.to_be_bytes());
+        key.extend_from_slice(&end.unwrap_or(0).to_be_bytes());
+        key.push(u8::from(end.is_some()));
+        push_str(&mut key, &name)?;
+        normalized.push(key, hits.to_be_bytes().to_vec())?;
+    }
+    drop(names);
+    let mut final_sort = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut has_branch_coverpoints = has_master_branch_coverpoints;
+    let mut has_mcdc_coverpoints = has_master_mcdc_coverpoints;
+    if let Some(rows) = branch_rows {
+        let mut cursor = rows.cursor()?;
+        while let Some(row) = cursor.next()? {
+            has_branch_coverpoints |= decode_output_key(&row.key)?.2 == 4;
+            final_sort.push(row.key, row.value)?;
+        }
+    }
+    if let Some(rows) = mcdc_rows {
+        let mut cursor = rows.cursor()?;
+        while let Some(row) = cursor.next()? {
+            has_mcdc_coverpoints |= decode_output_key(&row.key)?.2 == 6;
+            final_sort.push(row.key, row.value)?;
+        }
+    }
+    let mut function_profiles = function_profiles_sorted.cursor()?;
+    drop(function_profiles_sorted);
+    let mut function_profile = function_profiles.next()?;
+    let mut versions = version_rows.cursor()?;
+    drop(version_rows);
+    let mut version = versions.next()?;
+    let mut lr = BufReader::new(File::open(&line_path).map_err(|e| Error::new(3, e.to_string()))?);
+    let mut row = line_spill::read_next_public(&mut lr)?;
+    while let Some(first) = row.take() {
+        let (src, tc) = (first.source.clone(), first.testcase.clone());
+        let profile_key = key_prefix(&src, &tc)?;
+        while function_profile
+            .as_ref()
+            .is_some_and(|p| p.key < profile_key)
+        {
+            function_profile = function_profiles.next()?;
+        }
+        let has_functions = function_profile
+            .as_ref()
+            .is_some_and(|p| p.key == profile_key);
+        let mut source_only = Vec::new();
+        push_str(&mut source_only, &src)?;
+        while version.as_ref().is_some_and(|v| v.key < source_only) {
+            version = versions.next()?;
+        }
+        if let Some(v) = version.as_ref().filter(|v| v.key == source_only) {
+            let mut key = key_prefix(&src, &tc)?;
+            key.push(0);
+            final_sort.push(key, v.value.clone())?;
+        }
+        let mut line = first.line;
+        let mut checksum = first.value.clone();
+        let mut count = first.count.min(i64::MAX as u64);
+        let mut lf = 0u64;
+        let mut lh = 0u64;
+        loop {
+            lf = lf.saturating_add(1);
+            row = line_spill::read_next_public(&mut lr)?;
+            while row
+                .as_ref()
+                .is_some_and(|x| x.source == src && x.testcase == tc && x.line == line)
+            {
+                count = count
+                    .saturating_add(row.as_ref().unwrap().count)
+                    .min(i64::MAX as u64);
+                row = line_spill::read_next_public(&mut lr)?;
+            }
+            let mut k = key_prefix(&src, &tc)?;
+            k.push(7);
+            k.extend_from_slice(&line.to_be_bytes());
+            let mut value = count.to_be_bytes().to_vec();
+            value.extend_from_slice(checksum.as_bytes());
+            final_sort.push(k, value)?;
+            if count > 0 {
+                lh = lh.saturating_add(1);
+            }
+            match row.as_ref() {
+                Some(x) if x.source == src && x.testcase == tc => {
+                    line = x.line;
+                    checksum = x.value.clone();
+                    count = x.count.min(i64::MAX as u64);
+                }
+                _ => break,
+            }
+        }
+        let mut k = key_prefix(&src, &tc)?;
+        k.push(8);
+        final_sort.push(k, format!("{lf},{lh}").into_bytes())?;
+        if o.function_data && !has_functions {
+            let mut k = key_prefix(&src, &tc)?;
+            k.push(2);
+            final_sort.push(k, b"0,0".to_vec())?;
+        }
+    }
+    drop(lr);
+    drop(function_profiles);
+    drop(function_profile);
+    drop(version);
+    drop(versions);
+    let normalized = normalized.finish()?;
+    let mut end_map = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut map_input = normalized.cursor()?;
+    let mut map_row = map_input.next()?;
+    while let Some(first) = map_row.take() {
+        let (source, testcase, start, end, name) = decode_fn_key(&first.key)?;
+        let mut chosen = end;
+        map_row = map_input.next()?;
+        while map_row.as_ref().is_some_and(|r| {
+            decode_fn_key(&r.key)
+                .is_ok_and(|(s, t, st, _, _)| s == source && t == testcase && st == start)
+        }) {
+            let row = map_row.take().unwrap();
+            if let Some(candidate) = decode_fn_key(&row.key)?.3 {
+                if chosen.is_some_and(|old| old != candidate) {
+                    let e = super::policy::new(super::policy::Kind::Inconsistent,
+                        format!("inconsistent function declaration: mismatched end line for {name} at {source}:{start}"),
+                    );
+                    if !recover(req, e)? {
+                        unreachable!();
+                    }
+                }
+                chosen = Some(chosen.map_or(candidate, |old| old.max(candidate)));
+            }
+            map_row = map_input.next()?;
+        }
+        let mut key = key_prefix(&source, &testcase)?;
+        key.extend_from_slice(&start.to_be_bytes());
+        let mut value = vec![0; 9];
+        value[..8].copy_from_slice(&chosen.unwrap_or(0).to_be_bytes());
+        value[8] = u8::from(chosen.is_some());
+        end_map.push(key, value)?;
+    }
+    drop(map_input);
+    let end_map = end_map.finish()?;
+    let mut end_cursor = end_map.cursor()?;
+    let mut end_row = end_cursor.next()?;
+    let mut normalized = normalized.cursor()?;
+    let mut canonical = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut nrow = normalized.next()?;
+    while let Some(row) = nrow.take() {
+        let (src, tc, start, _old_end, name) = decode_fn_key(&row.key)?;
+        let mut map_key = key_prefix(&src, &tc)?;
+        map_key.extend_from_slice(&start.to_be_bytes());
+        while end_row.as_ref().is_some_and(|r| r.key < map_key) {
+            end_row = end_cursor.next()?;
+        }
+        let map = end_row
+            .as_ref()
+            .filter(|r| r.key == map_key)
+            .ok_or_else(|| Error::new(3, "missing function end-line mapping"))?;
+        let end = if map.value[8] == 0 {
+            None
+        } else {
+            Some(read_u64(&map.value, 0)?)
+        };
+        let mut key = key_prefix(&src, &tc)?;
+        key.extend_from_slice(&start.to_be_bytes());
+        key.extend_from_slice(&end.unwrap_or(0).to_be_bytes());
+        key.push(u8::from(end.is_some()));
+        push_str(&mut key, &name)?;
+        canonical.push(key, row.value)?;
+        nrow = normalized.next()?;
+    }
+    drop(normalized);
+    drop(end_cursor);
+    drop(end_row);
+    drop(end_map);
+    let mut ordered = sort::Sorter::new(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut normalized = canonical.finish()?.cursor()?;
+    let mut nrow = normalized.next()?;
+    let mut last_group: Option<(String, String, u64, Option<u64>)> = None;
+    let mut first_alias = String::new();
+    while let Some(row) = nrow.take() {
+        let (src, tc, start, end, name) = decode_fn_key(&row.key)?;
+        let group = (src.clone(), tc.clone(), start, end);
+        if last_group.as_ref() != Some(&group) {
+            first_alias = name.clone();
+            last_group = Some(group);
+        }
+        let mut key = key_prefix(&src, &tc)?;
+        key.extend_from_slice(&start.to_be_bytes());
+        push_str(&mut key, &first_alias)?;
+        key.extend_from_slice(&end.unwrap_or(0).to_be_bytes());
+        key.push(u8::from(end.is_some()));
+        push_str(&mut key, &name)?;
+        ordered.push(key, row.value)?;
+        nrow = normalized.next()?;
+    }
+    drop(normalized);
+    let ordered = ordered.finish()?;
+    let mut global = function_check::Checker::new_global(&o.tmpdir, each, o.jobs.max(1))?;
+    let mut global_functions = ordered.cursor()?;
+    let mut has_functions = false;
+    while let Some(row) = global_functions.next()? {
+        let (src, _, start, _, end, name) = decode_ordered_fn_key(&row.key)?;
+        global.push_function(
+            &src,
+            0,
+            start,
+            end,
+            read_u64(&row.value, 0)?,
+            &name,
+            &src,
+            start,
+        )?;
+        has_functions = true;
+    }
+    drop(global_functions);
+    let mut ghost_cursor = ghost_functions.cursor()?;
+    while let Some(row) = ghost_cursor.next()? {
+        let (src, _, start, _, name) = decode_input_function_key(&row.key)?;
+        global.push_function(
+            &src,
+            0,
+            start,
+            decode_end(&row.value)?,
+            read_u64(&row.value, 17)?,
+            &name,
+            &src,
+            start,
+        )?;
+        has_functions = true;
+    }
+    drop(ghost_cursor);
+    drop(ghost_functions);
+    if has_functions {
+        let mut global_lines = BufReader::new(File::open(&line_path).map_err(ioerr)?);
+        while let Some(line) = line_spill::read_next_public(&mut global_lines)? {
+            if line.kind == 1 {
+                global.push_line(&line.source, 0, line.line, line.count)?;
+            }
+        }
+    }
+    if has_functions {
+        if let Some(generated) = generated_lines.as_ref() {
+            let mut cursor = generated.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, _, line, serialize, count, _) = branch_check::decode_generated(&row)?;
+                if !serialize {
+                    global.push_line(&source, 0, line, count)?;
+                }
+            }
+        }
+    }
+    if has_functions {
+        if let Some(generated) = mcdc_generated.as_ref() {
+            let mut cursor = generated.master.cursor()?;
+            while let Some(row) = cursor.next()? {
+                let (source, _, line, count, _) = mcdc_lines::decode(&row)?;
+                global.push_line(&source, 0, line, count)?;
+            }
+        }
+    }
+    drop(mcdc_generated);
+    drop(generated_lines);
+    let global_adjustments = global.finish(req)?;
+    let mut global_cursor = global_adjustments.cursor()?;
+    let mut global_adjustment = global_cursor.next()?;
+    let mut ordered_cursor = ordered.cursor()?;
+    let mut ahead_cursor = ordered.cursor()?;
+    let mut ahead_row = ahead_cursor.next()?;
+    let mut fn_rows = ordered_cursor.next()?;
+    let mut active_group: Option<(String, String, u64, String, Option<u64>)> = None;
+    let mut active_testcase: Option<(String, String)> = None;
+    let mut fnf = 0u64;
+    let mut fnh = 0u64;
+    let mut any_hit = false;
+    let mut line_ends = LineEnds::new(&line_path)?;
+    while let Some(first) = fn_rows.take() {
+        let (src, tc, start, first_name, declared_end, name) = decode_ordered_fn_key(&first.key)?;
+        let mut global_key = function_check::prefix(&src, 0)?;
+        global_key.extend_from_slice(&start.to_be_bytes());
+        while global_adjustment
+            .as_ref()
+            .is_some_and(|row| row.key < global_key)
+        {
+            global_adjustment = global_cursor.next()?;
+        }
+        let extra_hits = global_adjustment
+            .as_ref()
+            .filter(|row| row.key == global_key)
+            .map(|row| read_u64(&row.value, 1))
+            .transpose()?
+            .unwrap_or(0);
+        let hits = read_u64(&first.value, 0)?
+            .saturating_add(extra_hits)
+            .min(i64::MAX as u64);
+        let mut end = declared_end;
+        let mut next_start = None;
+        while let Some(ahead) = ahead_row.as_ref() {
+            let (asrc, atc, astart, _, _, _) = decode_ordered_fn_key(&ahead.key)?;
+            if asrc == src && atc == tc && astart <= start {
+                ahead_row = ahead_cursor.next()?;
+                continue;
+            }
+            if asrc == src && atc == tc && astart > start {
+                next_start = Some(astart);
+            }
+            break;
+        }
+        if end.is_none() && req.derive_function_end_line && derive_supported(&src, &name) {
+            end = line_ends.derive(&src, &tc, start, next_start)?;
+            if end.is_none() {
+                let e=super::policy::new(super::policy::Kind::Inconsistent,format!("inconsistent line coverage for function at {src}:{start}; cannot derive end line"));
+                if !recover(req, e)? {
+                    unreachable!();
+                }
+            }
+        }
+        let group = (src.clone(), tc.clone(), start, first_name.clone(), end);
+        if active_group.as_ref() != Some(&group) {
+            if active_group.take().is_some() {
+                fnh = fnh.saturating_add(u64::from(any_hit));
+            }
+            if active_testcase.as_ref() != Some(&(src.clone(), tc.clone())) {
+                if let Some((ps, pt)) = active_testcase.take() {
+                    let mut k = key_prefix(&ps, &pt)?;
+                    k.push(2);
+                    final_sort.push(k, format!("{fnf},{fnh}").into_bytes())?;
+                }
+                active_testcase = Some((src.clone(), tc.clone()));
+                fnf = 0;
+                fnh = 0;
+            }
+            fnf = fnf.saturating_add(1);
+            active_group = Some(group.clone());
+            any_hit = false;
+            let mut k = key_prefix(&src, &tc)?;
+            k.push(1);
+            k.extend_from_slice(&start.to_be_bytes());
+            push_str(&mut k, &first_name)?;
+            k.extend_from_slice(&end.unwrap_or(0).to_be_bytes());
+            k.push(u8::from(end.is_some()));
+            final_sort.push(
+                k,
+                format!(
+                    "FNL:{},{}{}",
+                    fnf - 1,
+                    start,
+                    end.map_or(String::new(), |v| format!(",{v}"))
+                )
+                .into_bytes(),
+            )?;
+        }
+        any_hit |= hits > 0;
+        let mut k = key_prefix(&src, &tc)?;
+        k.push(1);
+        k.extend_from_slice(&start.to_be_bytes());
+        push_str(&mut k, &first_name)?;
+        k.extend_from_slice(&end.unwrap_or(0).to_be_bytes());
+        k.push(u8::from(end.is_some()));
+        k.push(1);
+        push_str(&mut k, &name)?;
+        final_sort.push(k, format!("FNA:{},{},{}", fnf - 1, hits, name).into_bytes())?;
+        fn_rows = ordered_cursor.next()?;
+    }
+    if active_group.is_some() {
+        fnh = fnh.saturating_add(u64::from(any_hit));
+    }
+    if let Some((src, tc)) = active_testcase {
+        let mut k = key_prefix(&src, &tc)?;
+        k.push(2);
+        final_sort.push(k, format!("{fnf},{fnh}").into_bytes())?;
+    }
+    super::check_family_coverpoints(
+        req,
+        has_functions,
+        has_branch_coverpoints,
+        has_mcdc_coverpoints,
+    )?;
+    drop(line_ends);
+    drop(lines);
+    drop(global_adjustment);
+    drop(global_cursor);
+    drop(global_adjustments);
+    drop(ordered_cursor);
+    drop(ahead_cursor);
+    drop(ahead_row);
+    drop(ordered);
+    let final_rows = final_sort.finish()?;
+    if o.verbose && !o.quiet {
+        let stats = final_rows.stats();
+        eprintln!(
+            "output sort: runs={}, passes={}, bytes read={}, bytes written={}, workers={}",
+            stats.runs, stats.passes, stats.bytes_read, stats.bytes_written, stats.workers
+        );
+    }
+    write_final(req, final_rows.cursor()?)
+}
+
+fn write_final(req: &Request, mut cursor: sort::Cursor) -> Result<(), Error> {
+    let o = &req.resources;
+    let mut staged = if o.output.as_os_str() == "-" || o.output.as_os_str().is_empty() {
+        None
+    } else {
+        Some(
+            tempfile::NamedTempFile::new_in(
+                o.output
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(Path::new(".")),
+            )
+            .map_err(|e| Error::new(3, format!("cannot stage output: {e}")))?,
+        )
+    };
+    if let Some(tmp) = staged.as_mut() {
+        if super::is_gzip_path(&o.output) {
+            let mut gz = GzEncoder::new(tmp.as_file_mut(), Compression::default());
+            {
+                let mut w = BufWriter::new(&mut gz);
+                emit_rows(&mut cursor, &mut w, req)?;
+                w.flush().map_err(ioerr)?;
+            }
+            gz.finish().map_err(ioerr)?;
+        } else {
+            let mut w = BufWriter::new(tmp.as_file_mut());
+            emit_rows(&mut cursor, &mut w, req)?;
+            w.flush().map_err(ioerr)?;
+        }
+    } else {
+        let mut w = BufWriter::new(crate::common::stdout_writer().map_err(ioerr)?);
+        emit_rows(&mut cursor, &mut w, req)?;
+        w.flush().map_err(ioerr)?;
+    }
+    if let Some(tmp) = staged {
+        tmp.as_file().sync_all().map_err(ioerr)?;
+        check_cancelled()?;
+        tmp.persist(&o.output).map_err(|e| {
+            Error::new(
+                3,
+                format!("cannot replace {}: {}", o.output.display(), e.error),
+            )
+        })?;
+    }
+    Ok(())
+}
+fn emit_rows(c: &mut sort::Cursor, out: &mut dyn Write, req: &Request) -> Result<(), Error> {
+    let mut r = c.next()?;
+    if r.is_none()
+        && !req.keep_going
+        && !req
+            .ignore_errors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case("empty"))
+    {
+        return Err(super::policy::new(
+            super::policy::Kind::Empty,
+            "empty LCOV trace after selecting valid coverpoints",
+        ));
+    }
+    let mut active: Option<(String, String)> = None;
+    while let Some(row) = r.take() {
+        check_cancelled()?;
+        let (src, tc, rank) = decode_output_key(&row.key)?;
+        let identity = (src.clone(), tc.clone());
+        if active.as_ref() != Some(&identity) {
+            if active.take().is_some() {
+                writeln!(out, "end_of_record").map_err(ioerr)?;
+            }
+            writeln!(out, "TN:{tc}\nSF:{src}").map_err(ioerr)?;
+            active = Some(identity);
+        }
+        match rank {
+            0 => writeln!(
+                out,
+                "VER:{}",
+                String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid version row"))?
+            )
+            .map_err(ioerr)?,
+            1 | 3 | 5 => writeln!(
+                out,
+                "{}",
+                String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid function row"))?
+            )
+            .map_err(ioerr)?,
+            2 => {
+                let x =
+                    String::from_utf8(row.value).map_err(|_| Error::new(3, "invalid summary"))?;
+                let mut p = x.split(',');
+                let nf = p.next().unwrap_or("0");
+                let nh = p.next().unwrap_or("0");
+                writeln!(out, "FNF:{nf}\nFNH:{nh}").map_err(ioerr)?;
+            }
+            4 => {
+                let x = String::from_utf8(row.value)
+                    .map_err(|_| Error::new(3, "invalid branch summary"))?;
+                let mut p = x.split(',');
+                let found = p.next().unwrap_or("0");
+                let hit = p.next().unwrap_or("0");
+                writeln!(out, "BRF:{found}\nBRH:{hit}").map_err(ioerr)?;
+            }
+            6 => {
+                let x = String::from_utf8(row.value)
+                    .map_err(|_| Error::new(3, "invalid MC/DC summary"))?;
+                let mut p = x.split(',');
+                let found = p.next().unwrap_or("0");
+                let hit = p.next().unwrap_or("0");
+                writeln!(out, "MCF:{found}\nMCH:{hit}").map_err(ioerr)?;
+            }
+            7 => {
+                let line = read_u64(&row.key, row.key.len() - 8)?;
+                let hits = read_u64(&row.value, 0)?;
+                let checksum = std::str::from_utf8(&row.value[8..])
+                    .map_err(|_| Error::new(3, "invalid checksum output row"))?;
+                if checksum.is_empty() {
+                    writeln!(out, "DA:{line},{hits}").map_err(ioerr)?;
+                } else {
+                    writeln!(out, "DA:{line},{hits},{checksum}").map_err(ioerr)?;
+                }
+            }
+            8 => {
+                let x = String::from_utf8(row.value)
+                    .map_err(|_| Error::new(3, "invalid line summary"))?;
+                let mut p = x.split(',');
+                let lf = p.next().unwrap_or("0");
+                let lh = p.next().unwrap_or("0");
+                writeln!(out, "LF:{lf}\nLH:{lh}").map_err(ioerr)?;
+            }
+            _ => return Err(Error::new(3, "invalid output sort row")),
+        }
+        r = c.next()?;
+    }
+    if active.is_some() {
+        writeln!(out, "end_of_record").map_err(ioerr)?;
+    }
+    Ok(())
+}
+fn recover(req: &Request, e: Error) -> Result<bool, Error> {
+    if policy::can_recover(req, &e) {
+        Ok(true)
+    } else {
+        Err(e)
+    }
+}
+type InputFunctionKey = (String, u64, u64, String, String);
+fn decode_input_function_key(mut bytes: &[u8]) -> Result<InputFunctionKey, Error> {
+    let source = take_str(&mut bytes)?;
+    let input = read_u64(bytes, 0)?;
+    let start = read_u64(bytes, 8)?;
+    bytes = bytes
+        .get(16..)
+        .ok_or_else(|| Error::new(3, "corrupt input function key"))?;
+    let testcase = take_str(&mut bytes)?;
+    let name = take_str(&mut bytes)?;
+    if !bytes.is_empty() {
+        return Err(Error::new(3, "corrupt input function key"));
+    }
+    Ok((source, input, start, testcase, name))
+}
+fn key_prefix(source: &str, tc: &str) -> Result<Vec<u8>, Error> {
+    let mut k = Vec::with_capacity(source.len() + tc.len() + 2);
+    push_str(&mut k, source)?;
+    push_str(&mut k, tc)?;
+    Ok(k)
+}
+fn push_str(k: &mut Vec<u8>, s: &str) -> Result<(), Error> {
+    if s.as_bytes().contains(&0) {
+        return Err(super::policy::new(
+            super::policy::Kind::Format,
+            "NUL in compatibility key",
+        ));
+    }
+    k.extend_from_slice(s.as_bytes());
+    k.push(0);
+    Ok(())
+}
+fn decode_prefix(k: &[u8]) -> Result<(String, String), Error> {
+    let mut x = k;
+    let a = take_str(&mut x)?;
+    let b = take_str(&mut x)?;
+    Ok((a, b))
+}
+fn decode_name_key(k: &[u8]) -> Result<(String, String, String), Error> {
+    let mut x = k;
+    Ok((take_str(&mut x)?, take_str(&mut x)?, take_str(&mut x)?))
+}
+fn decode_fn_key(k: &[u8]) -> Result<(String, String, u64, Option<u64>, String), Error> {
+    let mut x = k;
+    let s = take_str(&mut x)?;
+    let t = take_str(&mut x)?;
+    if x.len() < 17 {
+        return Err(Error::new(3, "corrupt normalized function key"));
+    }
+    let start = u64::from_be_bytes(x[..8].try_into().unwrap());
+    let endv = u64::from_be_bytes(x[8..16].try_into().unwrap());
+    let end = if x[16] == 0 { None } else { Some(endv) };
+    x = &x[17..];
+    Ok((s, t, start, end, take_str(&mut x)?))
+}
+type OrderedFunctionKey = (String, String, u64, String, Option<u64>, String);
+fn decode_ordered_fn_key(k: &[u8]) -> Result<OrderedFunctionKey, Error> {
+    let mut x = k;
+    let s = take_str(&mut x)?;
+    let t = take_str(&mut x)?;
+    if x.len() < 8 {
+        return Err(Error::new(3, "corrupt ordered function key"));
+    }
+    let start = u64::from_be_bytes(x[..8].try_into().unwrap());
+    x = &x[8..];
+    let first = take_str(&mut x)?;
+    if x.len() < 9 {
+        return Err(Error::new(3, "corrupt ordered function key"));
+    }
+    let endv = u64::from_be_bytes(x[..8].try_into().unwrap());
+    let end = if x[8] == 0 { None } else { Some(endv) };
+    x = &x[9..];
+    Ok((s, t, start, first, end, take_str(&mut x)?))
+}
+fn decode_output_key(k: &[u8]) -> Result<(String, String, u8), Error> {
+    let (s, t) = decode_prefix(k)?;
+    let n = s.len() + 1 + t.len() + 1;
+    if k.len() <= n {
+        return Err(Error::new(3, "corrupt output key"));
+    }
+    Ok((s, t, k[n]))
+}
+fn derive_supported(source: &str, name: &str) -> bool {
+    let ext = Path::new(source)
+        .extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("");
+    matches!(
+        ext,
+        "c" | "C"
+            | "i"
+            | "I"
+            | "icc"
+            | "cc"
+            | "cpp"
+            | "cxx"
+            | "h"
+            | "H"
+            | "hh"
+            | "hpp"
+            | "hxx"
+            | "java"
+            | "pl"
+            | "pm"
+    ) && !name.contains("{lambda(")
+        && !(ext == "java" && name.contains(".lambda$"))
+}
+struct LineEnds {
+    reader: BufReader<File>,
+    pending: Option<line_spill::Entry>,
+    cached: Option<EndCache>,
+    #[cfg(test)]
+    rows_read: usize,
+}
+struct EndCache {
+    source: String,
+    testcase: String,
+    start: u64,
+    next: Option<u64>,
+    end: Option<u64>,
+}
+impl LineEnds {
+    fn new(path: &Path) -> Result<Self, Error> {
+        let mut result = Self {
+            reader: BufReader::new(File::open(path).map_err(ioerr)?),
+            pending: None,
+            cached: None,
+            #[cfg(test)]
+            rows_read: 0,
+        };
+        result.advance()?;
+        Ok(result)
+    }
+    fn advance(&mut self) -> Result<(), Error> {
+        check_cancelled()?;
+        self.pending = None;
+        self.pending = line_spill::read_next_public(&mut self.reader)?;
+        #[cfg(test)]
+        if self.pending.is_some() {
+            self.rows_read += 1;
+        }
+        Ok(())
+    }
+    // Function groups and DA rows share source/testcase/start ordering. Cache
+    // equal-start aliases, then consume each DA row at most once.
+    fn derive(
+        &mut self,
+        source: &str,
+        testcase: &str,
+        start: u64,
+        next: Option<u64>,
+    ) -> Result<Option<u64>, Error> {
+        if let Some(cache) = &self.cached {
+            if (
+                cache.source.as_str(),
+                cache.testcase.as_str(),
+                cache.start,
+                cache.next,
+            ) == (source, testcase, start, next)
+            {
+                return Ok(cache.end);
+            }
+        }
+        let mut best = None;
+        let upper = next.unwrap_or(u64::MAX);
+        while let Some(row) = &self.pending {
+            let identity = (row.source.as_str(), row.testcase.as_str());
+            if identity > (source, testcase)
+                || (identity == (source, testcase) && row.line >= upper)
+            {
+                break;
+            }
+            if identity == (source, testcase) && row.line >= start {
+                best = Some(row.line);
+            }
+            self.advance()?;
+        }
+        self.cached = Some(EndCache {
+            source: source.into(),
+            testcase: testcase.into(),
+            start,
+            next,
+            end: best,
+        });
+        Ok(best)
+    }
+}
+fn take_str(x: &mut &[u8]) -> Result<String, Error> {
+    let n = x
+        .iter()
+        .position(|b| *b == 0)
+        .ok_or_else(|| Error::new(3, "corrupt output key"))?;
+    let (a, b) = x.split_at(n);
+    *x = &b[1..];
+    String::from_utf8(a.to_vec()).map_err(|_| Error::new(3, "invalid UTF-8 sort key"))
+}
+fn read_u64(b: &[u8], i: usize) -> Result<u64, Error> {
+    let x = b
+        .get(i..i + 8)
+        .ok_or_else(|| Error::new(3, "corrupt sort value"))?;
+    Ok(u64::from_be_bytes(x.try_into().unwrap()))
+}
+fn decode_end(b: &[u8]) -> Result<Option<u64>, Error> {
+    Ok(
+        if *b
+            .get(16)
+            .ok_or_else(|| Error::new(3, "corrupt function value"))?
+            == 0
+        {
+            None
+        } else {
+            Some(read_u64(b, 8)?)
+        },
+    )
+}
+fn ioerr(e: std::io::Error) -> Error {
+    Error::new(3, format!("compat output failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn structural_request(root: &Path, input: &Path, output: &Path) -> Request {
+        let mut req = Request::default();
+        req.resources.inputs = vec![input.to_path_buf()];
+        req.resources.output = output.to_path_buf();
+        req.resources.tmpdir = root.to_path_buf();
+        req.resources.function_data = false;
+        req.check_data_consistency = false;
+        req
+    }
+
+    #[test]
+    fn direct_executor_rejects_malformed_structure_without_falling_back() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.info");
+        let output = root.path().join("output.info");
+        std::fs::write(
+            &input,
+            "SF:first.c\nDA:1,1\nSF:second.c\nDA:2,1\nend_of_record\n",
+        )
+        .unwrap();
+        let req = structural_request(root.path(), &input, &output);
+
+        let err = try_run(&req).unwrap_err();
+        assert!(
+            err.message
+                .contains("file record found inside an open section"),
+            "{err:?}"
+        );
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn direct_executor_recovers_structural_errors_in_stream() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.info");
+        let output = root.path().join("output.info");
+        std::fs::write(
+            &input,
+            "SF:first.c\nDA:1,1\nTN:late\nSF:second.c\nDA:2,1\nend_of_record\nunknown:value\n",
+        )
+        .unwrap();
+        let mut req = structural_request(root.path(), &input, &output);
+        req.keep_going = true;
+
+        assert!(try_run(&req).unwrap().unwrap().is_ok());
+        let result = std::fs::read_to_string(output).unwrap();
+        assert!(result.contains("first.c\n"), "{result}");
+        assert!(result.contains("second.c\n"), "{result}");
+    }
+
+    #[test]
+    fn end_line_join_reads_once_and_preserves_testcase_boundaries() {
+        let root = tempfile::tempdir().unwrap();
+        let mut spill = line_spill::Spill::new(root.path(), 32768, 2).unwrap();
+        for (source, testcase, line) in [
+            ("a.c", "a", 1),
+            ("a.c", "a", 3),
+            ("a.c", "a", 8),
+            ("a.c", "b", 2),
+            ("a.c", "b", 7),
+            ("b.c", "a", 4),
+        ] {
+            spill
+                .push(line_spill::Entry {
+                    kind: 1,
+                    source: source.into(),
+                    testcase: testcase.into(),
+                    value: String::new(),
+                    line,
+                    count: 1,
+                    input: 0,
+                    section: 0,
+                    ordinal: line,
+                    label: String::new(),
+                    line_no: line,
+                })
+                .unwrap();
+        }
+        let mut ends = LineEnds::new(&spill.finish().unwrap()).unwrap();
+        assert_eq!(ends.derive("a.c", "a", 1, Some(5)).unwrap(), Some(3));
+        let reads = ends.rows_read;
+        for _ in 0..1000 {
+            assert_eq!(ends.derive("a.c", "a", 1, Some(5)).unwrap(), Some(3));
+        }
+        assert_eq!(ends.rows_read, reads);
+        assert_eq!(ends.derive("a.c", "a", 5, None).unwrap(), Some(8));
+        assert_eq!(ends.derive("a.c", "b", 1, Some(6)).unwrap(), Some(2));
+        assert_eq!(ends.derive("a.c", "b", 6, None).unwrap(), Some(7));
+        assert_eq!(ends.derive("b.c", "a", 1, Some(3)).unwrap(), None);
+        assert_eq!(ends.derive("b.c", "a", 3, None).unwrap(), Some(4));
+        assert_eq!(ends.rows_read, 6);
+    }
+}

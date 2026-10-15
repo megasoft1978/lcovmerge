@@ -121,15 +121,15 @@ jobs:
             x86_64-unknown-linux-musl) export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
             aarch64-unknown-linux-musl) export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc ;;
           esac
-          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
-          scripts/check-binary-size.sh 'dist/lcovmerge-1.1.0-${{ matrix.suffix }}'
+          python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output 'dist/lcovmerge-ci-${{ matrix.suffix }}'
+          scripts/check-binary-size.sh 'dist/lcovmerge-ci-${{ matrix.suffix }}'
 
       - name: Upload Windows executable for native verification
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-release-exe
-          path: dist/lcovmerge-1.1.0-windows-x86_64.exe
+          path: dist/lcovmerge-ci-windows-x86_64.exe
           if-no-files-found: error
           retention-days: 3
 
@@ -200,6 +200,60 @@ jobs:
           sudo apt-get install --yes lcov
       - name: Compare basic line-count merge behavior
         run: scripts/ci-differential-lcov.sh
+
+  lcov-compatibility:
+    name: LCOV 2.6 merge conformance (XS and Perl)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install reference runtime and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes g++-14 libperl-dev libcapture-tiny-perl libdatetime-perl libdevel-stacktrace-perl libjson-xs-perl libtimedate-perl
+      - name: Build pinned LCOV reference
+        env:
+          LCOV_CXX: "g++-14 -include vector -include locale"
+        run: scripts/setup-lcov-oracle.sh
+      - name: Build and compare both reference backends
+        run: |
+          make
+          python3 -m unittest discover -s tests/compat -p 'test_*.py'
+          python3 tests/test_compare_builds.py
+          python3 tests/test_profile_comparison.py
+          python3 tests/compat_operations.py --binary "$PWD/bin/lcovmerge"
+          python3 tests/compat/oracle.py --source-root "$PWD/.cache/lcov-oracle/source" --lcov "$PWD/.cache/lcov-oracle/source/bin/lcov" --genhtml "$PWD/.cache/lcov-oracle/source/bin/genhtml" --binary "$PWD/bin/lcovmerge" --workdir .cache/lcov-compat-ci
+      - name: Retain conformance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov-compatibility-evidence
+          path: .cache/lcov-compat-ci
+          if-no-files-found: ignore
+          retention-days: 7
+
+  lcov-bounded:
+    name: LCOV profile bounded-memory workloads
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build optimized binary and verify large inputs
+        run: |
+          make
+          python3 tests/compat_bounded.py --binary "$PWD/bin/lcovmerge" --workdir .cache/lcov-compat-bounded-ci --timeout 360
+      - name: Retain bounded-memory reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov-bounded-memory-evidence
+          path: |
+            .cache/lcov-compat-bounded-ci/report.json
+            .cache/lcov-compat-bounded-ci/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   reproducible-build:
     name: Reproducible build

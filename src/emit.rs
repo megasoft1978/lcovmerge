@@ -216,15 +216,39 @@ impl<W: Write> OutputState<W> {
                         }
                     }
                     DA => {
-                        self.writer.write_all(b"DA:")?;
-                        u(&mut self.writer, r.a)?;
-                        self.writer.write_all(b",")?;
-                        u(&mut self.writer, r.value)?;
-                        if !r.extra.is_empty() {
+                        // Both u64 fields fit in 20 decimal bytes. Assemble
+                        // the common DA row once instead of repeatedly entering
+                        // the writer for tags, separators, and individual fields.
+                        // Include a usual 32-byte checksum and the newline so
+                        // common rows enter the buffered writer only once.
+                        let mut line = [0u8; 78];
+                        line[..3].copy_from_slice(b"DA:");
+                        let mut end = 3;
+                        let mut number = itoa::Buffer::new();
+                        for value in [r.a, r.value] {
+                            if end != 3 {
+                                line[end] = b',';
+                                end += 1;
+                            }
+                            let digits = number.format(value).as_bytes();
+                            line[end..end + digits.len()].copy_from_slice(digits);
+                            end += digits.len();
+                        }
+                        if r.extra.len() > 32 {
+                            self.writer.write_all(&line[..end])?;
                             self.writer.write_all(b",")?;
                             self.writer.write_all(r.extra.as_bytes())?;
+                            self.writer.write_all(b"\n")?;
+                        } else {
+                            if !r.extra.is_empty() {
+                                line[end] = b',';
+                                end += 1;
+                                line[end..end + r.extra.len()].copy_from_slice(r.extra.as_bytes());
+                                end += r.extra.len();
+                            }
+                            line[end] = b'\n';
+                            self.writer.write_all(&line[..end + 1])?;
                         }
-                        self.writer.write_all(b"\n")?;
                         self.counts.lf = sat(self.counts.lf, 1);
                         if r.value != 0 {
                             self.counts.lh = sat(self.counts.lh, 1);
@@ -363,6 +387,32 @@ mod tests {
             flags: 0,
         }
     }
+    #[test]
+    fn da_maximum_width_fields_preserve_optional_checksum() {
+        for checksum in [
+            String::new(),
+            "source-hash".into(),
+            "x".repeat(32),
+            "x".repeat(33),
+        ] {
+            let mut record = row(DA, "x.c");
+            record.a = u64::MAX;
+            record.value = u64::MAX;
+            record.extra = checksum.clone();
+            let mut output = OutputState::new(Vec::new());
+            output.record(&record).unwrap();
+            let suffix = if checksum.is_empty() {
+                String::new()
+            } else {
+                format!(",{checksum}")
+            };
+            assert_eq!(
+                String::from_utf8(output.writer).unwrap(),
+                format!("SF:x.c\nDA:{},{}{suffix}\n", u64::MAX, u64::MAX)
+            );
+        }
+    }
+
     #[test]
     fn emits_summary_and_saturates() {
         let mut o = OutputState::new(Vec::new());
