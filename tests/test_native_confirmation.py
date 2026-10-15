@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import tarfile
@@ -125,6 +126,7 @@ class ConfirmationTests(unittest.TestCase):
             self.assertEqual(argv[argv.index("--jobs") + 1:argv.index("--profile")], jobs)
             self.assertEqual(argv[argv.index("--profile") + 1], str(self.source / "optimized/profile.profdata"))
             self.assertEqual(argv[argv.index("--profile") + 2:], [str(self.work / "data" / r["path"]) for r in self.manifest["inputs"][shape]])
+        if os.name != "nt":  # Windows chmod does not expose POSIX execute bits.
             self.assertEqual(prepared["candidate"].stat().st_mode & 0o777, 0o755)
             self.assertEqual((self.work / "data/bin/frozen-rust").stat().st_mode & 0o777, 0o755)
             self.assertNotIn("--seed", argv)
