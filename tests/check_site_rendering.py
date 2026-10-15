@@ -320,13 +320,13 @@ def main():
     readme = (root / "README.md").read_text(encoding="utf-8")
     architecture = (root / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     if ("This Rust CLI and library" not in readme or
-            "Published v1.1.0 downloads predate the Rust migration" not in readme):
-        raise AssertionError("README must identify the Rust source and pre-migration downloads")
+            "Version 1.2.0 is the first Rust release" not in readme):
+        raise AssertionError("README must identify the Rust implementation and release")
     if "There is no C foreign-function interface" not in architecture:
         raise AssertionError("architecture page must describe the native Rust implementation")
     for page_name, required in (
         ("index.html", "native Rust CLI"),
-        ("docs.html", "Published v1.1.0 downloads predate the Rust migration"),
+        ("docs.html", "Version 1.2.0 is the first Rust release"),
         ("benchmarks.html", "archived tables below describe a previous release"),
     ):
         page_text = (root / "docs" / "site" / page_name).read_text(encoding="utf-8")

@@ -1,14 +1,15 @@
 #!/bin/sh
 set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+version=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' "$root/Cargo.toml")
 mkdir -p "$root/.cache/docker-validation"
 
 for platform in linux/amd64 linux/arm64; do
     tag=$(printf '%s' "$platform" | tr '/' '-')
     log="$root/.cache/docker-validation/docker-$tag.txt"
     case "$platform" in
-        linux/amd64) static_binary=dist/lcovmerge-1.1.0-linux-x86_64 ;;
-        linux/arm64) static_binary=dist/lcovmerge-1.1.0-linux-aarch64 ;;
+        linux/amd64) static_binary="dist/lcovmerge-$version-linux-x86_64" ;;
+        linux/arm64) static_binary="dist/lcovmerge-$version-linux-aarch64" ;;
     esac
     set +e
     docker run --rm --platform "$platform" \

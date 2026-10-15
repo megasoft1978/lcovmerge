@@ -1,4 +1,4 @@
-.TH LCOVMERGE 1 "2026-10-14" "lcovmerge 1.2.0" "User Commands"
+.TH LCOVMERGE 1 "2026-10-15" "lcovmerge 1.2.0" "User Commands"
 .SH NAME
 lcovmerge \- LCOV .info file merger
 .SH SYNOPSIS
@@ -19,11 +19,9 @@ current working directory; empty lines and lines beginning with # are
 ignored. Nested list files are limited to eight levels. Prefix an argument
 with @@ to name a literal input path beginning with @.
 .PP
-Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2
-UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests,
-and separate generated-input benchmark runs are recorded; physical desktops,
-other Windows versions and real-user reports remain unverified, Windows CI
-runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers.
+Rust/MSVC builds run the CLI regression suite and Windows-specific smoke tests
+on GitHub-hosted windows-latest runners. POSIX interruption and signal-cleanup
+guarantees do not apply to blocked Windows operations; see docs/LIMITATIONS.md.
 .PP
 The shell expands wildcard arguments before execution. Use \fB@listfile\fR to
 read additional input paths, one per line. A single \fB-\fR input reads

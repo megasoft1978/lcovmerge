@@ -2,7 +2,7 @@
 
 Merge LCOV `.info` shards for a local report or upload.
 
-This Rust CLI and library preserve established behavior in native mode. Published v1.1.0 downloads predate the Rust migration.
+This Rust CLI and library preserve established behavior in native mode. Version 1.2.0 is the first Rust release.
 
 ## Is it a fit?
 
@@ -35,7 +35,7 @@ Native Rust · macOS arm64 · 2026-10-14; 19-run medians after one warm-up.
 
 Sorted, 104.6 MB: 207 ms (1 job), 145 ms (4 jobs). Unsorted, 11.7 MB: 64.6 ms (1 job), 64.4 ms (4 jobs).
 
-Outputs matched byte for byte in every run. One host and these fixtures do not predict every workload. Published v1.1.0 downloads predate the Rust migration. See the [Rust comparison and raw measurements](docs/BENCHMARKS.md#rust-port-comparison).
+Outputs matched byte for byte in every run. One host and these fixtures do not predict every workload. Version 1.2.0 is the first Rust release. See the [Rust comparison and raw measurements](docs/BENCHMARKS.md#rust-port-comparison).
 <!-- README-BENCHMARK:END -->
 
 ## Before switching

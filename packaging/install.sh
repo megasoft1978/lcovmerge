@@ -2,7 +2,7 @@
 set -eu
 
 PROGRAM=lcovmerge
-VERSION=${LCOVMERGE_VERSION:-1.1.0}
+VERSION=${LCOVMERGE_VERSION:-1.2.0}
 VERSION=${VERSION#v}
 case "$VERSION" in
   *[!A-Za-z0-9.+-]*|'')

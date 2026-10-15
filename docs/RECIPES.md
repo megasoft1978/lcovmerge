@@ -56,7 +56,7 @@ jobs:
           path: coverage/shards
           merge-multiple: true
       - name: Merge LCOV shards
-        uses: megasoft1978/lcovmerge@v1.1.0 # For immutable pinning, replace the tag with the reviewed release commit SHA.
+        uses: megasoft1978/lcovmerge@v1.2.0 # For immutable pinning, replace the tag with the reviewed release commit SHA.
         with:
           files: coverage/shards/*.info
           output: coverage/merged.info
@@ -68,7 +68,7 @@ jobs:
           if-no-files-found: error
 ```
 
-`download-artifact` flattens the shard files into `coverage/shards/`. The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk. The action verifies its release archive against SHA256SUMS. For immutable pinning, replace `@v1.1.0` with a reviewed full commit SHA and keep `# v1.1.0` as its label. Feed the merged file to your existing report step.
+`download-artifact` flattens the shard files into `coverage/shards/`. The 256M setting is an example record-memory budget, not an RSS cap; sorting also needs temporary disk. The action verifies its release archive against SHA256SUMS. For immutable pinning, replace `@v1.2.0` with a reviewed full commit SHA and keep `# v1.2.0` as its label. Feed the merged file to your existing report step.
 
 See GitHub's [matrix guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations), [upload action](https://github.com/actions/upload-artifact), and [download action](https://github.com/actions/download-artifact).
 
@@ -105,8 +105,8 @@ merge-coverage:
       set -eu
       apt-get update
       apt-get install -y --no-install-recommends curl lcov
-      asset=lcovmerge-1.1.0-linux-x86_64.tar.gz
-      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0
+      asset=lcovmerge-1.2.0-linux-x86_64.tar.gz
+      base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.2.0
       curl -fL "$base/$asset" -o "$asset"
       curl -fL "$base/SHA256SUMS" -o SHA256SUMS
       awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -168,8 +168,8 @@ pipeline {
         unstash 'lcov-integration'
         sh '''
           set -eu
-          asset=lcovmerge-1.1.0-linux-x86_64.tar.gz
-          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.1.0
+          asset=lcovmerge-1.2.0-linux-x86_64.tar.gz
+          base=https://github.com/megasoft1978/lcovmerge/releases/download/v1.2.0
           curl -fL "$base/$asset" -o "$asset"
           curl -fL "$base/SHA256SUMS" -o SHA256SUMS
           awk -v name="$asset" '$2 == name { count++; print } END { if (count != 1) exit 1 }' SHA256SUMS > "$asset.sha256"
@@ -359,11 +359,11 @@ make
 
 Run `make test` when validating a local change.
 
-The release cross-build additionally needs `cargo-zigbuild` (`cargo install cargo-zigbuild`) and Zig. `rustup target add` installs the Linux musl, macOS, and Windows GNU Rust standard libraries used by `scripts/build-all.sh`. Cross-linking macOS binaries may require an Apple SDK; see [release build requirements](RELEASING.md#rust-cross-build-requirements).
+The release cross-build additionally needs `cargo-zigbuild` (`cargo install cargo-zigbuild`) and Zig. `scripts/build-all.sh` installs the Linux musl and macOS Rust targets with rustup; supply the native Windows MSVC build through `WINDOWS_BINARY` when assembling all five targets on Unix. Cross-linking macOS binaries may require an Apple SDK; see [release build requirements](RELEASING.md#rust-cross-build-requirements).
 
 ## Release archives and provenance
 
-Release archives and `SHA256SUMS` are published on the [release page](https://github.com/megasoft1978/lcovmerge/releases). For Linux and macOS installation commands, see the [Usage guide](USAGE.md#install). The [Homebrew tap](https://github.com/megasoft1978/homebrew-tap) also has a formula; Homebrew installation could not be verified in the local audit because `brew` stopped before formula lookup while trying to create a protected lock. The Scoop package was not installed on Windows in that audit. For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [limitations](LIMITATIONS.md#verification-status).
+Release archives and `SHA256SUMS` are published on the [release page](https://github.com/megasoft1978/lcovmerge/releases). For Linux and macOS installation commands, see the [Usage guide](USAGE.md#install). The [Homebrew tap](https://github.com/megasoft1978/homebrew-tap) also has a formula; Homebrew installation could not be verified in the local audit because `brew` stopped before formula lookup while trying to create a protected lock. The Scoop package was not installed on Windows in that audit. Rust/MSVC binaries run the CLI regression suite and Windows-specific smoke tests on GitHub-hosted `windows-latest` runners. POSIX signal-cleanup guarantees do not apply to blocked Windows operations. See [limitations](LIMITATIONS.md#verification-status).
 
 To verify build provenance manually, use a GitHub CLI version with `gh attestation verify` support. Cosign needs a writable Sigstore trust-root cache or a supplied trust-root file. See the [GitHub CLI attestation guide](https://cli.github.com/manual/gh_attestation_verify) and [Cosign verification guide](https://docs.sigstore.dev/cosign/verifying/verify/).
 
@@ -375,7 +375,7 @@ The container writes into the mounted working directory. The temporary directory
 set -eu
 mkdir -p coverage
 
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.1.0 \
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/megasoft1978/lcovmerge:v1.2.0 \
   --tmpdir /tmp coverage/shard-*.info -o coverage/merged.info
 ```
 

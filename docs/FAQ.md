@@ -46,7 +46,7 @@ Not in the external-sort fallback: workers process whole input files, and one la
 
 ## Is Windows runtime behavior verified?
 
-For the published C v1.1.0 release, Windows is verified in GitHub-hosted windows-latest CI: both the MSYS2 UCRT64 GCC build and shipped Zig binary pass the full suite and smoke tests, and separate generated-input benchmark runs are recorded; physical desktops, other Windows versions and real-user reports remain unverified, Windows CI runs no LCOV comparator, and large-dataset timings are disk-bound CI numbers. See [platform status](LIMITATIONS.md#verification-status).
+Rust/MSVC binaries run the CLI regression suite and Windows-specific smoke tests on GitHub-hosted `windows-latest` runners. POSIX signal-cleanup guarantees do not apply to blocked Windows operations. See [platform status](LIMITATIONS.md#verification-status).
 
 ## What do the exit codes mean?
 
