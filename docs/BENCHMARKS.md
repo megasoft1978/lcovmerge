@@ -62,7 +62,8 @@ original frozen Rust binary and held-out inputs, plus a runner-native PGO rebuil
 of C1. Five preflight attempts were retained; only the fifth met the unchanged
 90% idle requirement. Each combination then used 99 seeded paired runs. Ratios
 are candidate elapsed time divided by baseline elapsed time; the acceptance
-rule requires the upper 95% interval bound to be at most 1.
+rule requires the entire 95% interval to be strictly below 1. A bound exactly
+at 1 remains inconclusive, matching the comparison harness.
 
 | Baseline | Input | Jobs | Rust / baseline (95% interval) | Result |
 | --- | --- | ---: | ---: | --- |
@@ -103,6 +104,23 @@ the gate: 1.005 [1.001, 1.011] at one job and 1.018 [1.006, 1.039] at four jobs.
 All outputs matched. [The controlled-run report](../data/native-parity-92cbd7a.json)
 retains all eight results and the indexing/preflight diagnostics; the release
 gate remains unmet.
+
+The `4fa9427` byte-search candidate had paired median ratios below 1 in all eight
+comparisons. All four C1 comparisons and frozen-Rust sorted one-job comparison
+passed. Frozen-Rust sorted four-job and both unsorted comparisons remained
+inconclusive. [Every result and interval](../data/native-parity-4fa9427.json) is
+retained; this is not a completed native gate.
+
+Before collecting further timings, a fixed precision confirmation is specified
+for those three inconclusive rows: 2,001 new pairs for sorted four-job input and
+1,001 new pairs for each unsorted job count. Two independent macOS VMs run these
+cases in parallel. They reuse the exact candidate, frozen baseline, profiles and
+held-out input bundle from the original artifact, verifying their hashes and the
+unchanged Rust/build sources. There is no rebuild or profile training. The other
+five comparisons retain their original passing evidence. New samples are neither
+pooled with the original samples nor stopped early; all three new rows must pass
+the unchanged rule. This follows the sampling design's allowance for additional
+precision after inconclusive measurements.
 
 ## LCOV profile comparison
 
