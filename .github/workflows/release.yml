@@ -17,6 +17,9 @@ jobs:
     name: Build ${{ matrix.asset }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -54,7 +57,7 @@ jobs:
           sudo apt-get install --yes musl-tools
 
       - name: Build Rust release target (Unix)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !(github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64')
         shell: bash
         run: |
           set -eu
@@ -65,6 +68,67 @@ jobs:
           esac
           version="${GITHUB_REF_NAME#v}"
           python scripts/build-optimized.py --target '${{ matrix.rust_target }}' --output "dist/lcovmerge-$version-${{ matrix.asset }}"
+
+      - name: Download pinned native candidate
+        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-macos-benchmark-38643598406-1
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 38643598406
+          path: .cache/native-promotion/source
+
+      - name: Download sorted native confirmation report
+        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-confirmation-reports-sorted-jobs4-38683298262-1
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 38683298262
+          path: .cache/native-promotion/sorted
+
+      - name: Download unsorted native confirmation report
+        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-confirmation-reports-unsorted-38683298262-1
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 38683298262
+          path: .cache/native-promotion/unsorted
+
+      - name: Promote confirmed native candidate
+        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
+        shell: bash
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          python scripts/promote-native-candidate.py \
+            --source .cache/native-promotion/source \
+            --sorted-report .cache/native-promotion/sorted/native-confirmation/results/report.json \
+            --unsorted-report .cache/native-promotion/unsorted/native-confirmation/results/report.json \
+            --version "$version" \
+            --output "dist/lcovmerge-$version-${{ matrix.asset }}" \
+            --workdir .cache/native-promotion/work \
+            --provenance .cache/native-promotion/provenance.json
+
+      - name: Retain native promotion evidence
+        if: always() && github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-native-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cache/native-promotion/provenance.json
+            .cache/native-promotion/source/optimized/build.json
+            .cache/native-promotion/source/remote-native/provenance.json
+            .cache/native-promotion/sorted/native-confirmation/*.json
+            .cache/native-promotion/sorted/native-confirmation/results/report.json
+            .cache/native-promotion/unsorted/native-confirmation/*.json
+            .cache/native-promotion/unsorted/native-confirmation/results/report.json
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Build Rust release target (Windows)
         if: runner.os == 'Windows'
