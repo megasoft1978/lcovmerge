@@ -88,20 +88,21 @@ def validate_report(report, *, runs, jobs, candidate_sha, baseline_sha, inputs,
         require(row["status"] == status == statuses[row["jobs"]], "unexpected result status")
 
 
-def prepare(source, candidate_commit, candidate_sha, case, work):
+def prepare(source, candidate_commit, candidate_sha, case, work, *, require_all_pass=False):
     """Validate and copy inputs without executing any child process or artifact binary."""
     source, work = source.resolve(), work.resolve()
     require(not work.is_relative_to(source) and not source.is_relative_to(work), "source and workdir must be separate")
     require(not work.exists() or (work.is_dir() and not any(work.iterdir())), "workdir must be empty")
     work.mkdir(parents=True, exist_ok=True)
     try:
-        return _prepare(source, candidate_commit, candidate_sha, case, work)
+        return _prepare(source, candidate_commit, candidate_sha, case, work,
+                        require_all_pass=require_all_pass)
     except Exception as exc:
         write_json(work / "validation-failure.json", {"stage": "preparation", "error": str(exc)})
         raise
 
 
-def _prepare(source, candidate_commit, candidate_sha, case, work):
+def _prepare(source, candidate_commit, candidate_sha, case, work, *, require_all_pass=False):
     require(re.fullmatch(r"[0-9a-f]{40}", candidate_commit) is not None, "invalid candidate commit")
     require(re.fullmatch(r"[0-9a-f]{64}", candidate_sha) is not None, "invalid candidate SHA-256")
     shape, runs, jobs = CASES[case]
@@ -142,8 +143,9 @@ def _prepare(source, candidate_commit, candidate_sha, case, work):
             name = f"{baseline}-{workload}"
             path = inside(source, f"remote-native/results/{name}/report.json")
             report = read_json(path)
-            statuses = {j: ("observed-pass" if baseline == "c1" or (workload == "sorted" and j == 1)
-                             else "inconclusive") for j in (1, 4)}
+            statuses = ({j: "observed-pass" for j in (1, 4)} if require_all_pass else
+                        {j: ("observed-pass" if baseline == "c1" or (workload == "sorted" and j == 1)
+                             else "inconclusive") for j in (1, 4)})
             validate_report(report, runs=99, jobs=[1, 4], candidate_sha=candidate_sha,
                             baseline_sha=c1["binary_sha256"] if baseline == "c1" else REMOTE.FROZEN_SHA256,
                             inputs=manifest["inputs"][workload], profiles=[original["candidate_pgo_sha256"]]

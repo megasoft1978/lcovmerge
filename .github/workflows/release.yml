@@ -73,33 +73,13 @@ jobs:
         if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: native-macos-benchmark-38643598406-1
+          name: native-macos-benchmark-38685796544-1
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 38643598406
+          run-id: 38685796544
           path: .cache/native-promotion/source
 
-      - name: Download sorted native confirmation report
-        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: native-confirmation-reports-sorted-jobs4-38683298262-1
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: 38683298262
-          path: .cache/native-promotion/sorted
-
-      - name: Download unsorted native confirmation report
-        if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: native-confirmation-reports-unsorted-38683298262-1
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: 38683298262
-          path: .cache/native-promotion/unsorted
-
-      - name: Promote confirmed native candidate
+      - name: Promote fully measured native candidate
         if: github.ref == 'refs/tags/v1.2.0' && matrix.asset == 'macos-arm64'
         shell: bash
         run: |
@@ -107,8 +87,6 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           python scripts/promote-native-candidate.py \
             --source .cache/native-promotion/source \
-            --sorted-report .cache/native-promotion/sorted/native-confirmation/results/report.json \
-            --unsorted-report .cache/native-promotion/unsorted/native-confirmation/results/report.json \
             --version "$version" \
             --output "dist/lcovmerge-$version-${{ matrix.asset }}" \
             --workdir .cache/native-promotion/work \
@@ -123,10 +101,7 @@ jobs:
             .cache/native-promotion/provenance.json
             .cache/native-promotion/source/optimized/build.json
             .cache/native-promotion/source/remote-native/provenance.json
-            .cache/native-promotion/sorted/native-confirmation/*.json
-            .cache/native-promotion/sorted/native-confirmation/results/report.json
-            .cache/native-promotion/unsorted/native-confirmation/*.json
-            .cache/native-promotion/unsorted/native-confirmation/results/report.json
+            .cache/native-promotion/source/remote-native/results/*/report.json
           if-no-files-found: warn
           retention-days: 90
 

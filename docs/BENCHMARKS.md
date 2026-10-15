@@ -131,6 +131,23 @@ seven of eight comparisons pass; the native release gate remains unmet.
 retain both cases, raw paired ratios, provenance, artifact identities and setup
 diagnostics. No samples were pooled or discarded and no boundary was relaxed.
 
+The next candidate, `90d2d07`, added a buffered-line fast path to the native
+partition planner. Its original, predeclared 99-pair run passed all eight
+comparisons. Against C1, median elapsed-time ratios were 0.9697 and 0.6621 for
+sorted jobs 1 and 4, and 0.8445 and 0.8419 for unsorted jobs 1 and 4. Against
+the frozen Rust 1.1.0 binary, the ratios were 0.9838 and 0.9567 sorted, and
+0.9791 and 0.9816 unsorted. Every 95% interval was strictly below 1, and output
+hashes matched between both baselines for each workload. The exact candidate
+SHA-256 is `d5545a93f5fe7b1560a421ce33975b309ff198ca2b06d48caa884e4c8303d245`.
+[The reports, raw paired samples, build manifest and provenance](../data/native-parity-90d2d07.json)
+retain the complete run (GitHub Actions run `38685796544`).
+
+On this macOS ARM virtual host, median peak RSS for unsorted Rust runs was about
+43.8 MiB versus 18.2 MiB for C1; sorted candidate RSS was about 2.5–4.7 MiB.
+These measurements describe these binaries, generated inputs, host and warm
+cache conditions. The speed results do not establish performance on other
+hosts or workloads.
+
 The unsorted RSS increase versus C1 is a storage-layout trade-off: the former
 byte arena becomes a capacity-sized Rust record vector with separately owned
 strings. The external-sort path retains vector capacity across flushes; string

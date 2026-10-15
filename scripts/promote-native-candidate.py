@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Promote the pinned macOS ARM candidate after offline evidence validation."""
+"""Promote the exact macOS ARM binary that passed the complete native gate."""
 from __future__ import annotations
 
 import argparse
@@ -12,8 +12,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.2.0"
-COMMIT = "4fa94271cfb3d359e9261199baeb40823f4251ec"
-CANDIDATE_SHA = "0de34926704b67775957d48e548a254f89b534506b4d5d9f8598b37f5480896d"
+COMMIT = "90d2d072a3cc80de2da21ce8fed4d9ecef0e86a4"
+CANDIDATE_SHA = "d5545a93f5fe7b1560a421ce33975b309ff198ca2b06d48caa884e4c8303d245"
+RUN_ID = 38685796544
 SPEC = importlib.util.spec_from_file_location("native_confirmation", ROOT / "bench/confirm-native.py")
 CONFIRM = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CONFIRM)
@@ -32,31 +33,45 @@ def digest(path):
     return h.hexdigest()
 
 
-def promote(source, sorted_report, unsorted_report, version, output, work):
+def promote(source, version, output, work):
     require(version == VERSION, "native candidate is pinned to version 1.2.0")
     require(not output.exists(), f"refusing to overwrite existing output: {output}")
     require(output.parent.resolve() != work.resolve(), "workdir cannot be output directory")
-    prepared = CONFIRM.prepare(source, COMMIT, CANDIDATE_SHA, "sorted-jobs4", work / "prepare-sorted")
-    # The second call independently checks the fixed unsorted original evidence.
-    prepared_unsorted = CONFIRM.prepare(source, COMMIT, CANDIDATE_SHA, "unsorted", work / "prepare-unsorted")
+    prepared = CONFIRM.prepare(source, COMMIT, CANDIDATE_SHA, "sorted-jobs4", work,
+                              require_all_pass=True)
     original = prepared["original"]
-    require(original["candidate_version"].split()[:2] == ["lcovmerge", VERSION], "candidate version mismatch")
-    cases = ((sorted_report, "sorted", 2001, [4], prepared),
-             (unsorted_report, "unsorted", 1001, [1, 4], prepared_unsorted))
-    report_records = []
-    for path, shape, runs, jobs, case_prepared in cases:
-        report = CONFIRM.read_json(path)
-        CONFIRM.validate_report(
-            report, runs=runs, jobs=jobs, candidate_sha=CANDIDATE_SHA,
-            baseline_sha=CONFIRM.REMOTE.FROZEN_SHA256,
-            inputs=prepared["provenance"]["frozen_manifest"]["inputs"][shape],
-            profiles=[original["candidate_pgo_sha256"]], host_platform=original["platform"],
-            statuses={job: "observed-pass" for job in jobs},
-            output_sha=case_prepared["output_sha256"],
-        )
-        report_records.append({"case": "sorted-jobs4" if shape == "sorted" else shape,
-                              "path": str(path), "sha256": digest(path),
-                              "output_sha256": report["output_sha256"], "runs": runs, "jobs": jobs})
+    require(original["candidate_version"].split()[:2] == ["lcovmerge", VERSION],
+            "candidate version mismatch")
+
+    reports = []
+    outputs = {}
+    for baseline in ("c1", "frozen-rust"):
+        for workload in ("sorted", "unsorted"):
+            name = f"{baseline}-{workload}"
+            path = source / "remote-native" / "results" / name / "report.json"
+            report = CONFIRM.read_json(path)
+            expected_baseline = (original["c1"]["binary_sha256"] if baseline == "c1"
+                                 else CONFIRM.REMOTE.FROZEN_SHA256)
+            input_rows = original["frozen_manifest"]["inputs"][workload]
+            profiles = [original["candidate_pgo_sha256"]]
+            if baseline == "c1":
+                profiles.append(original["c1"]["profile_sha256"])
+            CONFIRM.validate_report(
+                report, runs=99, jobs=[1, 4], candidate_sha=CANDIDATE_SHA,
+                baseline_sha=expected_baseline, inputs=input_rows, profiles=profiles,
+                host_platform=original["platform"],
+                statuses={1: "observed-pass", 4: "observed-pass"},
+            )
+            outputs.setdefault(workload, report["output_sha256"])
+            require(outputs[workload] == report["output_sha256"],
+                    f"{workload} baseline outputs disagree")
+            reports.append({"case": name, "sha256": digest(path),
+                            "output_sha256": report["output_sha256"],
+                            "median_ratios": {str(row["jobs"]): row["median_paired_ratio"]
+                                              for row in report["results"]},
+                            "intervals": {str(row["jobs"]): row["bootstrap_95_percent_interval"]
+                                          for row in report["results"]}})
+
     candidate = prepared["candidate"]
     require(digest(candidate) == CANDIDATE_SHA, "candidate copy hash mismatch")
     require(CONFIRM.REMOTE.command([candidate, "--version"]) == original["candidate_version"],
@@ -66,23 +81,21 @@ def promote(source, sorted_report, unsorted_report, version, output, work):
     shutil.copyfile(candidate, output)
     output.chmod(0o755)
     provenance = {
-        "schema": 1, "version": VERSION, "candidate_commit": COMMIT,
-        "candidate_sha256": CANDIDATE_SHA,
+        "schema": 1, "version": VERSION, "benchmark_run_id": RUN_ID,
+        "candidate_commit": COMMIT, "candidate_sha256": CANDIDATE_SHA,
         "source_provenance_sha256": prepared["provenance"]["source_provenance_sha256"],
         "original_build_manifest_sha256": original["candidate_build_manifest_sha256"],
         "original_profile_sha256": original["candidate_pgo_sha256"],
-        "confirmation_reports": report_records,
-        "promoted_binary_sha256": digest(output),
+        "comparisons": reports, "promoted_binary_sha256": digest(output),
     }
-    require(provenance["promoted_binary_sha256"] == CANDIDATE_SHA, "published copy hash mismatch")
+    require(provenance["promoted_binary_sha256"] == CANDIDATE_SHA,
+            "published copy hash mismatch")
     return provenance
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--sorted-report", type=Path, required=True)
-    parser.add_argument("--unsorted-report", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workdir", type=Path, required=True)
@@ -90,8 +103,7 @@ def main():
     args = parser.parse_args()
     try:
         require(not args.provenance.exists(), f"refusing to overwrite provenance: {args.provenance}")
-        provenance = promote(args.source, args.sorted_report, args.unsorted_report,
-                             args.version, args.output, args.workdir)
+        provenance = promote(args.source, args.version, args.output, args.workdir)
         args.provenance.parent.mkdir(parents=True, exist_ok=True)
         args.provenance.write_text(json.dumps(provenance, indent=2) + "\n")
     except Exception as exc:
