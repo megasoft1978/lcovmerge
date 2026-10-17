@@ -26,3 +26,11 @@ See `docs/ARCHITECTURE.md`. The core public modules are shared options/errors (`
 ## Agent model override for the port
 
 This repository historically requested Anthropic models only. For the Rust port integration task, the user explicitly authorized Codex Luna, which overrides that restriction for this task. Continue to follow any later explicit user model instruction.
+
+## Orchestration (yowork + codex)
+
+Follow the global protocol: Sonnet/Sol plans+reviews, Haiku/Luna implement in parallel (skill `orchestrate`). Details: ~/.claude-work/CLAUDE.md, ~/.codex/AGENTS.md.
+- Verify: `make test`; `make check-format` (git diff --check, cargo fmt, Clippy)
+- Browser/UI test: n/a (site rendering checks run inside `make test`)
+- Push policy: commit+push when review CLEAN and tests pass
+- Project overrides: retained logs and scratch under `.cache/<run>/`; do not commit the pre-existing uncommitted `docs/site/*` changes unless asked

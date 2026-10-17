@@ -33,3 +33,8 @@ Add Rust unit/property tests and Python CLI regressions for parser or merge chan
 ## Commit and Pull Request Guidelines
 
 Recent commits use concise Conventional Commit subjects such as `fix(parser): ...`, `docs: ...`, and `test: ...`. Pull requests should describe the problem, approach, and compatibility impact; link related issues; include validation results; update `CHANGELOG.md` for user-visible changes; and keep CLI documentation and the man page consistent. Include a small before/after synthetic tracefile when merge behavior changes.
+
+## Orchestration (Codex)
+
+- Sol (gpt-6.1-sol) plans and reviews; Luna workers implement parallel slices. Protocol: ~/.codex/AGENTS.md.
+- Verify, push, and browser-test rules: see the "Orchestration" section in CLAUDE.md.
