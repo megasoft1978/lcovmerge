@@ -22,6 +22,6 @@
 
 ## Orchestration
 
-- Protocol: `~/.codex/AGENTS.md` (Sol plans and reviews; Luna implements).
+- Roles: Claude plans, implements and reviews (`~/.claude-work/CLAUDE.md`); Codex only drives browser/computer-use jobs when a prompt asks (`~/.codex/AGENTS.md`).
 - Browser/UI test: n/a (site checks run inside `make test`).
 - Push: commit and push when review is CLEAN and tests pass.

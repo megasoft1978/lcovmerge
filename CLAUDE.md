@@ -2,7 +2,7 @@
 
 Project rules, commands and constraints: see [AGENTS.md](AGENTS.md).
 
-## Orchestration (yowork + codex)
+## Orchestration
 - Verify: `make test`; `make check-format`
 - Browser/UI test: n/a (site rendering checks run inside `make test`)
 - Push policy: commit+push when review CLEAN and tests pass
