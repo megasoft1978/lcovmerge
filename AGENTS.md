@@ -22,6 +22,6 @@
 
 ## Orchestration
 
-- Roles: Claude plans, implements and reviews (`~/.claude-work/CLAUDE.md`); Codex only drives browser/computer-use jobs when a prompt asks (`~/.codex/AGENTS.md`).
+- Routing: global (~/.claude-work/routing/ROUTING.md).
 - Browser/UI test: n/a (site checks run inside `make test`).
 - Push: commit and push when review is CLEAN and tests pass.
